@@ -21,14 +21,36 @@ function destinationForAisensy(mobile10) {
 }
 
 /**
- * Build templateParams based on env — matches your WhatsApp template variable order.
- * AISENSY_OTP_TEMPLATE_MODE=two (default: [FirstName, OTP]) | one (OTP only)
+ * Build templateParams that match the WhatsApp template linked to the AiSensy API campaign
+ * (same count/order as {{1}}, {{2}}, …). Wrong layout causes:
+ * "Template params does not match the campaign".
+ *
+ * AISENSY_OTP_PARAM_LAYOUT (preferred):
+ *   - otp_only     → [OTP] — single-variable OTP templates
+ *   - name_otp     → [Name, OTP] — default Meta-style two vars
+ *   - otp_name     → [OTP, Name] — reversed two vars
+ * Legacy AISENSY_OTP_TEMPLATE_MODE: one → otp_only, two → name_otp
  */
 function buildTemplateParams(displayName, otpCode) {
-  const mode = (process.env.AISENSY_OTP_TEMPLATE_MODE || 'two').toLowerCase();
   const first = String(displayName || 'Customer').trim().slice(0, 60) || 'Customer';
   const code = String(otpCode);
-  if (mode === 'one' || mode === '1') return [code];
+
+  const explicit = process.env.AISENSY_OTP_PARAM_LAYOUT?.trim()?.toLowerCase();
+  let layout = explicit;
+  if (!layout) {
+    const legacy = (process.env.AISENSY_OTP_TEMPLATE_MODE || 'two').toLowerCase();
+    if (legacy === 'one' || legacy === '1') layout = 'otp_only';
+    else if (legacy === 'two' || legacy === '2') layout = 'name_otp';
+    else layout = 'name_otp';
+  }
+
+  if (layout === 'otp_only' || layout === 'single' || layout === 'one') {
+    return [code];
+  }
+  if (layout === 'otp_name' || layout === 'otp_first') {
+    return [code, first];
+  }
+  // name_otp, name_then_otp, two, default
   return [first, code];
 }
 
@@ -94,8 +116,7 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
       .trim()
       .split(/\s+/)[0] || 'user';
 
-  const mode = (process.env.AISENSY_OTP_TEMPLATE_MODE || 'two').toLowerCase();
-  const otpOnlyTemplate = mode === 'one' || mode === '1';
+  const otpOnlyTemplate = templateParams.length === 1;
   const useFirstNameFallback =
     !otpOnlyTemplate && process.env.AISENSY_USE_PARAMS_FALLBACK_FIRSTNAME !== 'false';
 
@@ -120,4 +141,5 @@ module.exports = {
   sendOtpViaAisensy,
   normalizeDestination,
   destinationForAisensy,
+  buildTemplateParams,
 };
