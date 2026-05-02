@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
-const { testDriveStatuses, productModels } = require('../constants/enums');
+const {
+  testDriveStatuses,
+  productModels,
+  testDrivePreferredLocations,
+  yesNo,
+  purchaseTimelines,
+} = require('../constants/enums');
 
 const testDriveSchema = new mongoose.Schema(
   {
@@ -11,6 +17,14 @@ const testDriveSchema = new mongoose.Schema(
     preferredDate: { type: Date, required: true },
     preferredTime: { type: String, trim: true },
     branch: { type: String, trim: true },
+    preferredTestDriveLocation: {
+      type: String,
+      enum: testDrivePreferredLocations,
+      trim: true,
+    },
+    ownsCar: { type: String, enum: yesNo, trim: true },
+    currentCarDetails: { type: String, trim: true },
+    purchaseTimeline: { type: String, enum: purchaseTimelines, trim: true },
     remarks: { type: String, trim: true },
     status: { type: String, enum: testDriveStatuses, default: 'Pending' },
     assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },

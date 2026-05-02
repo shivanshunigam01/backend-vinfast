@@ -1,5 +1,11 @@
 const { body } = require('express-validator');
-const { enquiryInterests, productModels } = require('../constants/enums');
+const {
+  enquiryInterests,
+  productModels,
+  testDrivePreferredLocations,
+  yesNo,
+  purchaseTimelines,
+} = require('../constants/enums');
 
 const mobileRule = body('mobile')
   .matches(/^[6-9]\d{9}$/)
@@ -29,6 +35,27 @@ exports.testDriveValidator = [
     .isIn(testDriveModels)
     .withMessage(`Model must be one of: ${testDriveModels.join(', ')}`),
   body('preferredDate').isISO8601().withMessage('Preferred date is required'),
+  body('preferredTestDriveLocation')
+    .optional({ values: 'null' })
+    .isIn(testDrivePreferredLocations)
+    .withMessage(`Location must be one of: ${testDrivePreferredLocations.join(', ')}`),
+  body('ownsCar')
+    .optional({ values: 'null' })
+    .isIn(yesNo)
+    .withMessage('ownsCar must be Yes or No'),
+  body('currentCarDetails')
+    .optional({ values: 'null' })
+    .trim()
+    .custom((value, { req }) => {
+      if (req.body.ownsCar === 'Yes' && !String(value || '').trim()) {
+        throw new Error('Current car (model/brand) is required when you own a car');
+      }
+      return true;
+    }),
+  body('purchaseTimeline')
+    .optional({ values: 'null' })
+    .isIn(purchaseTimelines)
+    .withMessage(`purchaseTimeline must be one of: ${purchaseTimelines.join(', ')}`),
 ];
 
 exports.enquiryValidator = [

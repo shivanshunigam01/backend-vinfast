@@ -25,4 +25,7 @@ module.exports = {
     'Service',
   ],
   resourceTypes: ['image', 'video'],
+  testDrivePreferredLocations: ['Dealership Visit', 'Home Test Drive'],
+  yesNo: ['Yes', 'No'],
+  purchaseTimelines: ['0-1 Month', '1-3 Months', '3-6 Months', 'Just Exploring'],
 };
