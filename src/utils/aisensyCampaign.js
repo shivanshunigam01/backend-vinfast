@@ -1,7 +1,9 @@
 /**
  * WhatsApp OTP — Zentroverse / api-wa.co campaign API.
  * URL and apiKey are fixed in code (not read from .env).
- * Dynamic per send: destination (user’s number), OTP in button param, FirstName from the form.
+ *
+ * NOTE: Messages go to api-wa.co — they will NOT appear in the AiSensy (aisensy.com) dashboard.
+ * Use the provider dashboard that matches this API key / api-wa.co.
  */
 
 const ZENTROVERSE_WA_CAMPAIGN_URL =
@@ -15,14 +17,53 @@ const ZENTROVERSE_USER_NAME = 'Zentroverse';
 const ZENTROVERSE_SOURCE = 'new-landing-page form';
 
 /**
- * Same shape as sample: "09771495587" — leading 0 + 10-digit Indian mobile.
+ * false (recommended): destination "919876543210" — usual for India WhatsApp Cloud routing.
+ * true: "09876543210" — only if your provider docs require leading zero.
+ */
+const ZENTROVERSE_DEST_LEADING_ZERO = false;
+
+/**
+ * true: templateParams [firstName, otp] so the code appears in the message body ({{1}} {{2}}).
+ * false: original curl — templateParams ["$FirstName"], OTP only on URL button (easy to miss in chat).
+ */
+const ZENTROVERSE_OTP_IN_MESSAGE_BODY = true;
+
+/**
+ * WhatsApp / BSP rejects template body variables that contain emoji ("Parameter at index 0 contains emoji").
+ */
+function sanitizeWaTemplateParam(str, fallback = 'Customer') {
+  let s = String(str ?? '');
+  try {
+    if (typeof s.normalize === 'function') {
+      s = s.normalize('NFKC');
+    }
+    // Pictographic symbols (includes most emoji) — avoid \p{Emoji} (can be over-broad in some runtimes)
+    s = s.replace(/\p{Extended_Pictographic}/gu, '');
+  } catch {
+    s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+  }
+  s = s.replace(/[\uFE0F\u200D]/g, '');
+  s = s.trim().replace(/\s+/g, ' ');
+  if (!s) return fallback;
+  return s.slice(0, 60);
+}
+
+/** OTP must be digits only for safety. */
+function sanitizeOtpParam(otp) {
+  return String(otp ?? '').replace(/\D/g, '').slice(0, 6);
+}
+
+/**
+ * Same shape as sample "09771495587" when ZENTROVERSE_DEST_LEADING_ZERO is true.
+ * Otherwise "91" + 10-digit Indian mobile without + prefix (adjust if provider asks for +91…).
  */
 function destinationForZentroverseWa(mobile10) {
   const d = String(mobile10 || '')
     .replace(/\D/g, '')
     .slice(-10);
   if (!/^[6-9]\d{9}$/.test(d)) return null;
-  return `0${d}`;
+  if (ZENTROVERSE_DEST_LEADING_ZERO) return `0${d}`;
+  return `91${d}`;
 }
 
 async function parseCampaignResponse(res, text) {
@@ -55,7 +96,7 @@ async function parseCampaignResponse(res, text) {
 }
 
 /**
- * Send OTP via Zentroverse WA campaign (replaces env-driven AiSensy URL).
+ * Send OTP via Zentroverse WA campaign.
  */
 async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
   const destination = destinationForZentroverseWa(mobile10);
@@ -63,20 +104,25 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
     throw new Error('Invalid destination mobile');
   }
 
-  const firstNameFallback =
-    String(displayName || 'Customer')
-      .trim()
-      .split(/\s+/)[0] || 'user';
+  // Full name from the form "Full Name" field (WhatsAppOtpVerify passes the same displayName).
+  const rawFullName = String(displayName || 'Customer').trim();
+  const nameForTemplate = sanitizeWaTemplateParam(rawFullName, 'user');
 
-  const payload = {
-    apiKey: ZENTROVERSE_WA_API_KEY,
-    campaignName: ZENTROVERSE_CAMPAIGN_NAME,
-    destination,
-    userName: ZENTROVERSE_USER_NAME,
-    templateParams: ['$FirstName'],
-    source: ZENTROVERSE_SOURCE,
-    media: {},
-    buttons: [
+  const otpStr = sanitizeOtpParam(otpCode);
+  if (!otpStr) {
+    throw new Error('Invalid OTP');
+  }
+
+  let templateParams;
+  /** @type {unknown[]} */
+  let buttons;
+
+  if (ZENTROVERSE_OTP_IN_MESSAGE_BODY) {
+    templateParams = [nameForTemplate, otpStr];
+    buttons = [];
+  } else {
+    templateParams = ['$FirstName'];
+    buttons = [
       {
         type: 'button',
         sub_type: 'url',
@@ -84,16 +130,27 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
         parameters: [
           {
             type: 'text',
-            text: String(otpCode),
+            text: otpStr,
           },
         ],
       },
-    ],
+    ];
+  }
+
+  const payload = {
+    apiKey: ZENTROVERSE_WA_API_KEY,
+    campaignName: ZENTROVERSE_CAMPAIGN_NAME,
+    destination,
+    userName: ZENTROVERSE_USER_NAME,
+    templateParams,
+    source: ZENTROVERSE_SOURCE,
+    media: {},
+    buttons,
     carouselCards: [],
     location: {},
     attributes: {},
     paramsFallbackValue: {
-      FirstName: firstNameFallback,
+      FirstName: nameForTemplate,
     },
   };
 
@@ -103,7 +160,10 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
     body: JSON.stringify(payload),
   });
   const text = await res.text();
-  return parseCampaignResponse(res, text);
+  const json = await parseCampaignResponse(res, text);
+  console.log('[whatsapp-otp] api-wa raw response:', text.slice(0, 2000));
+  console.log('[whatsapp-otp] api-wa parsed:', JSON.stringify(json));
+  return json;
 }
 
 function normalizeDestination(mobile10) {
