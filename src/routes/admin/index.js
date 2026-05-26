@@ -17,6 +17,7 @@ router.use(protect);
 router.get('/dashboard/stats', dashboardController.getStats);
 
 // Leads
+router.get('/All_leads', ctrl.getAllLeads);
 router.get('/leads', ctrl.getLeads);
 router.post('/leads', ctrl.createLead);
 router.get('/leads/:id', mongoIdParam, validate, ctrl.getLead);
