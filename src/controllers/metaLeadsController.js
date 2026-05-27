@@ -33,6 +33,20 @@ function normalizeMetaPayload(body) {
   }
 
   if (typeof body === 'object') {
+    /**
+     * Provider webhook envelope case:
+     * { _id, url, method, headers, body: { ...fields }, flow_token: {...}, uniqueId, receivedAt, ... }
+     * In this format we store a single lead row derived from `body`.
+     */
+    if (body.body && typeof body.body === 'object') {
+      const leadRow = { ...body.body };
+      if (body.flow_token && typeof body.flow_token === 'object') leadRow.flow_token = body.flow_token;
+      if (body.uniqueId) leadRow.uniqueId = body.uniqueId;
+      if (body.receivedAt) leadRow.receivedAt = body.receivedAt;
+      if (body.createdAt) leadRow.createdAt = body.createdAt;
+      return { data: [leadRow], meta: { total: 1, source: 'meta' } };
+    }
+
     if (Array.isArray(body.data)) {
       return { data: body.data, meta: { total: body.data.length, source: 'meta' } };
     }
@@ -41,7 +55,8 @@ function normalizeMetaPayload(body) {
     }
   }
 
-  return { data: [], meta: { total: 0, source: 'meta' } };
+  // Last resort: treat any object as a single row (so provider shapes don't break the UI).
+  return { data: [body], meta: { total: 1, source: 'meta' } };
 }
 
 // Persist provider payload across requests (and server restarts if filesystem persists).
