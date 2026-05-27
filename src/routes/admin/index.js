@@ -29,6 +29,9 @@ router.get('/leads/:id', mongoIdParam, validate, ctrl.getLead);
 router.put('/leads/:id', mongoIdParam, validate, ctrl.updateLead);
 router.delete('/leads/:id', mongoIdParam, validate, authorize('superadmin'), ctrl.deleteLead);
 
+// Meta leads (DB-backed webhook records)
+router.put('/meta-leads/:id', mongoIdParam, validate, metaLeadsController.updateMetaLead);
+
 // Test drives
 router.get('/test-drives', ctrl.getTestDrives);
 router.get('/test-drives/:id', mongoIdParam, validate, ctrl.getTestDrive);
