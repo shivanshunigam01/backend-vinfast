@@ -21,6 +21,8 @@ const leadSchema = new mongoose.Schema(
     utmMedium: String,
     utmCampaign: String,
     pageSource: String,
+    // Used for de-dup/upsert when leads come from external providers (e.g. Meta webhook).
+    metaUniqueId: { type: String, index: true, trim: true },
   },
   { timestamps: true }
 );
