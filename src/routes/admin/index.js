@@ -4,6 +4,8 @@ const { protect, authorize } = require('../../middleware/auth');
 const authController = require('../../controllers/authController');
 const dashboardController = require('../../controllers/dashboardController');
 const ctrl = require('../../controllers/adminResourceController');
+const metaLeadsController = require('../../controllers/metaLeadsController');
+const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
 const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slideReorderValidator } = require('../../validators/adminValidators');
 
@@ -11,8 +13,8 @@ const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slid
 router.post('/auth/login', loginValidator, validate, authController.login);
 router.get('/auth/me', protect, authController.me);
 
-/** Legacy alias — same handler as GET /api/v1/public/All_leads (no JWT). */
-router.get('/All_leads', ctrl.getAllLeads);
+/** Meta leads — no JWT (proxies META_LEADS_UPSTREAM_URL). Same as GET /api/v1/public/All_leads */
+router.get('/All_leads', metaLeadsLimiter, metaLeadsController.getAllMetaLeads);
 
 router.use(protect);
 

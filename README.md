@@ -31,10 +31,15 @@ Production-ready Express + MongoDB backend scaffold aligned to the API documenta
 - Admin: `/api/v1/admin`
 
 ## Meta Lead (no JWT)
-After deploy, these work without `Authorization`:
-- `GET /api/v1/admin/All_leads` (registered before admin `protect` middleware)
+
+Set `META_LEADS_UPSTREAM_URL` in `.env` to your Meta / whitelisted leads API.  
+This server proxies that URL and returns `{ success, data, meta }` — it does **not** read MongoDB for these routes.
+
+Public endpoints (no `Authorization` header):
+
 - `GET /api/v1/public/All_leads`
 - `GET /api/v1/meta-leads`
+- `GET /api/v1/admin/All_leads` (same handler, registered before admin `protect`)
 
 ## Notes
 - Media upload is assumed to happen directly from frontend to Cloudinary using an unsigned preset.

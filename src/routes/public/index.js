@@ -6,7 +6,6 @@ const verifyWhatsappOtp = require('../../middleware/verifyWhatsappOtp');
 const publicController = require('../../controllers/publicController');
 const formController = require('../../controllers/formController');
 const whatsappOtpController = require('../../controllers/whatsappOtpController');
-const adminResourceController = require('../../controllers/adminResourceController');
 const { leadValidator, testDriveValidator, enquiryValidator } = require('../../validators/formValidators');
 const { whatsappOtpSendValidator, whatsappOtpVerifyValidator } = require('../../validators/whatsappOtpValidators');
 
@@ -19,10 +18,6 @@ router.get('/public/banners', publicController.getBanners);
 router.get('/public/faqs', publicController.getFAQs);
 router.get('/public/testimonials', publicController.getTestimonials);
 router.get('/public/dealer-settings', publicController.getDealerSettings);
-
-/** Meta Lead page — no authentication required (deploy backend for these to work on live). */
-router.get('/public/All_leads', adminResourceController.getAllLeads);
-router.get('/meta-leads', adminResourceController.getAllLeads);
 
 router.post(
   '/whatsapp-otp/send',

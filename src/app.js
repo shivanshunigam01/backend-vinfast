@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const { notFound } = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
 const publicRoutes = require('./routes/public');
+const metaLeadsRoutes = require('./routes/metaLeads');
 const adminRoutes = require('./routes/admin');
 
 const app = express();
@@ -61,6 +62,7 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json(healthPayload());
 });
 
+app.use('/api/v1', metaLeadsRoutes);
 app.use('/api/v1', publicRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
