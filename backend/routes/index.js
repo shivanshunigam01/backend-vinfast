@@ -1,4 +1,5 @@
 module.exports = {
+  // --- Existing routes ---
   auth: require('./auth'),
   public: require('./public'),
   publicLeads: require('./leads'),
@@ -12,5 +13,15 @@ module.exports = {
   offers: require('./offers'),
   homepage: require('./homepage'),
   content: require('./content'),
-  media: require('./media')
+  media: require('./media'),
+
+  // --- Test Drive Management Module ---
+  tdBranches: require('./td/branches'),
+  tdCustomers: require('./td/customers').router,
+  tdDemoVehicles: require('./td/demoVehicles'),
+  tdBookings: require('./td/tdBookings'),
+  tdSlots: require('./td/tdSlots'),
+  tdLogs: require('./td/tdLogs'),
+  tdFeedback: require('./td/tdFeedback'),
+  tdReports: require('./td/tdReports')
 };

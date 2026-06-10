@@ -48,6 +48,24 @@ app.use('/api/v1/admin/homepage', routes.homepage);
 app.use('/api/v1/admin/content', routes.content);
 app.use('/api/v1/admin/media', routes.media);
 
+// ── Test Drive Management Module ────────────────────────────────────────────
+// Public / Customer-facing
+app.use('/api/v1/td/customers', routes.tdCustomers);
+app.use('/api/v1/td/vehicles/available', (req, res, next) => { req.url = '/available'; next(); }, routes.tdDemoVehicles);
+app.use('/api/v1/td/slots', routes.tdSlots);
+app.use('/api/v1/td/bookings', formLimiter, routes.tdBookings);
+app.use('/api/v1/td/feedback', routes.tdFeedback);
+
+// Admin / Protected
+app.use('/api/v1/admin/td/branches', routes.tdBranches);
+app.use('/api/v1/admin/td/vehicles', routes.tdDemoVehicles);
+app.use('/api/v1/admin/td/bookings', routes.tdBookings);
+app.use('/api/v1/admin/td/logs', routes.tdLogs);
+app.use('/api/v1/admin/td/feedback', routes.tdFeedback);
+app.use('/api/v1/admin/td/reports', routes.tdReports);
+app.use('/api/v1/admin/td/customers', routes.tdCustomers);
+// ────────────────────────────────────────────────────────────────────────────
+
 app.use(notFound);
 app.use(errorHandler);
 
