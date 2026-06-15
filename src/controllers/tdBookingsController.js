@@ -1,7 +1,7 @@
 require('../models/tdModels');
 
 const TDBooking = require('../models/TDBooking');
-const Admin = require('../models/Admin');
+const TDStaff = require('../models/TDStaff');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
@@ -11,7 +11,7 @@ const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const BOOKING_POPULATE = [
   { path: 'customerId' },
   { path: 'vehicleId', select: 'vehicleId model registrationNo color' },
-  { path: 'assignedExecutive', select: 'name email role', model: 'Admin' },
+  { path: 'assignedExecutive', select: 'name email role designation', model: 'TDStaff' },
   { path: 'branchId', select: 'name code' },
   { path: 'testDriveId' },
 ];
@@ -50,7 +50,9 @@ exports.listBookings = asyncHandler(async (req, res) => {
 exports.listMyBookings = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
-  query.assignedExecutive = req.admin._id;
+
+  const staffId = req.tdStaff?._id || req.admin?._id;
+  if (staffId) query.assignedExecutive = staffId;
 
   const [docs, total] = await Promise.all([
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
@@ -61,17 +63,20 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
 });
 
 exports.listExecutives = asyncHandler(async (req, res) => {
-  const admins = await Admin.find({ active: true, role: { $in: ['executive', 'manager'] } })
-    .select('name email role')
+  const staff = await TDStaff.find({
+    active: true,
+    designation: { $in: ['sales_executive', 'sales_manager', 'branch_manager'] },
+  })
+    .select('name email role designation')
     .sort({ name: 1 });
 
-  const data = admins.map((a) => ({
-    _id: a._id,
-    name: a.name,
-    email: a.email,
-    role: a.role,
-    designation: a.role === 'executive' ? 'sales_executive' : 'sales_manager',
-    designationLabel: a.role === 'executive' ? 'Sales Executive' : 'Sales Manager',
+  const data = staff.map((s) => ({
+    _id: s._id,
+    name: s.name,
+    email: s.email,
+    role: s.role,
+    designation: s.designation,
+    designationLabel: require('../utils/tdBookingFormatter').DESIGNATION_LABELS[s.designation] || s.designation,
   }));
 
   return successResponse(res, data);
@@ -108,10 +113,10 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   if (!executiveId) throw new ApiError(400, 'executiveId is required');
 
   const doc = await findBookingById(req.params.id);
-  const admin = await Admin.findById(executiveId);
-  if (!admin || !admin.active) throw new ApiError(404, 'Executive not found');
+  const staff = await TDStaff.findById(executiveId);
+  if (!staff || !staff.active) throw new ApiError(404, 'Executive not found');
 
-  doc.assignedExecutive = admin._id;
+  doc.assignedExecutive = staff._id;
   if (doc.bookingStatus === 'PENDING') doc.bookingStatus = 'CONFIRMED';
   await doc.save();
   await doc.populate(BOOKING_POPULATE);

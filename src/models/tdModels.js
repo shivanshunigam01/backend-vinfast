@@ -7,6 +7,8 @@ require('./TDCustomer');
 require('./TDVehicle');
 require('./TDStaff');
 require('./TDBooking');
+require('./TDSlotConfig');
+require('./TDFeedback');
 require('./TestDrive');
 require('./Admin');
 

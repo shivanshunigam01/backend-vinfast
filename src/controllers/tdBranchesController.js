@@ -5,7 +5,18 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
 
 exports.listPublicBranches = asyncHandler(async (req, res) => {
-  const docs = await TDBranch.find({ active: { $ne: false } }).sort({ name: 1 });
+  let docs = await TDBranch.find({ active: { $ne: false } }).sort({ name: 1 });
+  if (docs.length === 0) {
+    docs = [
+      await TDBranch.create({
+        name: 'Patna Showroom',
+        code: 'PATNA',
+        city: 'Patna',
+        phone: '+91 9231445060',
+        active: true,
+      }),
+    ];
+  }
   const data = docs.map((b) => ({
     _id: b._id,
     name: b.name,

@@ -23,7 +23,7 @@ const tdBookingSchema = new mongoose.Schema(
     cancellationReason: { type: String, trim: true },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDCustomer' },
     vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDVehicle' },
-    assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
     testDriveId: { type: mongoose.Schema.Types.ObjectId, ref: 'TestDrive' },
   },

@@ -6,6 +6,8 @@ const verifyWhatsappOtp = require('../../middleware/verifyWhatsappOtp');
 const publicController = require('../../controllers/publicController');
 const formController = require('../../controllers/formController');
 const whatsappOtpController = require('../../controllers/whatsappOtpController');
+const tdBranchesController = require('../../controllers/tdBranchesController');
+const tdSlotsController = require('../../controllers/tdSlotsController');
 const { leadValidator, testDriveValidator, enquiryValidator } = require('../../validators/formValidators');
 const { whatsappOtpSendValidator, whatsappOtpVerifyValidator } = require('../../validators/whatsappOtpValidators');
 
@@ -18,6 +20,9 @@ router.get('/public/banners', publicController.getBanners);
 router.get('/public/faqs', publicController.getFAQs);
 router.get('/public/testimonials', publicController.getTestimonials);
 router.get('/public/dealer-settings', publicController.getDealerSettings);
+
+router.get('/public/td/branches', tdBranchesController.listPublicBranches);
+router.get('/public/td/slots/available', tdSlotsController.publicAvailableSlots);
 
 router.post(
   '/whatsapp-otp/send',
