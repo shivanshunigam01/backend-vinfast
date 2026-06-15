@@ -9,8 +9,12 @@ const PORT = process.env.PORT || 2000;
     await connectDB();
 
     if (process.env.TD_AUTO_BOOTSTRAP !== 'false') {
-      const { ensureTdModuleReady } = require('./src/utils/tdBootstrap');
-      await ensureTdModuleReady();
+      try {
+        const { ensureTdModuleReady } = require('./src/utils/tdBootstrap');
+        await ensureTdModuleReady();
+      } catch (bootstrapErr) {
+        console.error('[TD bootstrap] startup seed skipped:', bootstrapErr.message);
+      }
     }
 
     app.listen(PORT, () => {
