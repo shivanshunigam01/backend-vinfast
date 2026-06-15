@@ -1,3 +1,5 @@
+const { extractCustomerFromBooking } = require('./tdCustomerResolver');
+
 const DESIGNATION_LABELS = {
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
@@ -9,10 +11,13 @@ const DESIGNATION_LABELS = {
 
 function formatCustomer(customer) {
   if (!customer || typeof customer !== 'object') return null;
+  const name = customer.name || customer.customerName;
+  const mobile = customer.mobile || customer.phone;
+  if (!name && !mobile) return null;
   return {
     _id: customer._id,
-    name: customer.name,
-    mobile: customer.mobile,
+    name: name || 'Customer',
+    mobile: mobile || '',
     customerId: customer.customerId,
     email: customer.email,
     city: customer.city,
@@ -69,6 +74,42 @@ function formatTestDrive(testDrive) {
   };
 }
 
+function resolveCustomerForBooking(plain) {
+  const fromRef = formatCustomer(plain.customerId);
+  if (fromRef?.name) return fromRef;
+
+  const extracted = extractCustomerFromBooking(plain);
+  if (extracted) {
+    return {
+      _id:
+        plain.customerId && typeof plain.customerId === 'object'
+          ? plain.customerId._id
+          : plain.customerId,
+      name: extracted.name,
+      mobile: extracted.mobile,
+      customerId: extracted.customerId,
+      email: extracted.email,
+      city: extracted.city,
+    };
+  }
+
+  const td = formatTestDrive(plain.testDriveId);
+  if (td?.customerName || td?.mobile) {
+    return {
+      _id:
+        plain.customerId && typeof plain.customerId === 'object'
+          ? plain.customerId._id
+          : plain.customerId,
+      name: td.customerName || 'Customer',
+      mobile: td.mobile || '',
+      email: td.email,
+      city: td.city,
+    };
+  }
+
+  return null;
+}
+
 function formatTdBooking(doc) {
   if (!doc) return null;
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -84,7 +125,7 @@ function formatTdBooking(doc) {
     remarks: plain.remarks,
     cancellationReason: plain.cancellationReason,
     createdAt: plain.createdAt,
-    customerId: formatCustomer(plain.customerId),
+    customerId: resolveCustomerForBooking(plain),
     vehicleId: formatVehicle(plain.vehicleId),
     assignedExecutive: formatExecutive(plain.assignedExecutive),
     branchId: formatBranch(plain.branchId),
@@ -96,4 +137,5 @@ module.exports = {
   DESIGNATION_LABELS,
   formatTdBooking,
   formatExecutive,
+  resolveCustomerForBooking,
 };

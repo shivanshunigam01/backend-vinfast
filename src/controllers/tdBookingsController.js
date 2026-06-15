@@ -7,6 +7,7 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { formatTdBooking } = require('../utils/tdBookingFormatter');
+const { ensureBookingsCustomers, ensureBookingCustomer } = require('../utils/tdCustomerResolver');
 
 const BOOKING_POPULATE = [
   { path: 'customerId' },
@@ -43,7 +44,8 @@ exports.listBookings = asyncHandler(async (req, res) => {
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
-  const data = docs.map(formatTdBooking);
+  const enriched = await ensureBookingsCustomers(docs);
+  const data = enriched.map(formatTdBooking);
   return successResponse(res, data, undefined, 200, { page, limit, total });
 });
 
@@ -58,7 +60,8 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
-  const data = docs.map(formatTdBooking);
+  const enriched = await ensureBookingsCustomers(docs);
+  const data = enriched.map(formatTdBooking);
   return successResponse(res, data, undefined, 200, { page, limit, total });
 });
 
@@ -83,7 +86,9 @@ exports.listExecutives = asyncHandler(async (req, res) => {
 });
 
 exports.getBooking = asyncHandler(async (req, res) => {
-  const doc = await findBookingById(req.params.id);
+  let doc = await findBookingById(req.params.id);
+  doc = await ensureBookingCustomer(doc);
+  await doc.populate(BOOKING_POPULATE);
   return successResponse(res, formatTdBooking(doc));
 });
 

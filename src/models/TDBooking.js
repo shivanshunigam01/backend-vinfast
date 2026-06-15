@@ -26,8 +26,13 @@ const tdBookingSchema = new mongoose.Schema(
     assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
     testDriveId: { type: mongoose.Schema.Types.ObjectId, ref: 'TestDrive' },
+    // Legacy / denormalized customer fields from website sync
+    customerName: { type: String, trim: true },
+    customerMobile: { type: String, trim: true },
+    customerEmail: { type: String, trim: true },
+    customerCity: { type: String, trim: true },
   },
-  { timestamps: true },
+  { timestamps: true, strict: false },
 );
 
 module.exports = mongoose.model('TDBooking', tdBookingSchema);
