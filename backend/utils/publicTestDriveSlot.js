@@ -13,7 +13,7 @@ async function resolveBranchForBooking(branchName) {
   return Branch.findOne({ active: true }).sort({ createdAt: 1 });
 }
 
-async function validatePublicTestDriveSlot({ branch, preferredDate, preferredTime, model }) {
+async function validatePublicTestDriveSlot({ branch, preferredDate, preferredTime, model, variant }) {
   const resolvedBranch = await resolveBranchForBooking(branch);
   if (!resolvedBranch) {
     const err = new Error('Showroom branch is not configured yet. Please call us to book.');
@@ -33,6 +33,7 @@ async function validatePublicTestDriveSlot({ branch, preferredDate, preferredTim
     slotDate: preferredDate,
     slotTime: preferredTime,
     model,
+    variant,
     config: config.toObject()
   });
 

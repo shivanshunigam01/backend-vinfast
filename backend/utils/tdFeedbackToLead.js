@@ -14,10 +14,10 @@ function normalizeLeadModel(preferredModel, preferredVariant) {
 }
 
 function leadStatusFromPurchaseIntent(score) {
-  if (!score) return 'Interested';
+  if (!score) return 'Test Drive Completed';
   if (score >= 4) return 'Interested';
-  if (score === 3) return 'Contact Attempted';
-  return 'Not Interested';
+  if (score === 3) return 'Test Drive Completed';
+  return 'Lost';
 }
 
 function buildFeedbackRemarks(feedback, booking) {
@@ -93,7 +93,7 @@ async function syncLeadFromTDFeedback({ bookingId, feedback, changedBy }) {
     await LeadStageHistory.create({
       leadId: lead._id,
       bookingId: booking._id,
-      fromStage: 'New Lead',
+      fromStage: 'Enquiry',
       toStage: nextStatus,
       changedBy,
       reason: 'Lead created from test drive feedback'

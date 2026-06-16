@@ -15,6 +15,7 @@ const TDSlotConfig = require('../models/TDSlotConfig');
 const TestDrive = require('../models/TestDrive');
 const Admin = require('../models/Admin');
 const { syncUnlinkedTestDrives } = require('../utils/syncTestDriveBooking');
+const { syncLeadFromTDBooking } = require('../utils/syncLeadFromTDBooking');
 const { normalizeTimeTo24h, toLocalMidnight, calendarDateBounds } = require('../utils/timeFormat');
 const {
   isManagerRole,
@@ -153,7 +154,7 @@ exports.getBookings = asyncHandler(async (req, res) => {
 exports.getBookingById = asyncHandler(async (req, res) => {
   const booking = await TDBooking.findById(req.params.id)
     .populate('customerId', 'name mobile email customerId city address')
-    .populate('vehicleId', 'vehicleId model variant registrationNo batteryPercent color')
+    .populate('vehicleId', 'vehicleId model variant registrationNo batteryPercent color currentOdometer')
     .populate('assignedExecutive', 'name email role designation')
     .populate('branchId', '_id name code address')
     .populate('testDriveId');
@@ -227,7 +228,7 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
 
 exports.rescheduleBooking = asyncHandler(async (req, res) => {
   const { slotDate, slotTime } = req.body;
-  const booking = await TDBooking.findById(req.params.id);
+  const booking = await TDBooking.findById(req.params.id).populate('testDriveId', 'variant');
   assertBookingAccess(booking, req.admin);
   if (booking.bookingStatus === 'COMPLETED') throw new ApiError(400, 'Cannot reschedule a completed booking');
 
@@ -237,7 +238,8 @@ exports.rescheduleBooking = asyncHandler(async (req, res) => {
     slotTime,
     2,
     booking._id,
-    booking.preferredModel || null
+    booking.preferredModel || null,
+    booking.preferredVariant || booking.testDriveId?.variant || null
   );
   if (!slotOk) throw new ApiError(409, 'New slot is not available. Please choose another time.');
 
@@ -258,6 +260,9 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
     { new: true }
   ).populate('assignedExecutive', 'name email');
   if (!booking) throw new ApiError(404, 'Booking not found');
+  await syncLeadFromTDBooking(booking, { changedBy: req.admin._id }).catch((err) => {
+    console.error('[assignExecutive] Lead sync failed:', err.message);
+  });
   res.json({ success: true, data: booking, message: 'Executive assigned' });
 });
 

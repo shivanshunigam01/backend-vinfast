@@ -82,6 +82,7 @@ async function updateTDBookingFromTestDrive(booking, testDrive) {
     slotDate: normalizeSlotDate(testDrive.preferredDate),
     slotTime: testDrive.preferredTime,
     preferredModel: testDrive.model,
+    preferredVariant: testDrive.variant || '',
     bookingStatus: STATUS_MAP[testDrive.status] || booking.bookingStatus,
     remarks: buildWebsiteRemarks(testDrive)
   };
@@ -125,6 +126,7 @@ async function syncTestDriveToTDBooking(testDrive) {
     slotDate,
     slotTime: testDrive.preferredTime,
     preferredModel: testDrive.model,
+    preferredVariant: testDrive.variant || '',
     bookingStatus: STATUS_MAP[testDrive.status] || 'PENDING',
     dlVerified: false,
     remarks: buildWebsiteRemarks(testDrive)

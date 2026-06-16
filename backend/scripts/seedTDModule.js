@@ -17,6 +17,7 @@ const Admin = require('../models/Admin');
 const { buildDemoFleet, SLOT_CONFIG_DEFAULTS } = require('../data/tdDemoFleet');
 
 const FORCE_FLEET = process.argv.includes('--force-fleet');
+const FORCE_SCHEDULE = process.argv.includes('--force-schedule');
 
 async function seed() {
   try {
@@ -84,7 +85,7 @@ async function seed() {
       await TDSlotConfig.create({ branchId: branch._id, ...SLOT_CONFIG_DEFAULTS });
     } else {
       Object.assign(slotConfig, SLOT_CONFIG_DEFAULTS);
-      if (!slotConfig.slotTimes?.length) {
+      if (FORCE_SCHEDULE || !slotConfig.slotTimes?.length) {
         slotConfig.slotTimes = SLOT_CONFIG_DEFAULTS.slotTimes;
       }
       await slotConfig.save();

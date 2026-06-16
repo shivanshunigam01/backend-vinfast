@@ -14,9 +14,9 @@ function toTimeStr(minutes) {
 }
 
 function generateSlotTimesFromRules({
-  workingStartTime = '09:00',
+  workingStartTime = '10:00',
   workingEndTime = '18:00',
-  slotDuration = 60,
+  slotDuration = 30,
   bufferTime = 15
 }) {
   const times = [];

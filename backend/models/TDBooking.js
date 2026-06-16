@@ -16,6 +16,7 @@ const TDBookingSchema = new mongoose.Schema({
   },
   dlVerified: { type: Boolean, default: false },
   preferredModel: { type: String, enum: ['VF 6', 'VF 7', ''], default: '' },
+  preferredVariant: { type: String, trim: true, default: '' },
   confirmationSentAt: { type: Date },
   reminderSentAt: { type: Date },
   cancellationReason: { type: String, trim: true },

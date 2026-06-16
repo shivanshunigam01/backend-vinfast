@@ -60,6 +60,10 @@ app.use('/api/v1/td/slots', routes.tdSlots);
 app.use('/api/v1/td/bookings', formLimiter, routes.tdBookings);
 app.use('/api/v1/td/feedback', routes.tdFeedback);
 
+// Customer portal (test drive bookings)
+app.use('/api/v1/customer/auth', formLimiter, routes.customerAuth);
+app.use('/api/v1/customer/bookings', formLimiter, routes.customerBookings);
+
 // Admin / Protected
 app.use('/api/v1/admin/td/branches', routes.tdBranches);
 app.use('/api/v1/admin/td/vehicles', routes.tdDemoVehicles);
@@ -67,6 +71,7 @@ app.use('/api/v1/admin/td/bookings', routes.tdBookings);
 app.use('/api/v1/admin/td/logs', routes.tdLogs);
 app.use('/api/v1/admin/td/feedback', routes.tdFeedback);
 app.use('/api/v1/admin/td/reports', routes.tdReports);
+app.use('/api/v1/admin/td/leads', routes.tdLeadCrm);
 app.use('/api/v1/admin/td/customers', routes.tdCustomers);
 app.use('/api/v1/admin/td/slots', routes.tdSlots);
 app.use('/api/v1/admin/td/users', routes.tdStaffUsers);

@@ -13,6 +13,10 @@ const { checkDepletionAlerts } = require('../utils/depletionEngine');
 exports.startTestDrive = asyncHandler(async (req, res) => {
   const { bookingId, openingOdometer, openingBattery, startPhotoUrl, customerOtpVerified } = req.body;
 
+  if (openingOdometer == null || Number.isNaN(Number(openingOdometer))) {
+    throw new ApiError(400, 'Opening odometer reading is required');
+  }
+
   const booking = await TDBooking.findById(bookingId);
   if (!booking) throw new ApiError(404, 'Booking not found');
   if (!['CONFIRMED', 'PENDING'].includes(booking.bookingStatus)) {
@@ -61,6 +65,13 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
   if (!log) throw new ApiError(404, 'Test drive log not found');
   if (log.status !== 'STARTED') throw new ApiError(400, 'Test drive is not in progress');
 
+  if (closingOdometer == null || Number.isNaN(Number(closingOdometer))) {
+    throw new ApiError(400, 'Closing odometer reading is required');
+  }
+  if (log.openingOdometer != null && Number(closingOdometer) < log.openingOdometer) {
+    throw new ApiError(400, 'Closing odometer cannot be less than opening odometer');
+  }
+
   log.closingOdometer = closingOdometer;
   log.closingBattery = closingBattery;
   log.endTime = new Date();
@@ -106,14 +117,14 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
     const lead = await Lead.findById(customer.leadId);
     if (lead) {
       const prevStage = lead.status;
-      lead.status = 'Interested';
+      lead.status = 'Test Drive Completed';
       lead.remarks = `Test Drive completed — ${log.totalKM} km driven in ${log.durationMinutes} min`;
       await lead.save();
       await LeadStageHistory.create({
         leadId: lead._id,
         bookingId: log.bookingId,
         fromStage: prevStage,
-        toStage: 'TEST_DRIVE_COMPLETED',
+        toStage: 'Test Drive Completed',
         changedBy: req.admin._id,
         reason: `TD completed — ${log.totalKM}km`
       });

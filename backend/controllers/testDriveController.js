@@ -8,13 +8,14 @@ const { validatePublicTestDriveSlot } = require('../utils/publicTestDriveSlot');
 const { toLocalMidnight } = require('../utils/timeFormat');
 
 exports.createTestDrive = asyncHandler(async (req, res) => {
-  const { branch, preferredDate, preferredTime, model } = req.body;
+  const { branch, preferredDate, preferredTime, model, variant } = req.body;
 
   const { branch: resolvedBranch, normalizedTime } = await validatePublicTestDriveSlot({
     branch,
     preferredDate,
     preferredTime,
-    model
+    model,
+    variant
   }).catch((err) => {
     throw new ApiError(err.statusCode || 400, err.message);
   });

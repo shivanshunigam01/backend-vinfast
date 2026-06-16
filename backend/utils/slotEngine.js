@@ -5,6 +5,22 @@ const Branch = require('../models/Branch');
 const { normalizeTimeTo24h, calendarDateBounds, localTodayDateStr, toCalendarDateStr } = require('./timeFormat');
 const { resolveConfiguredSlotTimes, toMinutes } = require('./slotSchedule');
 
+function normalizeVariant(value) {
+  if (!value) return '';
+  return String(value).trim().toLowerCase();
+}
+
+function bookingVariant(booking) {
+  return booking.preferredVariant || booking.testDriveId?.variant || '';
+}
+
+function matchesVariantFilter(booking, variant) {
+  if (!variant) return true;
+  const bookingVar = bookingVariant(booking);
+  if (!bookingVar) return false;
+  return normalizeVariant(bookingVar) === normalizeVariant(variant);
+}
+
 function getAdminDisabledTimes(config, dateStr) {
   const raw = config?.disabledSlotsByDate;
   if (!raw || !dateStr) return [];
@@ -14,7 +30,7 @@ function getAdminDisabledTimes(config, dateStr) {
 }
 
 /** Vehicles physically ready right now (for live vehicle picker). */
-async function countAvailableFleet(branchId, model) {
+async function countAvailableFleet(branchId, model, variant = null) {
   const now = new Date();
   const query = {
     active: true,
@@ -23,18 +39,21 @@ async function countAvailableFleet(branchId, model) {
     $or: [{ isLocked: false }, { lockExpiresAt: { $lt: now } }]
   };
   if (model) query.model = model;
-  return DemoVehicle.countDocuments(query);
+
+  const vehicles = await DemoVehicle.find(query).select('variant');
+  if (!variant) return vehicles.length;
+  return vehicles.filter((v) => normalizeVariant(v.variant) === normalizeVariant(variant)).length;
 }
 
 /**
- * Demo cars that can serve test drives on a given date (per model).
+ * Demo cars that can serve test drives on a given date (per model / trim).
  * Uses fleet size — not today's RUNNING/BOOKED status — so future dates stay bookable.
  */
-async function countFleetCapacity(branchId, model, dateInput) {
+async function countFleetCapacity(branchId, model, dateInput, variant = null) {
   const query = { active: true, branchId };
   if (model) query.model = model;
 
-  const vehicles = await DemoVehicle.find(query).select('status availableAgainAt');
+  const vehicles = await DemoVehicle.find(query).select('status availableAgainAt variant');
   if (!vehicles.length) return 0;
 
   const bounds = calendarDateBounds(dateInput);
@@ -42,6 +61,7 @@ async function countFleetCapacity(branchId, model, dateInput) {
 
   let count = 0;
   for (const v of vehicles) {
+    if (variant && normalizeVariant(v.variant) !== normalizeVariant(variant)) continue;
     if (endOfDay && v.availableAgainAt && new Date(v.availableAgainAt) > endOfDay) {
       continue;
     }
@@ -50,7 +70,7 @@ async function countFleetCapacity(branchId, model, dateInput) {
   return count;
 }
 
-async function buildSlotOccupancy(branchId, dateInput, branchName, model) {
+async function buildSlotOccupancy(branchId, dateInput, branchName, model, variant = null) {
   const bounds = calendarDateBounds(dateInput);
   if (!bounds) return {};
   const { startOfDay, endOfDay } = bounds;
@@ -63,9 +83,12 @@ async function buildSlotOccupancy(branchId, dateInput, branchName, model) {
   };
   if (model) tdQuery.preferredModel = model;
 
-  const tdBookings = await TDBooking.find(tdQuery).select('slotTime preferredModel');
+  const tdBookings = await TDBooking.find(tdQuery)
+    .populate('testDriveId', 'variant model')
+    .select('slotTime preferredModel preferredVariant testDriveId');
 
   for (const b of tdBookings) {
+    if (!matchesVariantFilter(b, variant)) continue;
     const key = normalizeTimeTo24h(b.slotTime) || b.slotTime;
     occupancy[key] = (occupancy[key] || 0) + 1;
   }
@@ -78,8 +101,9 @@ async function buildSlotOccupancy(branchId, dateInput, branchName, model) {
   if (branchName) testDriveQuery.branch = branchName;
   if (model) testDriveQuery.model = model;
 
-  const testDrives = await TestDrive.find(testDriveQuery).select('preferredTime model');
+  const testDrives = await TestDrive.find(testDriveQuery).select('preferredTime model variant');
   for (const td of testDrives) {
+    if (variant && normalizeVariant(td.variant) !== normalizeVariant(variant)) continue;
     const key = normalizeTimeTo24h(td.preferredTime) || td.preferredTime;
     occupancy[key] = (occupancy[key] || 0) + 1;
   }
@@ -87,9 +111,10 @@ async function buildSlotOccupancy(branchId, dateInput, branchName, model) {
   return occupancy;
 }
 
-function resolveEffectiveMax(maxConcurrentBookings, fleetCapacity) {
+/** Per-slot limit = demo fleet count for the model/trim (physical capacity). */
+function resolveEffectiveMax(_maxConcurrentBookings, fleetCapacity) {
   if (!fleetCapacity || fleetCapacity <= 0) return 0;
-  return Math.min(maxConcurrentBookings || 1, fleetCapacity);
+  return fleetCapacity;
 }
 
 /**
@@ -97,7 +122,7 @@ function resolveEffectiveMax(maxConcurrentBookings, fleetCapacity) {
  */
 async function getAvailableSlots(branchId, dateInput, config, options = {}) {
   const { maxConcurrentBookings = 1 } = config;
-  const { model, excludePastForToday = true } = options;
+  const { model, variant, excludePastForToday = true } = options;
 
   const bounds = calendarDateBounds(dateInput);
   if (!bounds) return [];
@@ -106,10 +131,10 @@ async function getAvailableSlots(branchId, dateInput, config, options = {}) {
   const branch = await Branch.findById(branchId).select('name');
   const branchName = branch?.name;
 
-  const fleetCapacity = await countFleetCapacity(branchId, model, dateStr);
+  const fleetCapacity = await countFleetCapacity(branchId, model, dateStr, variant || null);
   const effectiveMax = resolveEffectiveMax(maxConcurrentBookings, fleetCapacity);
 
-  const slotOccupancy = await buildSlotOccupancy(branchId, dateStr, branchName, model);
+  const slotOccupancy = await buildSlotOccupancy(branchId, dateStr, branchName, model, variant || null);
   const timeKeys = resolveConfiguredSlotTimes(config);
 
   const now = new Date();
@@ -151,26 +176,30 @@ async function getAvailableSlots(branchId, dateInput, config, options = {}) {
   });
 }
 
-async function isSlotAvailable(branchId, slotDate, slotTime, maxConcurrentBookings = 1, excludeBookingId = null, model = null) {
+async function isSlotAvailable(branchId, slotDate, slotTime, maxConcurrentBookings = 1, excludeBookingId = null, model = null, variant = null) {
   const bounds = calendarDateBounds(slotDate);
   if (!bounds) return false;
   const { dateStr } = bounds;
   const normalizedTime = normalizeTimeTo24h(slotTime);
   if (!normalizedTime) return false;
 
-  const fleetCapacity = await countFleetCapacity(branchId, model, dateStr);
+  const fleetCapacity = await countFleetCapacity(branchId, model, dateStr, variant);
   const effectiveMax = resolveEffectiveMax(maxConcurrentBookings, fleetCapacity);
   if (effectiveMax === 0) return false;
 
   const branch = await Branch.findById(branchId).select('name');
-  const occupancy = await buildSlotOccupancy(branchId, dateStr, branch?.name, model);
+  const occupancy = await buildSlotOccupancy(branchId, dateStr, branch?.name, model, variant);
   let count = occupancy[normalizedTime] || 0;
 
   if (excludeBookingId) {
-    const excluded = await TDBooking.findById(excludeBookingId).select('slotTime preferredModel');
+    const excluded = await TDBooking.findById(excludeBookingId)
+      .populate('testDriveId', 'variant')
+      .select('slotTime preferredModel preferredVariant testDriveId');
     if (excluded) {
       const exKey = normalizeTimeTo24h(excluded.slotTime) || excluded.slotTime;
-      if (exKey === normalizedTime && (!model || excluded.preferredModel === model)) {
+      const sameModel = !model || excluded.preferredModel === model;
+      const sameVariant = !variant || matchesVariantFilter(excluded, variant);
+      if (exKey === normalizedTime && sameModel && sameVariant) {
         count = Math.max(0, count - 1);
       }
     }
@@ -179,7 +208,7 @@ async function isSlotAvailable(branchId, slotDate, slotTime, maxConcurrentBookin
   return count < effectiveMax;
 }
 
-async function assertSlotBookable({ branchId, slotDate, slotTime, model, config }) {
+async function assertSlotBookable({ branchId, slotDate, slotTime, model, variant, config }) {
   const dateStr = toCalendarDateStr(slotDate);
   if (!dateStr) {
     const err = new Error('Invalid preferred date');
@@ -206,14 +235,15 @@ async function assertSlotBookable({ branchId, slotDate, slotTime, model, config 
     throw err;
   }
 
-  const slots = await getAvailableSlots(branchId, dateStr, config, { model });
+  const slots = await getAvailableSlots(branchId, dateStr, config, { model, variant });
   const slot = slots.find((s) => s.time === normalizedTime);
   if (!slot?.available) {
+    const label = variant ? `${model || 'vehicle'} ${variant}` : model || 'vehicle';
     const msg =
       slot?.reason === 'no_fleet'
-        ? `No demo ${model || 'vehicle'} is available at the showroom for this date. Please pick another date or model.`
+        ? `No demo ${label} is available at the showroom for this date. Please pick another date or trim.`
         : slot?.reason === 'full'
-          ? 'This time slot is fully booked for the selected model. Please choose another slot or model.'
+          ? `This time slot is fully booked for ${label}. Please choose another slot or trim.`
           : slot?.reason === 'past'
             ? 'This time slot has already passed. Please choose a later slot.'
             : 'This time slot is not available. Please choose another slot.';

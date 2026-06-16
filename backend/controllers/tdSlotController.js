@@ -66,7 +66,7 @@ exports.getPublicSlotConfig = asyncHandler(async (req, res) => {
 });
 
 exports.getAvailableSlotsForDate = asyncHandler(async (req, res) => {
-  const { branchId, date, model } = req.query;
+  const { branchId, date, model, variant } = req.query;
   if (!branchId || !date) throw new ApiError(400, 'branchId and date are required');
 
   const config = await TDSlotConfig.findOne({ branchId, active: true });
@@ -76,12 +76,13 @@ exports.getAvailableSlotsForDate = asyncHandler(async (req, res) => {
   if (!dateStr) throw new ApiError(400, 'Invalid date format — use YYYY-MM-DD');
   const isBlocked = config.blockedDates.includes(dateStr);
 
-  const fleetCapacity = await countFleetCapacity(branchId, model || null, dateStr);
+  const fleetCapacity = await countFleetCapacity(branchId, model || null, dateStr, variant || null);
   const configObj = config.toObject();
   const slotTimes = resolveConfiguredSlotTimes(configObj);
 
   const slots = await getAvailableSlots(branchId, dateStr, configObj, {
     model: model || null,
+    variant: variant || null,
     forceUnavailable: isBlocked,
     unavailableReason: isBlocked ? 'blocked' : undefined
   });
@@ -93,6 +94,7 @@ exports.getAvailableSlotsForDate = asyncHandler(async (req, res) => {
       label: formatTime12h(s.time)
     })),
     slotDuration: config.slotDuration,
+    bufferTime: config.bufferTime,
     workingStartTime: config.workingStartTime,
     workingEndTime: config.workingEndTime,
     slotTimes,
@@ -100,6 +102,7 @@ exports.getAvailableSlotsForDate = asyncHandler(async (req, res) => {
     fleetAvailable: fleetCapacity,
     maxConcurrentBookings: config.maxConcurrentBookings,
     ...(model ? { model } : {}),
+    ...(variant ? { variant } : {}),
     ...(isBlocked ? { message: 'This date is blocked for bookings' } : {})
   });
 });

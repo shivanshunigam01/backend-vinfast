@@ -20,7 +20,7 @@ exports.publicLeadValidation = [
   mobileBody(),
   emailRule(),
   body('model').isIn(['VF 6', 'VF 7', 'Both']).withMessage('Model must be VF 6, VF 7, or Both'),
-  body('interest').optional().isIn(['Test Drive', 'Price Enquiry', 'Finance', 'General']).withMessage('Invalid interest'),
+  body('interest').optional().isIn(['Test Drive', 'Price Enquiry', 'Finance', 'General', 'Pre-Booking']).withMessage('Invalid interest'),
   body('source').optional().isIn(['Website', 'Google Ads', 'Meta Ads', 'WhatsApp', 'Walk-in', 'Referral']).withMessage('Invalid source')
 ];
 
@@ -42,7 +42,11 @@ exports.publicEnquiryValidation = [
 
 exports.adminLeadUpdateValidation = [
   objectIdParam(),
-  body('status').optional().isIn(['New Lead', 'Contact Attempted', 'Interested', 'Negotiation', 'Booked', 'Delivered', 'Lost', 'Not Interested']).withMessage('Invalid lead status'),
+  body('status').optional().isIn([
+    'Enquiry', 'Interested', 'Test Drive Booked', 'Test Drive Completed',
+    'Negotiation', 'Booking', 'Delivered', 'Lost',
+    'New Lead', 'Contact Attempted', 'Test Drive Scheduled', 'Booked', 'Not Interested'
+  ]).withMessage('Invalid lead status'),
   body('assignedTo').optional({ nullable: true, checkFalsy: true }).isMongoId().withMessage('assignedTo must be valid'),
   body('nextFollowUp').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('nextFollowUp must be a valid date')
 ];

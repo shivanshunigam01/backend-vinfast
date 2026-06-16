@@ -11,15 +11,22 @@ const WEBSITE_COLORS = [
   'Urban Mint'
 ];
 
-const SLOT_CONFIG_DEFAULTS = {
-  slotDuration: 60,
+const { generateSlotTimesFromRules } = require('../utils/slotSchedule');
+
+/** 30 min test drive + 15 min gap, 10:00 AM – 6:00 PM */
+const SLOT_SCHEDULE_RULES = {
+  slotDuration: 30,
   bufferTime: 15,
-  workingStartTime: '09:00',
-  workingEndTime: '18:00',
+  workingStartTime: '10:00',
+  workingEndTime: '18:00'
+};
+
+const SLOT_CONFIG_DEFAULTS = {
+  ...SLOT_SCHEDULE_RULES,
   maxConcurrentBookings: 1,
   autoExpiry: true,
   blockedDates: [],
-  slotTimes: ['09:00', '10:15', '11:30', '12:45', '14:00', '15:15', '16:30']
+  slotTimes: generateSlotTimesFromRules(SLOT_SCHEDULE_RULES)
 };
 
 /** All showroom trims currently listed on the website */
@@ -136,12 +143,26 @@ function buildDemoFleet(branchId) {
       status: 'AVAILABLE',
       insuranceValidity: ins(28),
       serviceDueDate: ins(14)
+    },
+    {
+      model: 'VF 7',
+      variant: 'Sky Infinity',
+      registrationNo: 'BR01IJ9012',
+      vinNo: 'VIN7SKINF009PAT',
+      color: 'Infinity Blanc',
+      batteryPercent: 86,
+      currentOdometer: 180,
+      branchId,
+      status: 'AVAILABLE',
+      insuranceValidity: ins(30),
+      serviceDueDate: ins(15)
     }
   ];
 }
 
 module.exports = {
   WEBSITE_COLORS,
+  SLOT_SCHEDULE_RULES,
   SLOT_CONFIG_DEFAULTS,
   buildDemoFleet
 };

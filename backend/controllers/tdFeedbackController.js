@@ -76,8 +76,7 @@ exports.getFeedbacks = asyncHandler(async (req, res) => {
 exports.getFeedbackByBooking = asyncHandler(async (req, res) => {
   const feedback = await TDFeedback.findOne({ bookingId: req.params.bookingId })
     .populate('customerId', 'name mobile');
-  if (!feedback) throw new ApiError(404, 'Feedback not found for this booking');
-  res.json({ success: true, data: feedback });
+  res.json({ success: true, data: feedback ?? null });
 });
 
 exports.getFeedbackStats = asyncHandler(async (req, res) => {

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { ALL_LEAD_STAGES } = require('../constants/leadStages');
 
 const LeadSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -7,9 +8,9 @@ const LeadSchema = new mongoose.Schema({
   city: { type: String, trim: true },
   otherCity: { type: String, trim: true },
   model: { type: String, enum: ['VF 6', 'VF 7', 'Both'], required: true },
-  interest: { type: String, enum: ['Test Drive', 'Price Enquiry', 'Finance', 'General'], default: 'Test Drive' },
+  interest: { type: String, trim: true, default: 'Test Drive' },
   source: { type: String, enum: ['Website', 'Google Ads', 'Meta Ads', 'WhatsApp', 'Walk-in', 'Referral'], default: 'Website' },
-  status: { type: String, enum: ['New Lead', 'Contact Attempted', 'Interested', 'Negotiation', 'Booked', 'Delivered', 'Lost', 'Not Interested'], default: 'New Lead' },
+  status: { type: String, enum: ALL_LEAD_STAGES, default: 'Enquiry' },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   nextFollowUp: { type: Date },
   remarks: { type: String, trim: true },

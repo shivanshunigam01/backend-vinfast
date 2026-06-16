@@ -27,5 +27,10 @@ module.exports = {
   tdLogs: require('./td/tdLogs'),
   tdFeedback: require('./td/tdFeedback'),
   tdReports: require('./td/tdReports'),
-  tdStaffUsers: require('./td/staffUsers')
+  tdStaffUsers: require('./td/staffUsers'),
+  tdLeadCrm: require('./td/leadCrm'),
+
+  // Customer portal
+  customerAuth: require('./customerAuth'),
+  customerBookings: require('./customerBookings')
 };
