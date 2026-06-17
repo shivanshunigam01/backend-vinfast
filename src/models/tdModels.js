@@ -9,6 +9,7 @@ require('./TDStaff');
 require('./TDBooking');
 require('./TDSlotConfig');
 require('./TDFeedback');
+require('./TDLog');
 require('./TestDrive');
 require('./Admin');
 require('./LeadFollowUp');

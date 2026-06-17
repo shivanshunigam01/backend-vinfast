@@ -12,6 +12,7 @@ router.get('/', tdBookingsController.listBookings);
 router.get('/:id', mongoIdParam, validate, tdBookingsController.getBooking);
 router.patch('/:id/cancel', mongoIdParam, validate, tdBookingsController.cancelBooking);
 router.patch('/:id/assign-executive', mongoIdParam, validate, tdBookingsController.assignExecutive);
+router.patch('/:id/assign-vehicle', mongoIdParam, validate, tdBookingsController.assignVehicle);
 router.patch('/:id/reschedule', mongoIdParam, validate, tdBookingsController.rescheduleBooking);
 router.patch('/:id', mongoIdParam, validate, tdBookingsController.updateBooking);
 

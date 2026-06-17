@@ -2,6 +2,7 @@ require('../models/tdModels');
 
 const TDBooking = require('../models/TDBooking');
 const TDStaff = require('../models/TDStaff');
+const TDVehicle = require('../models/TDVehicle');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
@@ -134,6 +135,54 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   await doc.save();
   await doc.populate(BOOKING_POPULATE);
   return successResponse(res, formatTdBooking(doc), 'Executive assigned');
+});
+
+exports.assignVehicle = asyncHandler(async (req, res) => {
+  const { vehicleId } = req.body || {};
+  const doc = await findBookingById(req.params.id);
+
+  if (['COMPLETED', 'CANCELLED'].includes(doc.bookingStatus)) {
+    throw new ApiError(400, `Cannot change vehicle on a ${doc.bookingStatus} booking`);
+  }
+
+  if (doc.vehicleId) {
+    const previous = await TDVehicle.findById(doc.vehicleId);
+    if (previous && ['BOOKED', 'AVAILABLE'].includes(previous.status)) {
+      previous.status = 'AVAILABLE';
+      await previous.save();
+    }
+  }
+
+  if (vehicleId) {
+    const vehicle = await TDVehicle.findById(vehicleId);
+    if (!vehicle) throw new ApiError(404, 'Vehicle not found');
+    if (doc.preferredModel && vehicle.model !== doc.preferredModel) {
+      throw new ApiError(400, `This booking is for ${doc.preferredModel}. Selected vehicle is ${vehicle.model}.`);
+    }
+    if (
+      !['AVAILABLE', 'BOOKED'].includes(vehicle.status) &&
+      String(vehicle._id) !== String(doc.vehicleId)
+    ) {
+      throw new ApiError(409, `Vehicle is ${vehicle.status.replace('_', ' ')} — not available for this booking`);
+    }
+    vehicle.status = 'BOOKED';
+    await vehicle.save();
+    doc.vehicleId = vehicle._id;
+  } else {
+    doc.vehicleId = undefined;
+  }
+
+  if (doc.bookingStatus === 'PENDING' && doc.vehicleId && doc.assignedExecutive) {
+    doc.bookingStatus = 'CONFIRMED';
+  }
+
+  await doc.save();
+  await doc.populate(BOOKING_POPULATE);
+  return successResponse(
+    res,
+    formatTdBooking(doc),
+    vehicleId ? 'Demo vehicle assigned to booking' : 'Vehicle removed from booking',
+  );
 });
 
 exports.rescheduleBooking = asyncHandler(async (req, res) => {
