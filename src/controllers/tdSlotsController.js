@@ -1,21 +1,12 @@
 require('../models/tdModels');
 
 const TDSlotConfig = require('../models/TDSlotConfig');
-const TDBooking = require('../models/TDBooking');
-const TDVehicle = require('../models/TDVehicle');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
-const {
-  generateSlotTimesFromRules,
-  normalizeSlotTimesList,
-  isoDateOnly,
-  isSlotPast,
-  formatTime12h,
-} = require('../utils/tdSlotUtils');
-const { branchFleetQuery } = require('../utils/tdVehicleLegacyImport');
-
-const ACTIVE_BOOKING_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'RESCHEDULED'];
+const { normalizeSlotTimesList, isoDateOnly } = require('../utils/tdSlotUtils');
+const { computeSlotsForBranchDate: buildSlots } = require('../utils/tdSlotAvailability');
+const { ensureTdBranch, ensureTdSlotConfig, ensureTdFleet } = require('../utils/tdBootstrap');
 
 function formatSlotConfig(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -39,83 +30,30 @@ async function getConfigForBranch(branchId) {
   return TDSlotConfig.findOne({ branchId }).populate('branchId', 'name code');
 }
 
-async function computeSlotsForBranchDate(branchId, dateStr) {
-  const config = await getConfigForBranch(branchId);
+async function ensureBranchSlotData(branchId) {
+  const branch = await ensureTdBranch();
+  const resolvedBranchId = branchId || branch._id;
+  await ensureTdFleet(resolvedBranchId);
+  await ensureTdSlotConfig(resolvedBranchId);
+  return getConfigForBranch(resolvedBranchId);
+}
+
+async function computeSlotsForBranchDate(branchId, dateStr, options = {}) {
+  const config = options.config || (await getConfigForBranch(branchId));
   if (!config) {
-    return { slots: [], config: null };
+    return { slots: [], config: null, fleetCapacity: 0 };
   }
-
-  const blocked = (config.blockedDates || []).includes(dateStr);
-  const baseTimes =
-    config.slotTimes?.length > 0
-      ? normalizeSlotTimesList(config.slotTimes)
-      : generateSlotTimesFromRules({
-          workingStartTime: config.workingStartTime,
-          workingEndTime: config.workingEndTime,
-          slotDuration: config.slotDuration,
-          bufferTime: config.bufferTime,
-        });
-
-  const disabledForDate = (config.disabledSlotsByDate && config.disabledSlotsByDate[dateStr]) || [];
-
-  const dayStart = new Date(dateStr);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  const bookings = await TDBooking.find({
-    branchId,
-    slotDate: { $gte: dayStart, $lt: dayEnd },
-    bookingStatus: { $in: ACTIVE_BOOKING_STATUSES },
-  }).select('slotTime');
-
-  const bookingCounts = {};
-  for (const b of bookings) {
-    bookingCounts[b.slotTime] = (bookingCounts[b.slotTime] || 0) + 1;
-  }
-
-  const fleetAvailable = await TDVehicle.countDocuments({
-    ...branchFleetQuery(branchId),
-    status: 'AVAILABLE',
-    isLocked: { $ne: true },
+  return buildSlots(branchId, String(dateStr), {
+    ...options,
+    config: typeof config.toObject === 'function' ? config.toObject() : config,
   });
+}
 
-  const maxBookings = config.maxConcurrentBookings || 1;
-  const slots = baseTimes.map((time) => {
-    const count = bookingCounts[time] || 0;
-    let reason = null;
-    let available = true;
-
-    if (blocked) {
-      available = false;
-      reason = 'blocked';
-    } else if (disabledForDate.includes(time)) {
-      available = false;
-      reason = 'not_offered';
-    } else if (isSlotPast(dateStr, time)) {
-      available = false;
-      reason = 'past';
-    } else if (fleetAvailable <= 0) {
-      available = false;
-      reason = 'no_fleet';
-    } else if (count >= maxBookings) {
-      available = false;
-      reason = 'full';
-    }
-
-    return {
-      time,
-      label: formatTime12h(time),
-      available,
-      bookings: count,
-      maxBookings,
-      fleetAvailable,
-      past: reason === 'past',
-      reason,
-      bookable: available,
-    };
-  });
-
-  return { slots, config };
+function slotQueryOptions(req) {
+  return {
+    model: req.query.model ? String(req.query.model).trim() : null,
+    variant: req.query.variant ? String(req.query.variant).trim() : null,
+  };
 }
 
 exports.listConfigs = asyncHandler(async (req, res) => {
@@ -151,14 +89,20 @@ exports.availableSlots = asyncHandler(async (req, res) => {
   const { branchId, date } = req.query;
   if (!branchId || !date) throw new ApiError(400, 'branchId and date are required');
 
-  const { slots, config } = await computeSlotsForBranchDate(branchId, String(date));
+  const config = await ensureBranchSlotData(branchId);
+  const { slots, fleetCapacity } = await computeSlotsForBranchDate(branchId, String(date), {
+    ...slotQueryOptions(req),
+    config,
+  });
 
   return successResponse(res, slots, undefined, 200, {
     slotDuration: config?.slotDuration,
+    bufferTime: config?.bufferTime,
     workingStartTime: config?.workingStartTime,
     workingEndTime: config?.workingEndTime,
     maxConcurrentBookings: config?.maxConcurrentBookings,
-    fleetAvailable: slots[0]?.fleetAvailable,
+    fleetAvailable: fleetCapacity,
+    fleetCapacity,
   });
 });
 
@@ -166,16 +110,33 @@ exports.publicAvailableSlots = asyncHandler(async (req, res) => {
   const { branchId, date } = req.query;
   if (!branchId || !date) throw new ApiError(400, 'branchId and date are required');
 
-  const { slots, config } = await computeSlotsForBranchDate(branchId, String(date));
+  const config = await ensureBranchSlotData(branchId);
+  const options = slotQueryOptions(req);
+  const { slots, fleetCapacity } = await computeSlotsForBranchDate(branchId, String(date), {
+    ...options,
+    config,
+  });
+
+  const message =
+    slots.length === 0
+      ? 'No test drive times are configured yet. Please call the showroom to book.'
+      : fleetCapacity === 0 && options.model
+        ? `No demo ${options.model}${options.variant ? ` ${options.variant}` : ''} is scheduled for this date. Try another trim or date.`
+        : undefined;
 
   return res.status(200).json({
     success: true,
     data: slots,
     slotDuration: config?.slotDuration,
+    bufferTime: config?.bufferTime,
     workingStartTime: config?.workingStartTime,
     workingEndTime: config?.workingEndTime,
     maxConcurrentBookings: config?.maxConcurrentBookings,
-    fleetAvailable: slots[0]?.fleetAvailable,
+    fleetAvailable: fleetCapacity,
+    fleetCapacity,
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.variant ? { variant: options.variant } : {}),
+    ...(message ? { message } : {}),
   });
 });
 
