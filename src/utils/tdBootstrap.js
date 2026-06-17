@@ -57,6 +57,46 @@ const FLEET_SEED = [
     status: 'AVAILABLE',
   },
   {
+    vehicleId: 'TDV-VF7-003',
+    model: 'VF 7',
+    variant: 'Wind Infinity',
+    registrationNo: 'BR01TD7003',
+    color: 'Desert Silver',
+    batteryPercent: 90,
+    currentOdometer: 640,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF7-004',
+    model: 'VF 7',
+    variant: 'Sky',
+    registrationNo: 'BR01TD7004',
+    color: 'Crimson Red',
+    batteryPercent: 86,
+    currentOdometer: 1120,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF7-005',
+    model: 'VF 7',
+    variant: 'Sky Infinity',
+    registrationNo: 'BR01TD7005',
+    color: 'Urban Mint',
+    batteryPercent: 94,
+    currentOdometer: 520,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF7-006',
+    model: 'VF 7',
+    variant: 'Wind',
+    registrationNo: 'BR01TD7006',
+    color: 'Jet Black',
+    batteryPercent: 91,
+    currentOdometer: 890,
+    status: 'AVAILABLE',
+  },
+  {
     vehicleId: 'TDV-VF6-001',
     model: 'VF 6',
     variant: 'Wind',
@@ -72,9 +112,49 @@ const FLEET_SEED = [
     variant: 'Earth',
     registrationNo: 'BR01TD6002',
     color: 'Jet Black',
-    batteryPercent: 78,
-    currentOdometer: 2100,
-    status: 'CHARGING',
+    batteryPercent: 88,
+    currentOdometer: 1450,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF6-003',
+    model: 'VF 6',
+    variant: 'Wind Infinity',
+    registrationNo: 'BR01TD6003',
+    color: 'Infinity Blanc',
+    batteryPercent: 93,
+    currentOdometer: 430,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF6-004',
+    model: 'VF 6',
+    variant: 'Earth',
+    registrationNo: 'BR01TD6004',
+    color: 'Zenith Grey',
+    batteryPercent: 87,
+    currentOdometer: 1680,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF6-005',
+    model: 'VF 6',
+    variant: 'Wind',
+    registrationNo: 'BR01TD6005',
+    color: 'Desert Silver',
+    batteryPercent: 96,
+    currentOdometer: 310,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-VF6-006',
+    model: 'VF 6',
+    variant: 'Wind Infinity',
+    registrationNo: 'BR01TD6006',
+    color: 'Urban Mint',
+    batteryPercent: 84,
+    currentOdometer: 920,
+    status: 'AVAILABLE',
   },
 ];
 
@@ -159,11 +239,11 @@ async function ensureTdSlotConfig(branchId) {
 }
 
 async function ensureTdFleet(branchId) {
-  const legacyImported = await importLegacyTdVehiclesIfEmpty();
-  if (legacyImported > 0) return legacyImported;
-
-  const existing = await TDVehicle.countDocuments();
-  if (existing > 0) return 0;
+  const totalBefore = await TDVehicle.countDocuments();
+  if (totalBefore === 0) {
+    const legacyImported = await importLegacyTdVehiclesIfEmpty();
+    if (legacyImported > 0) return legacyImported;
+  }
 
   let created = 0;
   for (const row of FLEET_SEED) {
