@@ -29,7 +29,19 @@ const formLimiter = rateLimit({
 });
 
 app.get('/health', (req, res) => {
-  res.json({ success: true, message: 'API is healthy', timestamp: new Date().toISOString() });
+  res.json({
+    success: true,
+    message: 'API is healthy',
+    timestamp: new Date().toISOString(),
+    version: '2.1.0',
+    modules: {
+      tdLeadCrm: true,
+      tdStaffUsers: true,
+      tdLeadReports: true,
+      customerPortal: true,
+      whatsappOtp: true
+    }
+  });
 });
 
 app.use('/api/v1/public', routes.public);
