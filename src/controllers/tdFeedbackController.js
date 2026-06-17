@@ -30,8 +30,7 @@ function formatFeedback(doc) {
 
 exports.getByBooking = asyncHandler(async (req, res) => {
   const doc = await TDFeedback.findOne({ bookingId: req.params.bookingId });
-  if (!doc) throw new ApiError(404, 'Feedback not found');
-  return successResponse(res, formatFeedback(doc));
+  return successResponse(res, doc ? formatFeedback(doc) : null);
 });
 
 exports.submitFeedback = asyncHandler(async (req, res) => {
@@ -85,5 +84,14 @@ exports.submitFeedback = asyncHandler(async (req, res) => {
     leadId = lead._id;
   }
 
-  return successResponse(res, { feedback: formatFeedback(doc), leadId }, 'Feedback saved', 201);
+  const message = leadId
+    ? 'Thank you! Customer feedback saved and added to Leads.'
+    : 'Thank you for your feedback!';
+
+  return res.status(201).json({
+    success: true,
+    data: formatFeedback(doc),
+    leadId: leadId ? String(leadId) : undefined,
+    message,
+  });
 });
