@@ -266,4 +266,71 @@ exports.getCrmStages = asyncHandler(async (req, res) => {
   return successResponse(res, CRM_LEAD_STAGES);
 });
 
+exports.createCrmLead = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+
+  const {
+    name,
+    mobile,
+    email,
+    city,
+    otherCity,
+    model,
+    interest,
+    source,
+    remarks,
+    financeNeeded,
+    exchangeNeeded,
+    executiveId,
+  } = req.body;
+
+  let assignedTo = null;
+
+  if (req.admin.role === 'executive') {
+    assignedTo = req.admin._id;
+  } else if (executiveId) {
+    const assignee = await TDStaff.findOne({
+      _id: executiveId,
+      active: true,
+      designation: { $in: STAFF_DESIGNATIONS },
+    }).select('_id name');
+    if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
+    assignedTo = assignee._id;
+  }
+
+  const leadSource =
+    source?.trim() ||
+    (req.admin.role === 'executive' ? 'Executive' : 'Walk-in');
+
+  const lead = await Lead.create({
+    name: String(name).trim(),
+    mobile: String(mobile).trim(),
+    email: email || undefined,
+    city: String(city).trim(),
+    otherCity: otherCity?.trim() || undefined,
+    model: String(model).trim(),
+    interest: interest?.trim() || undefined,
+    source: leadSource,
+    status: 'Enquiry',
+    assignedTo: assignedTo || undefined,
+    remarks: remarks?.trim() || undefined,
+    financeNeeded: Boolean(financeNeeded),
+    exchangeNeeded: Boolean(exchangeNeeded),
+  });
+
+  const assignNote = assignedTo
+    ? ` · assigned to ${req.admin.role === 'executive' ? 'self' : 'executive'}`
+    : '';
+
+  await LeadStageHistory.create({
+    leadId: lead._id,
+    toStage: 'Enquiry',
+    changedBy: req.admin._id,
+    reason: `Lead created by ${req.admin.name}${assignNote}`,
+  });
+
+  await lead.populate('assignedTo', 'name email role designation');
+  return successResponse(res, lead, 'Lead created successfully', 201);
+});
+
 module.exports.buildLeadQuery = buildLeadQuery;
