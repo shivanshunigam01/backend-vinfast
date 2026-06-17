@@ -10,6 +10,7 @@ const tdVehiclesRoutes = require('./tdVehicles');
 const tdUsersRoutes = require('./tdUsers');
 const tdSlotsRoutes = require('./tdSlots');
 const tdFeedbackRoutes = require('./tdFeedback');
+const tdLeadsRoutes = require('./tdLeads');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
@@ -47,6 +48,7 @@ router.use('/td/vehicles', tdVehiclesRoutes);
 router.use('/td/users', tdUsersRoutes);
 router.use('/td/slots', tdSlotsRoutes);
 router.use('/td/feedback', tdFeedbackRoutes);
+router.use('/td/leads', tdLeadsRoutes);
 router.get('/td/reports/admin', tdReportsController.getAdminReport);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 

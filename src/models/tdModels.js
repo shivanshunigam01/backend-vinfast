@@ -11,5 +11,7 @@ require('./TDSlotConfig');
 require('./TDFeedback');
 require('./TestDrive');
 require('./Admin');
+require('./LeadFollowUp');
+require('./LeadStageHistory');
 
 module.exports = {};

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { leadStatuses, productModels } = require('../constants/enums');
+const { productModels } = require('../constants/enums');
 
 const leadSchema = new mongoose.Schema(
   {
@@ -11,8 +11,8 @@ const leadSchema = new mongoose.Schema(
     model: { type: String, enum: productModels, required: true },
     interest: { type: String, trim: true },
     source: { type: String, trim: true, default: 'Website' },
-    status: { type: String, enum: leadStatuses, default: 'New Lead' },
-    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    status: { type: String, trim: true, default: 'Enquiry' },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     nextFollowUp: { type: Date },
     remarks: { type: String, trim: true },
     financeNeeded: { type: Boolean, default: false },
@@ -21,10 +21,9 @@ const leadSchema = new mongoose.Schema(
     utmMedium: String,
     utmCampaign: String,
     pageSource: String,
-    // Used for de-dup/upsert when leads come from external providers (e.g. Meta webhook).
     metaUniqueId: { type: String, index: true, trim: true },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model('Lead', leadSchema);

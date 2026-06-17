@@ -5,6 +5,7 @@ const validate = require('../../middleware/validate');
 const tdUsersController = require('../../controllers/tdUsersController');
 const { mongoIdParam } = require('../../validators/adminValidators');
 
+router.get('/assignable', tdUsersController.listAssignable);
 router.get('/', tdUsersController.listUsers);
 router.post('/', tdUsersController.createUser);
 router.put('/:id', mongoIdParam, validate, tdUsersController.updateUser);

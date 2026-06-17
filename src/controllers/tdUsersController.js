@@ -101,3 +101,25 @@ exports.patchUser = asyncHandler(async (req, res) => {
   await doc.save();
   return successResponse(res, formatStaff(doc), 'User updated');
 });
+
+async function listAssignableStaff() {
+  const docs = await TDStaff.find({
+    designation: { $in: STAFF_DESIGNATIONS },
+    active: true,
+  })
+    .select('name email role designation active')
+    .sort({ designation: 1, name: 1 })
+    .lean();
+
+  return docs.map((row) => ({
+    ...row,
+    designationLabel: DESIGNATION_LABELS[row.designation] || row.designation,
+  }));
+}
+
+exports.listAssignable = asyncHandler(async (req, res) => {
+  const data = await listAssignableStaff();
+  return successResponse(res, data);
+});
+
+exports.listAssignableStaff = listAssignableStaff;

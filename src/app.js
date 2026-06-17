@@ -50,6 +50,14 @@ const healthPayload = () => ({
   service: 'Patliputra Group Showroom API',
   message: 'Server is healthy very healthy',
   timestamp: new Date().toISOString(),
+  version: '2.1.0',
+  modules: {
+    tdLeadCrm: true,
+    tdStaffUsers: true,
+    tdLeadReports: true,
+    customerPortal: true,
+    whatsappOtp: true,
+  },
 });
 
 /** Root — for load balancers / uptime checks when proxy forwards `/health` only. */
