@@ -6,6 +6,7 @@ const {
   yesNo,
   purchaseTimelines,
 } = require('../constants/enums');
+const { isValidLeadModel } = require('../utils/leadModel');
 
 const mobileRule = body('mobile')
   .matches(/^[6-9]\d{9}$/)
@@ -17,8 +18,12 @@ exports.leadValidator = [
   body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
   mobileRule,
   body('model')
-    .isIn(productModels)
-    .withMessage(`Model must be one of: ${productModels.join(', ')}`),
+    .custom((value) => {
+      if (!isValidLeadModel(value)) {
+        throw new Error(`Model must be one of: ${productModels.join(', ')} or a valid trim label`);
+      }
+      return true;
+    }),
   body('city').trim().notEmpty().withMessage('City is required'),
   body('otherCity').custom((value, { req }) => {
     if (req.body.city === 'Other' && !String(value || '').trim()) {

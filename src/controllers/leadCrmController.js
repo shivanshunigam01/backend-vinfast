@@ -1,6 +1,7 @@
 require('../models/tdModels');
 
 const Lead = require('../models/Lead');
+const { normalizeLeadModelForStorage } = require('../utils/leadModel');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const TDStaff = require('../models/TDStaff');
@@ -308,7 +309,7 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
     email: email || undefined,
     city: String(city).trim(),
     otherCity: otherCity?.trim() || undefined,
-    model: String(model).trim(),
+    model: normalizeLeadModelForStorage(model),
     interest: interest?.trim() || undefined,
     source: leadSource,
     status: 'Enquiry',

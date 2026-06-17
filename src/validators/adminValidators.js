@@ -1,5 +1,6 @@
 const { body, param } = require('express-validator');
 const { adminRoles, resourceTypes, productModels } = require('../constants/enums');
+const { isValidLeadModel } = require('../utils/leadModel');
 
 const mobileRule = body('mobile')
   .matches(/^[6-9]\d{9}$/)
@@ -45,9 +46,10 @@ exports.crmCreateLeadValidator = [
     .notEmpty()
     .withMessage('Model is required')
     .custom((value) => {
-      const base = String(value).split(' — ')[0].trim();
-      if (!productModels.includes(base)) {
-        throw new Error(`Model must be one of: ${productModels.join(', ')}`);
+      if (!isValidLeadModel(value)) {
+        throw new Error(
+          'Model must be a VinFast model line or trim (e.g. VF 7, VF 7 Wind, VF 6 Earth, VF MPV 7)',
+        );
       }
       return true;
     }),

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { productModels } = require('../constants/enums');
+const { isValidLeadModel } = require('../utils/leadModel');
 
 const leadSchema = new mongoose.Schema(
   {
@@ -8,7 +8,15 @@ const leadSchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true },
     city: { type: String, required: true, trim: true },
     otherCity: { type: String, trim: true },
-    model: { type: String, enum: productModels, required: true },
+    model: {
+      type: String,
+      required: true,
+      trim: true,
+      validate: {
+        validator: isValidLeadModel,
+        message: 'Invalid model',
+      },
+    },
     interest: { type: String, trim: true },
     source: { type: String, trim: true, default: 'Website' },
     status: { type: String, trim: true, default: 'Enquiry' },
