@@ -12,6 +12,7 @@ const tdSlotsRoutes = require('./tdSlots');
 const tdFeedbackRoutes = require('./tdFeedback');
 const tdLogsRoutes = require('./tdLogs');
 const tdLeadsRoutes = require('./tdLeads');
+const crmLeadsRoutes = require('./crmLeads');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
@@ -51,6 +52,9 @@ router.use('/td/slots', tdSlotsRoutes);
 router.use('/td/feedback', tdFeedbackRoutes);
 router.use('/td/logs', tdLogsRoutes);
 router.use('/td/leads', tdLeadsRoutes);
+
+// Standalone Lead CRM module (/api/v1/admin/crm/*)
+router.use('/crm/leads', crmLeadsRoutes);
 router.get('/td/reports/admin', tdReportsController.getAdminReport);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 

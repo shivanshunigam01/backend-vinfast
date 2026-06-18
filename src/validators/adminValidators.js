@@ -59,4 +59,7 @@ exports.crmCreateLeadValidator = [
   body('financeNeeded').optional().isBoolean(),
   body('exchangeNeeded').optional().isBoolean(),
   body('executiveId').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid executive id'),
+  body('subCustomerName').optional({ values: 'falsy' }).trim(),
+  body('subCustomerMobile').optional({ values: 'falsy' }).trim(),
+  body('vehicleRegistration').optional({ values: 'falsy' }).trim(),
 ];

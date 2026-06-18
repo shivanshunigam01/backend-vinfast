@@ -53,6 +53,7 @@ const healthPayload = () => ({
   timestamp: new Date().toISOString(),
   version: '2.1.0',
   modules: {
+    pvLeadCrm: true,
     tdLeadCrm: true,
     tdStaffUsers: true,
     tdLeadReports: true,

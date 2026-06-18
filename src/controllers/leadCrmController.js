@@ -1,7 +1,11 @@
 require('../models/tdModels');
+require('../models/PVCustomer');
+require('../models/Counter');
 
 const Lead = require('../models/Lead');
 const { normalizeLeadModelForStorage } = require('../utils/leadModel');
+const { intakePvLead } = require('../utils/pvLeadIntake');
+const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const TDStaff = require('../models/TDStaff');
@@ -12,6 +16,12 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { CRM_LEAD_STAGES, isCrmStaffRole } = require('../constants/leadStages');
 const { listAssignableStaff } = require('./tdUsersController');
+
+const LEAD_POPULATE = [
+  { path: 'assignedTo', select: 'name email role designation' },
+  { path: 'pvCustomerId', select: 'customerId name mobile email city isSubCustomer parentCustomer vehicleRegistration' },
+  { path: 'subCustomerId', select: 'customerId name mobile vehicleRegistration isSubCustomer' },
+];
 
 function assertCrmAccess(admin) {
   if (!isCrmStaffRole(admin.role)) {
@@ -33,6 +43,29 @@ function assertLeadReadable(lead, admin) {
       throw new ApiError(403, 'This lead is not assigned to you');
     }
   }
+}
+
+async function ensureLeadIds(doc) {
+  if (!doc) return doc;
+  if (doc.leadId && doc.opportunityId) return doc;
+  await assignPvIds(doc);
+  await doc.save();
+  return doc;
+}
+
+function formatCrmLead(doc) {
+  const plain = doc.toObject ? doc.toObject() : doc;
+  const customer = plain.pvCustomerId;
+  const subCustomer = plain.subCustomerId;
+  return {
+    ...plain,
+    customerId: customer?.customerId || null,
+    customerName: customer?.name || plain.name,
+    parentCustomerId: customer?.customerId || null,
+    subCustomerCode: subCustomer?.customerId || null,
+    subCustomerName: subCustomer?.name || null,
+    vehicleRegistration: plain.vehicleRegistration || subCustomer?.vehicleRegistration || null,
+  };
 }
 
 function buildLeadQuery(admin, queryParams = {}) {
@@ -62,7 +95,15 @@ function buildLeadQuery(admin, queryParams = {}) {
     const regex = new RegExp(queryParams.search.trim(), 'i');
     query.$and = query.$and || [];
     query.$and.push({
-      $or: [{ name: regex }, { mobile: regex }, { email: regex }, { city: regex }, { remarks: regex }],
+      $or: [
+        { name: regex },
+        { mobile: regex },
+        { email: regex },
+        { city: regex },
+        { remarks: regex },
+        { leadId: regex },
+        { opportunityId: regex },
+      ],
     });
   }
   if (queryParams.followUpDue === 'true') {
@@ -79,22 +120,29 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
 
   const [docs, total] = await Promise.all([
     Lead.find(query)
-      .populate('assignedTo', 'name email role designation')
+      .populate(LEAD_POPULATE)
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(limit),
     Lead.countDocuments(query),
   ]);
 
-  return successResponse(res, docs, undefined, 200, { page, limit, total, stages: CRM_LEAD_STAGES });
+  const data = [];
+  for (const doc of docs) {
+    await ensureLeadIds(doc);
+    data.push(formatCrmLead(doc));
+  }
+
+  return successResponse(res, data, undefined, 200, { page, limit, total, stages: CRM_LEAD_STAGES });
 });
 
 exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  const lead = await Lead.findById(req.params.id).populate('assignedTo', 'name email role designation');
+  let lead = await Lead.findById(req.params.id).populate(LEAD_POPULATE);
   assertLeadReadable(lead, req.admin);
+  await ensureLeadIds(lead);
 
-  const [history, followUps] = await Promise.all([
+  const [history, followUps, siblingLeads] = await Promise.all([
     LeadStageHistory.find({ leadId: lead._id })
       .populate('changedBy', 'name email')
       .sort({ createdAt: -1 })
@@ -103,9 +151,21 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 })
       .limit(100),
+    lead.pvCustomerId
+      ? Lead.find({ pvCustomerId: lead.pvCustomerId._id || lead.pvCustomerId })
+          .select('leadId opportunityId model status source createdAt')
+          .sort({ createdAt: -1 })
+          .limit(20)
+      : [],
   ]);
 
-  return successResponse(res, { lead, history, followUps, stages: CRM_LEAD_STAGES });
+  return successResponse(res, {
+    lead: formatCrmLead(lead),
+    history,
+    followUps,
+    siblingLeads,
+    stages: CRM_LEAD_STAGES,
+  });
 });
 
 exports.updateLeadStage = asyncHandler(async (req, res) => {
@@ -121,7 +181,8 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
 
   const prevStage = lead.status;
   if (prevStage === stage) {
-    return successResponse(res, lead, 'Stage unchanged');
+    await lead.populate(LEAD_POPULATE);
+    return successResponse(res, formatCrmLead(lead), 'Stage unchanged');
   }
 
   lead.status = stage;
@@ -135,8 +196,8 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
     reason: reason || `Stage updated to ${stage}`,
   });
 
-  await lead.populate('assignedTo', 'name email role designation');
-  return successResponse(res, lead, `Lead moved to ${stage}`);
+  await lead.populate(LEAD_POPULATE);
+  return successResponse(res, formatCrmLead(lead), `Lead moved to ${stage}`);
 });
 
 exports.updateLeadRemarks = asyncHandler(async (req, res) => {
@@ -149,9 +210,9 @@ exports.updateLeadRemarks = asyncHandler(async (req, res) => {
 
   lead.remarks = String(remarks).trim();
   await lead.save();
-  await lead.populate('assignedTo', 'name email role designation');
+  await lead.populate(LEAD_POPULATE);
 
-  return successResponse(res, lead, 'Remarks saved');
+  return successResponse(res, formatCrmLead(lead), 'Remarks saved');
 });
 
 exports.addFollowUp = asyncHandler(async (req, res) => {
@@ -241,7 +302,7 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
   await Lead.updateOne({ _id: lead._id }, update);
 
-  const updated = await Lead.findById(lead._id).populate('assignedTo', 'name email role designation');
+  const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
   if (!updated) throw new ApiError(404, 'Lead not found');
 
   const assignLabel = assignee ? assignee.name : 'Unassigned';
@@ -257,7 +318,7 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
   return successResponse(
     res,
-    updated,
+    formatCrmLead(updated),
     executiveId ? `Lead assigned to ${assignLabel}` : 'Lead unassigned',
   );
 });
@@ -265,6 +326,11 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 exports.getCrmStages = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   return successResponse(res, CRM_LEAD_STAGES);
+});
+
+exports.getCrmSources = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  return successResponse(res, ['Website', 'Meta Ads', 'Test Drive', 'Enquiry', 'Walk-in', 'Executive', 'Referral', 'WhatsApp']);
 });
 
 exports.createCrmLead = asyncHandler(async (req, res) => {
@@ -283,6 +349,9 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
     financeNeeded,
     exchangeNeeded,
     executiveId,
+    subCustomerName,
+    subCustomerMobile,
+    vehicleRegistration,
   } = req.body;
 
   let assignedTo = null;
@@ -303,7 +372,7 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
     source?.trim() ||
     (req.admin.role === 'executive' ? 'Executive' : 'Walk-in');
 
-  const lead = await Lead.create({
+  const { lead } = await intakePvLead({
     name: String(name).trim(),
     mobile: String(mobile).trim(),
     email: email || undefined,
@@ -315,23 +384,23 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
     status: 'Enquiry',
     assignedTo: assignedTo || undefined,
     remarks: remarks?.trim() || undefined,
-    financeNeeded: Boolean(financeNeeded),
-    exchangeNeeded: Boolean(exchangeNeeded),
-  });
-
-  const assignNote = assignedTo
-    ? ` · assigned to ${req.admin.role === 'executive' ? 'self' : 'executive'}`
-    : '';
-
-  await LeadStageHistory.create({
-    leadId: lead._id,
-    toStage: 'Enquiry',
+    financeNeeded,
+    exchangeNeeded,
+    vehicleRegistration: vehicleRegistration?.trim() || undefined,
+    subCustomer: subCustomerName
+      ? {
+          name: String(subCustomerName).trim(),
+          mobile: subCustomerMobile?.trim() || String(mobile).trim(),
+          vehicleRegistration: vehicleRegistration?.trim() || undefined,
+        }
+      : undefined,
     changedBy: req.admin._id,
-    reason: `Lead created by ${req.admin.name}${assignNote}`,
+    historyReason: `Lead created by ${req.admin.name}${assignedTo ? ' and assigned' : ''}`,
   });
 
-  await lead.populate('assignedTo', 'name email role designation');
-  return successResponse(res, lead, 'Lead created successfully', 201);
+  await lead.populate(LEAD_POPULATE);
+  return successResponse(res, formatCrmLead(lead), 'Lead created successfully', 201);
 });
 
 module.exports.buildLeadQuery = buildLeadQuery;
+module.exports.formatCrmLead = formatCrmLead;

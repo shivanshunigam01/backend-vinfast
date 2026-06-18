@@ -136,35 +136,27 @@ async function upsertLeadFromWebhook(payload) {
   const { envelope, body, flowToken } = normalizeProviderEnvelope(payload);
   const metaUniqueId = envelope.uniqueId || envelope._id || envelope.uniqueid || undefined;
 
-  const leadPatch = {
+  const mobile = String(body.screen_0_Contact_No_1 || body.whatsapp_number || flowToken.MobileNumber || '').trim();
+  if (!mobile) {
+    throw new ApiError(400, 'Meta payload missing mobile number.');
+  }
+
+  const { intakePvLead } = require('../utils/pvLeadIntake');
+  const { lead } = await intakePvLead({
     metaUniqueId: metaUniqueId ? String(metaUniqueId).trim() : undefined,
     name: String(body.screen_0_Name_0 || flowToken.Name || '').trim() || 'Meta Lead',
-    mobile: String(body.screen_0_Contact_No_1 || body.whatsapp_number || flowToken.MobileNumber || '').trim(),
+    mobile,
     email: body.screen_0_Email_ID_4 ? String(body.screen_0_Email_ID_4).trim() : undefined,
     city: String(stripAfterUnderscore(body.screen_0_State_2) || '').trim() || 'Unknown',
     model: normalizeModel(body.screen_0_Interested_Model_5),
     source: 'Meta Ads',
+    status: 'Enquiry',
     remarks: metaUniqueId ? `Meta webhook: ${String(metaUniqueId)}` : undefined,
-    financeNeeded: false,
-    exchangeNeeded: false,
     pageSource: envelope.namespace ? String(envelope.namespace) : undefined,
-  };
+    historyReason: 'Lead created from Meta Ads',
+  });
 
-  if (!leadPatch.mobile) {
-    throw new ApiError(400, 'Meta payload missing mobile number.');
-  }
-  if (!productModels.includes(leadPatch.model)) {
-    leadPatch.model = 'VF 7';
-  }
-
-  if (leadPatch.metaUniqueId) {
-    return await Lead.findOneAndUpdate(
-      { metaUniqueId: leadPatch.metaUniqueId },
-      { $set: leadPatch },
-      { upsert: true, new: true, runValidators: true },
-    );
-  }
-  return await Lead.create(leadPatch);
+  return lead;
 }
 
 async function upsertMetaLeadDoc(payload, leadDoc) {
