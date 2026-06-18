@@ -7,7 +7,7 @@ const TestDrive = require('../models/TestDrive');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const { normalizeLeadModelForStorage } = require('./leadModel');
 const { intakePvLead } = require('./pvLeadIntake');
-const { toObjectId, normalizeEmail } = require('./leadAssignment');
+const { toObjectId, normalizeEmail, touchLeadActivity } = require('./leadAssignment');
 
 const POST_TD_STAGES = new Set(['Negotiation', 'Booking', 'Delivered', 'Lost']);
 
@@ -72,6 +72,7 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
       lead.assignedToEmail = executiveEmail;
       lead.source = 'Test Drive';
       lead.remarks = remarks;
+      touchLeadActivity(lead);
       await lead.save();
     }
   }

@@ -24,6 +24,8 @@ const {
   leadAssignedToStaff,
   applyLeadAssignment,
   repairExecutiveLeadAssignments,
+  touchLeadActivity,
+  CRM_LEAD_LIST_SORT,
 } = require('../utils/leadAssignment');
 
 const LEAD_POPULATE = [
@@ -55,7 +57,11 @@ async function ensureLeadIds(doc) {
   if (!doc) return doc;
   if (doc.leadId && doc.opportunityId) return doc;
   await assignPvIds(doc);
-  await doc.save();
+  await Lead.updateOne(
+    { _id: doc._id },
+    { $set: { leadId: doc.leadId, opportunityId: doc.opportunityId } },
+    { timestamps: false },
+  );
   return doc;
 }
 
@@ -134,7 +140,7 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
   const [docs, total] = await Promise.all([
     Lead.find(query)
       .populate(LEAD_POPULATE)
-      .sort({ updatedAt: -1, createdAt: -1 })
+      .sort(CRM_LEAD_LIST_SORT)
       .skip(skip)
       .limit(limit),
     Lead.countDocuments(query),
@@ -199,6 +205,7 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   }
 
   lead.status = stage;
+  touchLeadActivity(lead);
   await lead.save();
 
   await LeadStageHistory.create({
@@ -222,6 +229,7 @@ exports.updateLeadRemarks = asyncHandler(async (req, res) => {
   assertLeadReadable(lead, req.admin);
 
   lead.remarks = String(remarks).trim();
+  touchLeadActivity(lead);
   await lead.save();
   await lead.populate(LEAD_POPULATE);
 
@@ -251,8 +259,9 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
 
   if (scheduled && !isCompleted) {
     lead.nextFollowUp = scheduled;
-    await lead.save();
   }
+  touchLeadActivity(lead);
+  await lead.save();
 
   await followUp.populate('createdBy', 'name email');
   return successResponse(res, followUp, 'Follow-up logged', 201);
@@ -276,6 +285,8 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
   }
 
   await followUp.save();
+  touchLeadActivity(lead);
+  await lead.save();
   await followUp.populate('createdBy', 'name email');
 
   return successResponse(res, followUp, 'Follow-up updated');
@@ -314,20 +325,8 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
   } else {
     applyLeadAssignment(lead, null);
   }
+  touchLeadActivity(lead);
   await lead.save();
-
-  if (assignee?.email) {
-    const assigneeOid = toObjectId(assignee._id);
-    const email = String(assignee.email).trim().toLowerCase();
-    await Lead.updateMany(
-      {
-        $or: [
-          ...(assigneeOid ? [{ assignedTo: assigneeOid }, { assignedTo: String(assignee._id) }] : [{ assignedTo: String(assignee._id) }]),
-        ],
-      },
-      { $set: { assignedToEmail: email, assignedTo: assigneeOid || assignee._id } },
-    );
-  }
 
   const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
   if (!updated) throw new ApiError(404, 'Lead not found');

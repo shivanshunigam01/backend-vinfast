@@ -16,6 +16,14 @@ function normalizeEmail(email) {
   return email ? String(email).trim().toLowerCase() : '';
 }
 
+function touchLeadActivity(lead, at = new Date()) {
+  if (!lead) return;
+  lead.lastActivityAt = at;
+}
+
+/** CRM list sort — recently assigned/edited leads first. */
+const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
+
 /** Field executives (not managers/superadmins) only see their own assigned leads. */
 function isExecutiveScopedUser(admin) {
   if (!admin) return false;
@@ -25,9 +33,6 @@ function isExecutiveScopedUser(admin) {
   return admin.role === 'executive' || admin.designation === 'sales_executive';
 }
 
-/**
- * All TDStaff ids that represent this logged-in user (handles duplicate legacy accounts).
- */
 async function resolveStaffIdsForUser(admin) {
   const ids = new Set();
   if (admin?._id) ids.add(String(admin._id));
@@ -58,9 +63,6 @@ function assignedToIdsFilter(staffIds, staffEmail) {
   return { $or: or };
 }
 
-/**
- * Mongo filter for leads assigned to a TDStaff user (by id and email).
- */
 function assignedToStaffFilter(staffId, staffEmail) {
   return assignedToIdsFilter(staffId ? [String(staffId)] : [], staffEmail);
 }
@@ -89,7 +91,7 @@ function applyLeadAssignment(lead, assignee) {
   }
 }
 
-/** Backfill assignedToEmail for leads already assigned to this executive. */
+/** Backfill missing assignedToEmail only — does not bump updatedAt. */
 async function repairExecutiveLeadAssignments(admin) {
   const email = normalizeEmail(admin?.email);
   if (!email) return;
@@ -106,14 +108,28 @@ async function repairExecutiveLeadAssignments(admin) {
   const primaryId = toObjectId(admin._id) || admin._id;
 
   await Lead.updateMany(
-    { $or: [...idOr, { assignedToEmail: email }] },
+    {
+      $and: [
+        { $or: idOr },
+        {
+          $or: [
+            { assignedToEmail: { $exists: false } },
+            { assignedToEmail: null },
+            { assignedToEmail: '' },
+          ],
+        },
+      ],
+    },
     { $set: { assignedToEmail: email, assignedTo: primaryId } },
+    { timestamps: false },
   );
 }
 
 module.exports = {
   toObjectId,
   normalizeEmail,
+  touchLeadActivity,
+  CRM_LEAD_LIST_SORT,
   isExecutiveScopedUser,
   resolveStaffIdsForUser,
   assignedToStaffFilter,

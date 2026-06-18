@@ -29,6 +29,7 @@ const leadSchema = new mongoose.Schema(
     status: { type: String, trim: true, default: 'Enquiry' },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     assignedToEmail: { type: String, trim: true, lowercase: true, index: true },
+    lastActivityAt: { type: Date, index: true },
     nextFollowUp: { type: Date },
     remarks: { type: String, trim: true },
     financeNeeded: { type: Boolean, default: false },

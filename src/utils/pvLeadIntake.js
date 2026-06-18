@@ -2,6 +2,7 @@ const PVCustomer = require('../models/PVCustomer');
 const Lead = require('../models/Lead');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const { normalizeLeadModelForStorage } = require('./leadModel');
+const { touchLeadActivity } = require('./leadAssignment');
 const { nextCustomerId, nextLeadId, nextOpportunityId } = require('./pvIdGenerator');
 
 function pickStr(...values) {
@@ -159,6 +160,7 @@ async function intakePvLead(input = {}) {
     enquiryId: enquiryId || undefined,
     testDriveId: testDriveId || undefined,
     tdBookingId: tdBookingId || undefined,
+    lastActivityAt: new Date(),
   };
 
   let lead = null;
@@ -172,6 +174,7 @@ async function intakePvLead(input = {}) {
 
   if (lead) {
     Object.assign(lead, leadPatch);
+    touchLeadActivity(lead);
     if (!lead.leadId || !lead.opportunityId) await assignPvIds(lead);
     await lead.save();
   } else {
