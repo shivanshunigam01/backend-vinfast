@@ -12,6 +12,25 @@ const { assignedToStaffFilter } = require('./leadAssignment');
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
 
+const LEAD_AGE_BUCKET_ORDER = ['0-3 Days', '4-7 Days', '8-15 Days', '15+ Days'];
+
+function leadAgeInDays(createdAt) {
+  if (!createdAt) return 0;
+  const start = new Date(createdAt);
+  const now = new Date();
+  if (Number.isNaN(start.getTime())) return 0;
+  start.setHours(0, 0, 0, 0);
+  now.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((now - start) / (24 * 60 * 60 * 1000)));
+}
+
+function leadAgeBucket(ageDays) {
+  if (ageDays <= 3) return '0-3 Days';
+  if (ageDays <= 7) return '4-7 Days';
+  if (ageDays <= 15) return '8-15 Days';
+  return '15+ Days';
+}
+
 function buildLeadDateFilter(from, to, field = 'createdAt') {
   const filter = {};
   if (from || to) {
@@ -364,6 +383,8 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   const leadDetailRows = leads.map((l) => {
     const fu = followUpByLead.get(String(l._id));
     const leadFeedback = feedbackRows.find((f) => f.leadId === String(l._id));
+    const ageDays = leadAgeInDays(l.createdAt);
+    const ageBucket = leadAgeBucket(ageDays);
     return {
       leadId: String(l._id),
       name: l.name,
@@ -382,10 +403,21 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
       feedbackRating: leadFeedback?.overallRating ?? null,
       purchaseIntention: leadFeedback?.purchaseIntention ?? null,
       converted: isConverted(l.status),
+      ageDays,
+      ageBucket,
       createdAt: l.createdAt,
       updatedAt: l.updatedAt
     };
   });
+
+  const ageingCounts = Object.fromEntries(LEAD_AGE_BUCKET_ORDER.map((b) => [b, 0]));
+  for (const row of leadDetailRows) {
+    ageingCounts[row.ageBucket] = (ageingCounts[row.ageBucket] || 0) + 1;
+  }
+  const leadAgeing = LEAD_AGE_BUCKET_ORDER.map((bucket) => ({
+    bucket,
+    count: ageingCounts[bucket] || 0,
+  }));
 
   const avgFeedback =
     feedbacks.length > 0
@@ -435,6 +467,7 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
     activityLog: activityLog.slice(0, 150),
     feedbackRows,
     leadDetailRows,
+    leadAgeing,
     stages: CRM_LEAD_STAGES
   };
 }
