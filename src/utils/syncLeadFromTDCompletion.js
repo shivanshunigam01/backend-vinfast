@@ -2,11 +2,12 @@ require('../models/tdModels');
 
 const Lead = require('../models/Lead');
 const TDCustomer = require('../models/TDCustomer');
+const TDStaff = require('../models/TDStaff');
 const TestDrive = require('../models/TestDrive');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const { normalizeLeadModelForStorage } = require('./leadModel');
 const { intakePvLead } = require('./pvLeadIntake');
-const { toObjectId } = require('./leadAssignment');
+const { toObjectId, normalizeEmail } = require('./leadAssignment');
 
 const POST_TD_STAGES = new Set(['Negotiation', 'Booking', 'Delivered', 'Lost']);
 
@@ -39,6 +40,11 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
   const targetStatus = 'Test Drive Completed';
 
   const executiveOid = toObjectId(executiveId) || executiveId;
+  let executiveEmail;
+  if (executiveOid) {
+    const execDoc = await TDStaff.findById(executiveOid).select('email').lean();
+    executiveEmail = normalizeEmail(execDoc?.email);
+  }
 
   const { lead } = await intakePvLead({
     name,
@@ -50,6 +56,7 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
     source: 'Test Drive',
     status: targetStatus,
     assignedTo: executiveOid,
+    assignedToEmail: executiveEmail,
     remarks,
     tdBookingId: booking?._id,
     testDriveId: booking?.testDriveId,
@@ -62,6 +69,7 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
     if (prevStatus !== targetStatus) {
       lead.status = targetStatus;
       lead.assignedTo = executiveOid;
+      lead.assignedToEmail = executiveEmail;
       lead.source = 'Test Drive';
       lead.remarks = remarks;
       await lead.save();

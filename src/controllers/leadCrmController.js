@@ -20,7 +20,10 @@ const {
   toObjectId,
   isExecutiveScopedUser,
   assignedToStaffFilter,
+  assignedToStaffFilterAsync,
   leadAssignedToStaff,
+  applyLeadAssignment,
+  repairExecutiveLeadAssignments,
 } = require('../utils/leadAssignment');
 
 const LEAD_POPULATE = [
@@ -43,7 +46,7 @@ function assertCanAssignLeads(admin) {
 
 function assertLeadReadable(lead, admin) {
   if (!lead) throw new ApiError(404, 'Lead not found');
-  if (isExecutiveScopedUser(admin) && !leadAssignedToStaff(lead, admin._id)) {
+  if (isExecutiveScopedUser(admin) && !leadAssignedToStaff(lead, admin._id, admin.email)) {
     throw new ApiError(403, 'This lead is not assigned to you');
   }
 }
@@ -71,22 +74,23 @@ function formatCrmLead(doc) {
   };
 }
 
-function buildLeadQuery(admin, queryParams = {}) {
+async function buildLeadQuery(admin, queryParams = {}) {
   const query = {};
   if (isExecutiveScopedUser(admin)) {
     query.$and = query.$and || [];
-    query.$and.push(assignedToStaffFilter(admin._id));
+    query.$and.push(await assignedToStaffFilterAsync(admin));
   } else if (queryParams.assignedTo) {
     if (queryParams.assignedTo === 'unassigned') {
       query.$and = query.$and || [];
       query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
     } else {
+      const assignee = await TDStaff.findById(queryParams.assignedTo).select('email').lean();
       query.$and = query.$and || [];
-      query.$and.push(assignedToStaffFilter(queryParams.assignedTo));
+      query.$and.push(assignedToStaffFilter(queryParams.assignedTo, assignee?.email));
     }
   } else if (queryParams.mine === 'true') {
     query.$and = query.$and || [];
-    query.$and.push(assignedToStaffFilter(admin._id));
+    query.$and.push(await assignedToStaffFilterAsync(admin));
   }
 
   if (queryParams.status) query.status = queryParams.status;
@@ -121,8 +125,11 @@ function buildLeadQuery(admin, queryParams = {}) {
 
 exports.getCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
+  if (isExecutiveScopedUser(req.admin)) {
+    await repairExecutiveLeadAssignments(req.admin);
+  }
   const { page, limit, skip } = buildPagination(req);
-  const query = buildLeadQuery(req.admin, req.query);
+  const query = await buildLeadQuery(req.admin, req.query);
 
   const [docs, total] = await Promise.all([
     Lead.find(query)
@@ -303,11 +310,24 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     : null;
 
   if (executiveId) {
-    lead.assignedTo = assignee._id;
+    applyLeadAssignment(lead, assignee);
   } else {
-    lead.assignedTo = undefined;
+    applyLeadAssignment(lead, null);
   }
   await lead.save();
+
+  if (assignee?.email) {
+    const assigneeOid = toObjectId(assignee._id);
+    const email = String(assignee.email).trim().toLowerCase();
+    await Lead.updateMany(
+      {
+        $or: [
+          ...(assigneeOid ? [{ assignedTo: assigneeOid }, { assignedTo: String(assignee._id) }] : [{ assignedTo: String(assignee._id) }]),
+        ],
+      },
+      { $set: { assignedToEmail: email, assignedTo: assigneeOid || assignee._id } },
+    );
+  }
 
   const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
   if (!updated) throw new ApiError(404, 'Lead not found');
@@ -362,17 +382,20 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
   } = req.body;
 
   let assignedTo = null;
+  let assignedToEmail;
 
   if (req.admin.role === 'executive') {
     assignedTo = toObjectId(req.admin._id) || req.admin._id;
+    assignedToEmail = req.admin.email;
   } else if (executiveId) {
     const assignee = await TDStaff.findOne({
       _id: executiveId,
       active: true,
       designation: { $in: STAFF_DESIGNATIONS },
-    }).select('_id name');
+    }).select('_id name email');
     if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
     assignedTo = assignee._id;
+    assignedToEmail = assignee.email;
   }
 
   const leadSource =
@@ -390,6 +413,7 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
     source: leadSource,
     status: 'Enquiry',
     assignedTo: assignedTo || undefined,
+    assignedToEmail: assignedToEmail || undefined,
     remarks: remarks?.trim() || undefined,
     financeNeeded,
     exchangeNeeded,
