@@ -16,6 +16,12 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { CRM_LEAD_STAGES, isCrmStaffRole } = require('../constants/leadStages');
 const { listAssignableStaff } = require('./tdUsersController');
+const {
+  toObjectId,
+  isExecutiveScopedUser,
+  assignedToStaffFilter,
+  leadAssignedToStaff,
+} = require('../utils/leadAssignment');
 
 const LEAD_POPULATE = [
   { path: 'assignedTo', select: 'name email role designation' },
@@ -37,11 +43,8 @@ function assertCanAssignLeads(admin) {
 
 function assertLeadReadable(lead, admin) {
   if (!lead) throw new ApiError(404, 'Lead not found');
-  if (admin.role === 'executive') {
-    const assigned = lead.assignedTo?._id || lead.assignedTo;
-    if (!assigned || String(assigned) !== String(admin._id)) {
-      throw new ApiError(403, 'This lead is not assigned to you');
-    }
+  if (isExecutiveScopedUser(admin) && !leadAssignedToStaff(lead, admin._id)) {
+    throw new ApiError(403, 'This lead is not assigned to you');
   }
 }
 
@@ -70,17 +73,20 @@ function formatCrmLead(doc) {
 
 function buildLeadQuery(admin, queryParams = {}) {
   const query = {};
-  if (admin.role === 'executive') {
-    query.assignedTo = admin._id;
+  if (isExecutiveScopedUser(admin)) {
+    query.$and = query.$and || [];
+    query.$and.push(assignedToStaffFilter(admin._id));
   } else if (queryParams.assignedTo) {
     if (queryParams.assignedTo === 'unassigned') {
       query.$and = query.$and || [];
       query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
     } else {
-      query.assignedTo = queryParams.assignedTo;
+      query.$and = query.$and || [];
+      query.$and.push(assignedToStaffFilter(queryParams.assignedTo));
     }
   } else if (queryParams.mine === 'true') {
-    query.assignedTo = admin._id;
+    query.$and = query.$and || [];
+    query.$and.push(assignedToStaffFilter(admin._id));
   }
 
   if (queryParams.status) query.status = queryParams.status;
@@ -296,11 +302,12 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     ? await TDStaff.findById(lead.assignedTo).select('name')
     : null;
 
-  const update = executiveId
-    ? { $set: { assignedTo: executiveId } }
-    : { $unset: { assignedTo: '' } };
-
-  await Lead.updateOne({ _id: lead._id }, update);
+  if (executiveId) {
+    lead.assignedTo = assignee._id;
+  } else {
+    lead.assignedTo = undefined;
+  }
+  await lead.save();
 
   const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
   if (!updated) throw new ApiError(404, 'Lead not found');
@@ -357,7 +364,7 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
   let assignedTo = null;
 
   if (req.admin.role === 'executive') {
-    assignedTo = req.admin._id;
+    assignedTo = toObjectId(req.admin._id) || req.admin._id;
   } else if (executiveId) {
     const assignee = await TDStaff.findOne({
       _id: executiveId,

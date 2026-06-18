@@ -7,6 +7,7 @@ const TDBooking = require('../models/TDBooking');
 const TDStaff = require('../models/TDStaff');
 const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
+const { assignedToStaffFilter } = require('./leadAssignment');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
@@ -33,7 +34,7 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   const leadDateFilter = buildLeadDateFilter(from, to);
   const leadQuery = { ...leadDateFilter };
   if (executiveId) {
-    leadQuery.assignedTo = new mongoose.Types.ObjectId(executiveId);
+    Object.assign(leadQuery, assignedToStaffFilter(executiveId));
   }
 
   const now = new Date();

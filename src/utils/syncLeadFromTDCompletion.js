@@ -6,6 +6,7 @@ const TestDrive = require('../models/TestDrive');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const { normalizeLeadModelForStorage } = require('./leadModel');
 const { intakePvLead } = require('./pvLeadIntake');
+const { toObjectId } = require('./leadAssignment');
 
 const POST_TD_STAGES = new Set(['Negotiation', 'Booking', 'Delivered', 'Lost']);
 
@@ -37,6 +38,8 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
   const remarks = buildCompletionRemarks(log);
   const targetStatus = 'Test Drive Completed';
 
+  const executiveOid = toObjectId(executiveId) || executiveId;
+
   const { lead } = await intakePvLead({
     name,
     mobile,
@@ -46,11 +49,11 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
     interest: 'Test Drive',
     source: 'Test Drive',
     status: targetStatus,
-    assignedTo: executiveId,
+    assignedTo: executiveOid,
     remarks,
     tdBookingId: booking?._id,
     testDriveId: booking?.testDriveId,
-    changedBy: executiveId,
+    changedBy: executiveOid,
     historyReason: 'Lead synced after test drive completed',
   });
 
@@ -58,7 +61,7 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
     const prevStatus = lead.status;
     if (prevStatus !== targetStatus) {
       lead.status = targetStatus;
-      lead.assignedTo = executiveId;
+      lead.assignedTo = executiveOid;
       lead.source = 'Test Drive';
       lead.remarks = remarks;
       await lead.save();
@@ -69,7 +72,7 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
     await TestDrive.findByIdAndUpdate(booking.testDriveId, {
       status: 'Completed',
       leadId: lead._id,
-      assignedExecutive: executiveId,
+      assignedExecutive: executiveOid,
     });
   }
 

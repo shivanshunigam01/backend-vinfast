@@ -6,6 +6,7 @@ const TDBooking = require('../models/TDBooking');
 const TDFeedback = require('../models/TDFeedback');
 const { buildLeadAdminReport } = require('./leadReportBuilder');
 const { normalizeStageLabel } = require('../constants/leadStages');
+const { toObjectId, assignedToStaffFilter } = require('./leadAssignment');
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -47,7 +48,13 @@ function createdAtFilter(from, to) {
 }
 
 async function buildExecutiveTdStats({ executiveId, from, to }) {
-  const execId = new mongoose.Types.ObjectId(executiveId);
+  const execId = toObjectId(executiveId);
+  if (!execId) {
+    return {
+      totalBookings: 0, completed: 0, pending: 0, cancelled: 0, missed: 0, inProgress: 0,
+      completionRate: 0, feedbackCount: 0, avgFeedbackRating: 0, avgPurchaseIntention: 0, byModel: {},
+    };
+  }
   const base = { assignedExecutive: execId, ...slotDateFilter(from, to) };
 
   const [total, completed, pending, cancelled, missed, inProgress, feedbackAgg, byModel] = await Promise.all([
@@ -106,25 +113,28 @@ async function buildExecutiveTdStats({ executiveId, from, to }) {
 }
 
 async function buildMonthlyBreakdown(executiveId, year) {
-  const execId = new mongoose.Types.ObjectId(executiveId);
+  const assignFilter = assignedToStaffFilter(executiveId);
+  const execId = toObjectId(executiveId);
   const start = new Date(`${year}-01-01T00:00:00.000Z`);
   const end = new Date(`${year}-12-31T23:59:59.999Z`);
 
   const [leadMonths, tdMonths] = await Promise.all([
     Lead.aggregate([
-      { $match: { assignedTo: execId, createdAt: { $gte: start, $lte: end } } },
+      { $match: { ...assignFilter, createdAt: { $gte: start, $lte: end } } },
       { $group: { _id: { $month: '$createdAt' }, count: { $sum: 1 } } },
     ]),
-    TDBooking.aggregate([
-      { $match: { assignedExecutive: execId, slotDate: { $gte: start, $lte: end } } },
-      {
-        $group: {
-          _id: { $month: '$slotDate' },
-          total: { $sum: 1 },
-          completed: { $sum: { $cond: [{ $eq: ['$bookingStatus', 'COMPLETED'] }, 1, 0] } },
-        },
-      },
-    ]),
+    execId
+      ? TDBooking.aggregate([
+          { $match: { assignedExecutive: execId, slotDate: { $gte: start, $lte: end } } },
+          {
+            $group: {
+              _id: { $month: '$slotDate' },
+              total: { $sum: 1 },
+              completed: { $sum: { $cond: [{ $eq: ['$bookingStatus', 'COMPLETED'] }, 1, 0] } },
+            },
+          },
+        ])
+      : [],
   ]);
 
   const leadMap = new Map(leadMonths.map((r) => [r._id, r.count]));
@@ -144,7 +154,8 @@ async function buildMonthlyBreakdown(executiveId, year) {
 }
 
 async function fetchRecentBookings(executiveId, limit = 15) {
-  const execId = new mongoose.Types.ObjectId(executiveId);
+  const execId = toObjectId(executiveId);
+  if (!execId) return [];
   const docs = await TDBooking.find({ assignedExecutive: execId })
     .sort({ slotDate: -1, createdAt: -1 })
     .limit(limit)
@@ -166,6 +177,7 @@ async function fetchRecentBookings(executiveId, limit = 15) {
 async function buildExecutiveDashboard({ executiveId, year } = {}) {
   if (!executiveId) throw new Error('executiveId is required');
 
+  const execId = toObjectId(executiveId);
   const current = yearBounds(year);
   const previous = yearBounds(current.year - 1);
 
@@ -187,10 +199,10 @@ async function buildExecutiveDashboard({ executiveId, year } = {}) {
     buildExecutiveTdStats({ executiveId, from: previous.from, to: previous.to }),
     buildMonthlyBreakdown(executiveId, current.year),
     fetchRecentBookings(executiveId),
-    Lead.countDocuments({ assignedTo: executiveId }),
-    TDBooking.countDocuments({ assignedExecutive: executiveId }),
-    Lead.countDocuments({ assignedTo: executiveId, ...createdAtFilter(current.from, current.to) }),
-    Lead.countDocuments({ assignedTo: executiveId, ...createdAtFilter(previous.from, previous.to) }),
+    Lead.countDocuments(assignedToStaffFilter(executiveId)),
+    execId ? TDBooking.countDocuments({ assignedExecutive: execId }) : Promise.resolve(0),
+    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(current.from, current.to) }),
+    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(previous.from, previous.to) }),
   ]);
 
   leadReport.overview.totalLeads = accurateLeadCount;
