@@ -9,6 +9,7 @@ router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
 router.get('/meta/executives', ctrl.listCrmExecutives);
 router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getAdminReport);
+router.get('/reports/me', reportCtrl.getExecutiveDashboard);
 router.get('/', ctrl.getCrmLeads);
 router.post('/', crmCreateLeadValidator, validate, ctrl.createCrmLead);
 router.get('/:id', ctrl.getCrmLeadDetail);
