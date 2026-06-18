@@ -11,6 +11,8 @@ const publicRoutes = require('./routes/public');
 const metaLeadsRoutes = require('./routes/metaLeads');
 const adminRoutes = require('./routes/admin');
 const tdFeedbackRoutes = require('./routes/tdFeedbackRoutes');
+const customerAuthRoutes = require('./routes/customerAuth');
+const customerBookingsRoutes = require('./routes/customerBookings');
 
 const app = express();
 
@@ -75,6 +77,8 @@ app.get('/api/v1/health', (req, res) => {
 app.use('/api/v1', metaLeadsRoutes);
 app.use('/api/v1', publicRoutes);
 app.use('/api/v1/td/feedback', tdFeedbackRoutes);
+app.use('/api/v1/customer/auth', customerAuthRoutes);
+app.use('/api/v1/customer/bookings', customerBookingsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 app.use(notFound);
