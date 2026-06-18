@@ -69,19 +69,35 @@ exports.submitFeedback = asyncHandler(async (req, res) => {
   );
 
   let leadId;
-  if (ratings[4] >= 4 && booking.customerId) {
+  if (booking.customerId) {
     const customer = booking.customerId;
-    const lead = await Lead.create({
-      name: customer.name || 'TD Customer',
-      mobile: customer.mobile,
-      email: customer.email,
-      city: customer.city || 'Unknown',
-      model: booking.preferredModel || 'VF 7',
-      source: 'Test Drive',
-      status: 'Interested',
-      remarks: `TD feedback — purchase intention ${ratings[4]}/5`,
-    });
-    leadId = lead._id;
+    const mobile = customer.mobile || booking.customerMobile;
+    const executiveId =
+      booking.assignedExecutive?._id || booking.assignedExecutive || req.admin?._id;
+
+    let lead = mobile ? await Lead.findOne({ mobile }) : null;
+
+    if (lead) {
+      lead.status = ratings[4] >= 4 ? 'Interested' : lead.status;
+      lead.remarks = `TD feedback — purchase intention ${ratings[4]}/5${body.remarks ? ` | ${body.remarks}` : ''}`;
+      if (executiveId) lead.assignedTo = executiveId;
+      lead.source = 'Test Drive';
+      await lead.save();
+      leadId = lead._id;
+    } else if (ratings[4] >= 4) {
+      const lead = await Lead.create({
+        name: customer.name || booking.customerName || 'TD Customer',
+        mobile,
+        email: customer.email || booking.customerEmail,
+        city: customer.city || booking.customerCity || 'Unknown',
+        model: booking.preferredModel || 'VF 7',
+        source: 'Test Drive',
+        status: 'Interested',
+        assignedTo: executiveId || undefined,
+        remarks: `TD feedback — purchase intention ${ratings[4]}/5`,
+      });
+      leadId = lead._id;
+    }
   }
 
   const message = leadId

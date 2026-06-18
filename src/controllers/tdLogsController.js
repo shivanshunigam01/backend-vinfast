@@ -6,6 +6,7 @@ const TDVehicle = require('../models/TDVehicle');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
+const { syncLeadFromTDCompletion } = require('../utils/syncLeadFromTDCompletion');
 
 function executiveIdFromReq(req) {
   return req.tdStaff?._id || req.admin?._id;
@@ -125,6 +126,12 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
       await vehicle.save();
     }
   }
+
+  await syncLeadFromTDCompletion({
+    log,
+    booking,
+    changedBy: executiveIdFromReq(req),
+  }).catch((err) => console.error('[syncLeadFromTDCompletion]', err));
 
   await log.populate([
     { path: 'bookingId', select: 'bookingId slotDate slotTime' },
