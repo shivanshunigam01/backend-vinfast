@@ -16,8 +16,9 @@ const defaultSiteConfig = {
   heroTagline: "Bihar's First VinFast Dealer",
   leadStripTitle: 'Ready to Go Electric?',
   leadStripSubtitle: 'Leave your details and our EV advisor will reach out in 10 minutes.',
-  vf7Price: '₹21.89L*',
-  vf6Price: '₹17.29L*',
+  vf7Price: '₹22.99L*',
+  vf6Price: '₹18.19L*',
+  mpv7Price: '₹24.49L*',
   vf7Range: '532 km',
   vf6Range: '468 km',
 };

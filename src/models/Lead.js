@@ -1,7 +1,27 @@
 const mongoose = require('mongoose');
 const { isValidLeadModel } = require('../utils/leadModel');
 
-const LEAD_SOURCES = ['Website', 'Meta Ads', 'Test Drive', 'Enquiry', 'Walk-in', 'Executive', 'Referral', 'WhatsApp'];
+const LEAD_SOURCES = [
+  'Meta Ads',
+  'Google Business Profile',
+  'Website',
+  'Walk-in',
+  'Management Referral',
+  'Employee Referral',
+  'VinFast India Digital Leads',
+  'CarDekho',
+  'Zentroverse',
+  'WhatsApp',
+  'Tele-In',
+  'Tele-Out',
+  'Event / BTL',
+  'Outdoor Activity',
+  'Existing Customer Referral',
+  'Social Media (YouTube, Facebook, Instagram)',
+  // System-generated sources (auto-created leads):
+  'Test Drive',
+  'Enquiry',
+];
 
 const leadSchema = new mongoose.Schema(
   {

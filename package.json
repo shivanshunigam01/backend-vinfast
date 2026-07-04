@@ -10,6 +10,7 @@
     "seed:admin": "node src/scripts/seedAdmin.js",
     "clear:td-bookings": "node src/scripts/clearTdBookings.js",
     "seed:td-staff": "node src/scripts/seedTdStaff.js",
+    "seed:td-team": "node src/scripts/seedTdTeam.js",
     "seed:td-module": "node src/scripts/seedTdModule.js",
     "seed:td-fleet": "node src/scripts/seedTdFleet.js",
     "import:td-vehicles": "node src/scripts/importLegacyTdVehicles.js",

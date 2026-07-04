@@ -3,6 +3,7 @@ const { extractCustomerFromBooking } = require('./tdCustomerResolver');
 const DESIGNATION_LABELS = {
   sales_executive: 'Sales Executive',
   sales_manager: 'Sales Manager',
+  sales_head: 'Sales Head',
   branch_manager: 'Branch Manager',
   gm: 'GM',
   ceo: 'CEO',

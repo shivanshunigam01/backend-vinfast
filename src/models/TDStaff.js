@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const STAFF_DESIGNATIONS = [
   'sales_executive',
   'sales_manager',
+  'sales_head',
   'branch_manager',
   'gm',
   'ceo',
@@ -17,6 +18,8 @@ const tdStaffSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 8, select: false },
     role: { type: String, default: 'executive', trim: true },
     designation: { type: String, enum: STAFF_DESIGNATIONS, default: 'sales_executive' },
+    // Manager this staff member reports to (SE → SM → SH). Null for the top of the chain.
+    reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff', default: null },
     active: { type: Boolean, default: true },
   },
   { timestamps: true },

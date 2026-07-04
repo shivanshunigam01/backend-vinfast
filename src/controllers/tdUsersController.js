@@ -18,6 +18,7 @@ function formatStaff(doc) {
     role: plain.role,
     designation: plain.designation,
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
+    reportsTo: plain.reportsTo || null,
     active: Boolean(plain.active),
     createdAt: plain.createdAt,
   };
@@ -107,7 +108,7 @@ async function listAssignableStaff() {
     designation: { $in: STAFF_DESIGNATIONS },
     active: true,
   })
-    .select('name email role designation active')
+    .select('name email role designation reportsTo active')
     .sort({ designation: 1, name: 1 })
     .lean();
 

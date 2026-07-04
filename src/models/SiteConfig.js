@@ -9,6 +9,7 @@ const siteConfigSchema = new mongoose.Schema(
     phoneNumber: { type: String, trim: true },
     vf7Price: { type: String, trim: true },
     vf6Price: { type: String, trim: true },
+    mpv7Price: { type: String, trim: true },
     vf7Range: { type: String, trim: true },
     vf6Range: { type: String, trim: true },
   },

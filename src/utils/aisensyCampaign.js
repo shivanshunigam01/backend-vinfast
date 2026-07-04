@@ -1,5 +1,5 @@
 /**
- * WhatsApp OTP — Zentroverse / api-wa.co campaign API.
+ * WhatsApp OTP — Patliputra Motors / api-wa.co campaign API.
  * URL and apiKey are fixed in code (not read from .env).
  *
  * NOTE: Messages go to api-wa.co — they will NOT appear in the AiSensy (aisensy.com) dashboard.
@@ -10,15 +10,16 @@ const ZENTROVERSE_WA_CAMPAIGN_URL =
   'https://backend.api-wa.co/campaign/zentroverse-global/api/v2';
 
 const ZENTROVERSE_WA_API_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5YjgxMWVkODNiYjg3MjY3NGFmMmE3ZSIsIm5hbWUiOiJaZW50cm92ZXJzZSIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWI4MTFlZDkwZjZjZjBlMDY0NzBkMTciLCJhY3RpdmVQbGFuIjoiTk9ORSIsImlhdCI6MTc3MzY3MDg5M30.wFOeDPo6S3cd2cRlhZ31r_zBS_lTLRgXS-FQuk9XFuc';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTc2NWQxNGY3ZWZkMGUzMjM3Nzk3NiIsIm5hbWUiOiJQYXRsaXB1dHJhIE1vdG9ycyIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWU3NjVkMTRmN2VmZDBlMzIzNzc5NmUiLCJhY3RpdmVQbGFuIjoiTk9ORSIsImlhdCI6MTc3Njc3MjU2MX0.OIxcKrvdMJtz1K8D9y096cqzAiQ5jW-lWzpErCEvaOM';
 
-const ZENTROVERSE_CAMPAIGN_NAME = 'otp';
+const ZENTROVERSE_CAMPAIGN_NAME = 'whatssap_verify';
 const ZENTROVERSE_SOURCE = 'new-landing-page form';
 
 /**
- * Match Zentroverse curl: destination "09771495587" (leading 0 + 10-digit Indian mobile).
+ * Match Patliputra Motors curl: destination "9031675435" (plain 10-digit Indian mobile,
+ * no leading zero, no country code).
  */
-const ZENTROVERSE_DEST_LEADING_ZERO = true;
+const ZENTROVERSE_DEST_LEADING_ZERO = false;
 
 /**
  * WhatsApp / BSP rejects template body variables that contain emoji ("Parameter at index 0 contains emoji").
@@ -46,8 +47,8 @@ function sanitizeOtpParam(otp) {
 }
 
 /**
- * Same shape as sample "09771495587" when ZENTROVERSE_DEST_LEADING_ZERO is true.
- * Otherwise "91" + 10-digit Indian mobile without + prefix (adjust if provider asks for +91…).
+ * When ZENTROVERSE_DEST_LEADING_ZERO is true: "0" + 10-digit mobile (e.g. "09771495587").
+ * Otherwise plain 10-digit Indian mobile to match the Patliputra Motors curl (e.g. "9031675435").
  */
 function destinationForZentroverseWa(mobile10) {
   const d = String(mobile10 || '')
@@ -55,7 +56,7 @@ function destinationForZentroverseWa(mobile10) {
     .slice(-10);
   if (!/^[6-9]\d{9}$/.test(d)) return null;
   if (ZENTROVERSE_DEST_LEADING_ZERO) return `0${d}`;
-  return `91${d}`;
+  return d;
 }
 
 async function parseCampaignResponse(res, text) {
