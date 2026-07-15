@@ -103,6 +103,47 @@ exports.patchUser = asyncHandler(async (req, res) => {
   return successResponse(res, formatStaff(doc), 'User updated');
 });
 
+/**
+ * Permanently delete a staff user (for cleaning up unwanted/junk accounts).
+ * Users with work history (assigned leads or test drive bookings) are
+ * protected — deactivate or reassign them instead.
+ */
+exports.deleteUser = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can delete users');
+  }
+
+  const doc = await TDStaff.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'User not found');
+
+  if (String(doc._id) === String(req.admin._id)) {
+    throw new ApiError(400, 'You cannot delete your own account');
+  }
+
+  const Lead = require('../models/Lead');
+  const TDBooking = require('../models/TDBooking');
+  const email = doc.email ? String(doc.email).trim().toLowerCase() : null;
+
+  const [leadCount, bookingCount] = await Promise.all([
+    Lead.countDocuments({
+      $or: [{ assignedTo: doc._id }, ...(email ? [{ assignedToEmail: email }] : [])],
+    }),
+    TDBooking.countDocuments({
+      $or: [{ assignedExecutive: doc._id }, ...(email ? [{ assignedExecutiveEmail: email }] : [])],
+    }),
+  ]);
+
+  if (leadCount > 0 || bookingCount > 0) {
+    throw new ApiError(
+      409,
+      `${doc.name} has ${leadCount} lead(s) and ${bookingCount} test drive booking(s) assigned. Reassign that work or deactivate the user instead of deleting.`,
+    );
+  }
+
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id }, `User ${doc.name} deleted`);
+});
+
 async function listAssignableStaff() {
   const docs = await TDStaff.find({
     designation: { $in: STAFF_DESIGNATIONS },
