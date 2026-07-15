@@ -105,8 +105,8 @@ exports.patchUser = asyncHandler(async (req, res) => {
 
 /**
  * Permanently delete a staff user (for cleaning up unwanted/junk accounts).
- * Users with work history (assigned leads or test drive bookings) are
- * protected — deactivate or reassign them instead.
+ * Any leads or test drive bookings assigned to them are automatically
+ * unassigned so managers can reassign that work from the CRM.
  */
 exports.deleteUser = asyncHandler(async (req, res) => {
   if (!['manager', 'superadmin'].includes(req.admin.role)) {
@@ -124,24 +124,34 @@ exports.deleteUser = asyncHandler(async (req, res) => {
   const TDBooking = require('../models/TDBooking');
   const email = doc.email ? String(doc.email).trim().toLowerCase() : null;
 
-  const [leadCount, bookingCount] = await Promise.all([
-    Lead.countDocuments({
-      $or: [{ assignedTo: doc._id }, ...(email ? [{ assignedToEmail: email }] : [])],
-    }),
-    TDBooking.countDocuments({
-      $or: [{ assignedExecutive: doc._id }, ...(email ? [{ assignedExecutiveEmail: email }] : [])],
+  const leadFilter = {
+    $or: [{ assignedTo: doc._id }, ...(email ? [{ assignedToEmail: email }] : [])],
+  };
+  const bookingFilter = {
+    $or: [{ assignedExecutive: doc._id }, ...(email ? [{ assignedExecutiveEmail: email }] : [])],
+  };
+
+  const [leadResult, bookingResult] = await Promise.all([
+    Lead.updateMany(leadFilter, { $unset: { assignedTo: 1, assignedToEmail: 1 } }),
+    TDBooking.updateMany(bookingFilter, {
+      $unset: { assignedExecutive: 1, assignedExecutiveEmail: 1 },
     }),
   ]);
 
-  if (leadCount > 0 || bookingCount > 0) {
-    throw new ApiError(
-      409,
-      `${doc.name} has ${leadCount} lead(s) and ${bookingCount} test drive booking(s) assigned. Reassign that work or deactivate the user instead of deleting.`,
-    );
-  }
-
   await doc.deleteOne();
-  return successResponse(res, { _id: doc._id }, `User ${doc.name} deleted`);
+
+  const unassignedLeads = leadResult.modifiedCount || 0;
+  const unassignedBookings = bookingResult.modifiedCount || 0;
+  const detail =
+    unassignedLeads > 0 || unassignedBookings > 0
+      ? ` — ${unassignedLeads} lead(s) and ${unassignedBookings} test drive booking(s) moved to Unassigned`
+      : '';
+
+  return successResponse(
+    res,
+    { _id: doc._id, unassignedLeads, unassignedBookings },
+    `User ${doc.name} deleted${detail}`,
+  );
 });
 
 async function listAssignableStaff() {
