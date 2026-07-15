@@ -13,6 +13,8 @@ const seoController = require('../../controllers/seoController');
 const { leadValidator, testDriveValidator, enquiryValidator } = require('../../validators/formValidators');
 const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
 const { postDeliveryFeedbackValidator } = require('../../validators/postDeliveryFeedbackValidators');
+const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
+const { testDriveFeedbackValidator } = require('../../validators/testDriveFeedbackValidators');
 const { whatsappOtpSendValidator, whatsappOtpVerifyValidator } = require('../../validators/whatsappOtpValidators');
 
 router.get('/public/site-config', publicController.getSiteConfig);
@@ -88,6 +90,15 @@ router.post(
   postDeliveryFeedbackValidator,
   validate,
   postDeliveryFeedbackController.createPostDeliveryFeedback
+);
+
+// Test-drive feedback form (URL-only page, reached via QR code — no OTP/recaptcha step).
+router.post(
+  '/test-drive-feedback',
+  formLimiter,
+  testDriveFeedbackValidator,
+  validate,
+  testDriveFeedbackController.createTestDriveFeedback
 );
 
 module.exports = router;
