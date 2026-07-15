@@ -16,6 +16,9 @@ const ADMIN_MODULE_KEYS = [
   // Staff portal
   'my_dashboard',
   'td_my_bookings',
+  // Customer feedback forms
+  'feedback_test_drive',
+  'feedback_post_delivery',
   // TD Management
   'td_lead_reports',
   'td_bookings',

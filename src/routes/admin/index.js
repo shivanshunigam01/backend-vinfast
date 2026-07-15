@@ -19,6 +19,8 @@ const vehicleStockRoutes = require('./vehicleStock');
 const seoPagesRoutes = require('./seoPages');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
+const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
+const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
 const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slideReorderValidator } = require('../../validators/adminValidators');
@@ -66,6 +68,24 @@ router.use('/crm/customers', crmCustomersRoutes);
 
 // Vehicle stock register with demo tagging (/api/v1/admin/stock/vehicles)
 router.use('/stock/vehicles', vehicleStockRoutes);
+
+// Customer feedback form submissions (QR pages) — admin viewer
+router.get('/feedback/post-delivery', postDeliveryFeedbackController.listPostDeliveryFeedback);
+router.delete(
+  '/feedback/post-delivery/:id',
+  mongoIdParam,
+  validate,
+  authorize('superadmin', 'manager'),
+  postDeliveryFeedbackController.deletePostDeliveryFeedback,
+);
+router.get('/feedback/test-drive', testDriveFeedbackController.listTestDriveFeedback);
+router.delete(
+  '/feedback/test-drive/:id',
+  mongoIdParam,
+  validate,
+  authorize('superadmin', 'manager'),
+  testDriveFeedbackController.deleteTestDriveFeedback,
+);
 
 // SEO module — district landing pages (/api/v1/admin/seo/*)
 router.use('/seo', seoPagesRoutes);
