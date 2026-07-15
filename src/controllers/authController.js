@@ -14,6 +14,7 @@ function staffLoginPayload(staff) {
     role: staff.role,
     designation: staff.designation,
     designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
+    allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
   };
 }
 

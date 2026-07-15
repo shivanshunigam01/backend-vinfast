@@ -28,6 +28,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
       designation: staff.designation,
       designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
       active: staff.active,
+      allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
     };
     return next();
   }

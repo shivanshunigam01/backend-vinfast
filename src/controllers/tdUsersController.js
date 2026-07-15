@@ -8,6 +8,9 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
+const { ADMIN_MODULE_KEYS } = require('../constants/adminModules');
+
+const STAFF_ROLES = ['executive', 'manager'];
 
 function formatStaff(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -18,10 +21,49 @@ function formatStaff(doc) {
     role: plain.role,
     designation: plain.designation,
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
+    isCustomDesignation: !STAFF_DESIGNATIONS.includes(plain.designation),
     reportsTo: plain.reportsTo || null,
     active: Boolean(plain.active),
+    allowedModules: Array.isArray(plain.allowedModules) ? plain.allowedModules : [],
     createdAt: plain.createdAt,
   };
+}
+
+/**
+ * Accepts a known designation key, or a custom position typed by the admin
+ * (e.g. "Telecaller"). Returns the value to store, or throws on bad input.
+ */
+function resolveDesignation(designation) {
+  const value = String(designation || '').trim();
+  if (!value) throw new ApiError(400, 'Designation is required');
+  if (STAFF_DESIGNATIONS.includes(value)) return value;
+  if (value.length > 60) throw new ApiError(400, 'Custom position must be 60 characters or less');
+  return value.replace(/\s+/g, ' ');
+}
+
+/** Role derived from designation; custom positions default to executive unless a role is sent. */
+function resolveRole(designation, requestedRole) {
+  if (requestedRole !== undefined) {
+    if (!STAFF_ROLES.includes(requestedRole)) {
+      throw new ApiError(400, `Role must be one of: ${STAFF_ROLES.join(', ')}`);
+    }
+    return requestedRole;
+  }
+  if (STAFF_DESIGNATIONS.includes(designation)) {
+    return designation === 'sales_executive' ? 'executive' : 'manager';
+  }
+  return 'executive';
+}
+
+/** Keeps only recognised module keys (deduped). Returns undefined when not provided. */
+function sanitizeModules(allowedModules) {
+  if (allowedModules === undefined) return undefined;
+  if (!Array.isArray(allowedModules)) {
+    throw new ApiError(400, 'allowedModules must be an array of module keys');
+  }
+  return [...new Set(allowedModules.map((m) => String(m).trim()))].filter((m) =>
+    ADMIN_MODULE_KEYS.includes(m),
+  );
 }
 
 exports.listUsers = asyncHandler(async (req, res) => {
@@ -52,14 +94,14 @@ exports.listUsers = asyncHandler(async (req, res) => {
 });
 
 exports.createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, designation, active } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
   if (!name || !email) throw new ApiError(400, 'Name and email are required');
   if (!password || String(password).length < 8) {
     throw new ApiError(400, 'Password must be at least 8 characters');
   }
-  if (designation && !STAFF_DESIGNATIONS.includes(designation)) {
-    throw new ApiError(400, 'Invalid designation');
-  }
+
+  const resolvedDesignation = resolveDesignation(designation || 'sales_executive');
+  const modules = sanitizeModules(allowedModules);
 
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
@@ -68,9 +110,10 @@ exports.createUser = asyncHandler(async (req, res) => {
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
     password: String(password),
-    designation: designation || 'sales_executive',
-    role: designation === 'sales_executive' ? 'executive' : 'manager',
+    designation: resolvedDesignation,
+    role: resolveRole(resolvedDesignation, role),
     active: active !== false,
+    allowedModules: modules || [],
   });
 
   return successResponse(res, formatStaff(doc), 'User created', 201);
@@ -80,16 +123,19 @@ exports.updateUser = asyncHandler(async (req, res) => {
   const doc = await TDStaff.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'User not found');
 
-  const { name, email, password, designation, active } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
   if (password) doc.password = String(password);
   if (designation !== undefined) {
-    if (!STAFF_DESIGNATIONS.includes(designation)) throw new ApiError(400, 'Invalid designation');
-    doc.designation = designation;
-    doc.role = designation === 'sales_executive' ? 'executive' : 'manager';
+    doc.designation = resolveDesignation(designation);
+    doc.role = resolveRole(doc.designation, role);
+  } else if (role !== undefined) {
+    doc.role = resolveRole(doc.designation, role);
   }
   if (active !== undefined) doc.active = Boolean(active);
+  const modules = sanitizeModules(allowedModules);
+  if (modules !== undefined) doc.allowedModules = modules;
 
   await doc.save();
   return successResponse(res, formatStaff(doc), 'User updated');
@@ -155,10 +201,8 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 });
 
 async function listAssignableStaff() {
-  const docs = await TDStaff.find({
-    designation: { $in: STAFF_DESIGNATIONS },
-    active: true,
-  })
+  // Include custom positions added via User Master, not just the fixed hierarchy.
+  const docs = await TDStaff.find({ active: true })
     .select('name email role designation reportsTo active')
     .sort({ designation: 1, name: 1 })
     .lean();
