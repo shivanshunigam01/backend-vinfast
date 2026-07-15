@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const {
   testDriveStatuses,
-  productModels,
   testDrivePreferredLocations,
   yesNo,
   purchaseTimelines,
@@ -12,7 +11,9 @@ const testDriveSchema = new mongoose.Schema(
     customerName: { type: String, required: true, trim: true },
     mobile: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true },
-    model: { type: String, enum: productModels.filter((v) => v !== 'Both'), required: true },
+    // Validated against the admin-managed vehicle model master at the route level
+    // (a hard enum here would break legacy documents when the catalog changes).
+    model: { type: String, required: true, trim: true },
     city: { type: String, trim: true },
     preferredDate: { type: Date, required: true },
     preferredTime: { type: String, trim: true },

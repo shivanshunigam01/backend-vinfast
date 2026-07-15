@@ -62,6 +62,13 @@ const leadSchema = new mongoose.Schema(
     enquiryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enquiry' },
     testDriveId: { type: mongoose.Schema.Types.ObjectId, ref: 'TestDrive' },
     tdBookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBooking' },
+    // Referral tracking — existing customer who referred this lead.
+    referredByCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: 'PVCustomer', index: true },
+    referredByMobile: { type: String, trim: true },
+    // Sale conversion — the actual buyer's customer record (may differ from pvCustomerId).
+    convertedCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: 'PVCustomer', index: true },
+    convertedAt: { type: Date },
+    convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
   },
   { timestamps: true },
 );

@@ -110,7 +110,7 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
     campaignName: ZENTROVERSE_CAMPAIGN_NAME,
     destination,
     userName,
-    templateParams: ['$FirstName'],
+    templateParams: ['$FirstName', otpStr],
     source: ZENTROVERSE_SOURCE,
     media: {},
     buttons: [

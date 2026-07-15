@@ -30,6 +30,22 @@ exports.slideReorderValidator = [
   body('orderedIds').isArray({ min: 1 }).withMessage('orderedIds must be a non-empty array'),
 ];
 
+exports.vehicleStockValidator = [
+  body('model').trim().notEmpty().withMessage('Model is required'),
+  body('vinNo').trim().notEmpty().withMessage('VIN/chassis number is required'),
+  body('variant').optional({ values: 'falsy' }).trim(),
+  body('colour').optional({ values: 'falsy' }).trim(),
+  body('registrationNo').optional({ values: 'falsy' }).trim(),
+  body('batteryPercent')
+    .optional({ values: 'falsy' })
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Battery must be between 0 and 100'),
+  body('location').optional({ values: 'falsy' }).trim(),
+  body('status').optional({ values: 'falsy' }).trim(),
+  body('remarks').optional({ values: 'falsy' }).trim(),
+  body('branchId').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid branch id'),
+];
+
 exports.crmCreateLeadValidator = [
   body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
   mobileRule,
@@ -48,7 +64,7 @@ exports.crmCreateLeadValidator = [
     .custom((value) => {
       if (!isValidLeadModel(value)) {
         throw new Error(
-          'Model must be a VinFast model line or trim (e.g. VF 7, VF 7 Wind, VF 6 Earth, VF MPV 7)',
+          'Model must be a VinFast model line or trim (e.g. VF 7, VF 7 Wind, VF 6 Earth, VF MPV 7, Limo Green)',
         );
       }
       return true;
@@ -62,4 +78,8 @@ exports.crmCreateLeadValidator = [
   body('subCustomerName').optional({ values: 'falsy' }).trim(),
   body('subCustomerMobile').optional({ values: 'falsy' }).trim(),
   body('vehicleRegistration').optional({ values: 'falsy' }).trim(),
+  body('referredByMobile')
+    .optional({ values: 'falsy' })
+    .matches(/^[6-9]\d{9}$/)
+    .withMessage('Referrer mobile must be a valid 10-digit number'),
 ];

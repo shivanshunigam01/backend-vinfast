@@ -4,6 +4,7 @@ const LeadFollowUp = require('../models/LeadFollowUp');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const TDFeedback = require('../models/TDFeedback');
 const TDBooking = require('../models/TDBooking');
+const TDLog = require('../models/TDLog');
 const TDStaff = require('../models/TDStaff');
 const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
@@ -137,6 +138,45 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   ]);
 
   const leadIds = leads.map((l) => l._id);
+
+  // Test-drive enrichment for the management report: booked/done status,
+  // customer photo, completion GPS location.
+  const leadMobiles = [...new Set(leads.map((l) => l.mobile).filter(Boolean))];
+  const linkedBookingIds = leads.map((l) => l.tdBookingId).filter(Boolean);
+  const tdBookings = await TDBooking.find({
+    $or: [
+      ...(linkedBookingIds.length ? [{ _id: { $in: linkedBookingIds } }] : []),
+      { leadId: { $in: leadIds } },
+      ...(leadMobiles.length ? [{ customerMobile: { $in: leadMobiles } }] : []),
+    ],
+  })
+    .select('bookingId bookingStatus slotDate slotTime customerMobile leadId approvalStatus isRepeatDrive')
+    .lean();
+
+  const completedTdLogs = await TDLog.find({
+    bookingId: { $in: tdBookings.map((b) => b._id) },
+    status: 'COMPLETED',
+  })
+    .select('bookingId customerPhotoUrl endLocation endTime totalKM')
+    .sort({ endTime: 1 })
+    .lean();
+
+  const logByBooking = new Map(completedTdLogs.map((l) => [String(l.bookingId), l]));
+  const bookingsByMobile = new Map();
+  const bookingsByLead = new Map();
+  for (const b of tdBookings) {
+    if (b.customerMobile) {
+      if (!bookingsByMobile.has(b.customerMobile)) bookingsByMobile.set(b.customerMobile, []);
+      bookingsByMobile.get(b.customerMobile).push(b);
+    }
+    if (b.leadId) {
+      const key = String(b.leadId);
+      if (!bookingsByLead.has(key)) bookingsByLead.set(key, []);
+      bookingsByLead.get(key).push(b);
+    }
+  }
+  const bookingById = new Map(tdBookings.map((b) => [String(b._id), b]));
+
   const followUpCounts = await LeadFollowUp.aggregate([
     { $match: { leadId: { $in: leadIds } } },
     {
@@ -267,6 +307,8 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   for (const h of stageHistory) {
     const execId = h.changedBy?._id || h.changedBy;
     if (!execId) continue;
+    // Assignments and detail edits log history with fromStage === toStage; don't count those as stage changes.
+    if (h.fromStage === h.toStage) continue;
     const row = ensureExec(execId, h.changedBy?.name);
     row.stageChanges += 1;
   }
@@ -338,7 +380,11 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   for (const h of stageHistory) {
     if (!h.leadId) continue;
     activityLog.push({
-      type: h.reason?.startsWith('Assignment:') ? 'assignment' : 'stage_change',
+      type: h.reason?.startsWith('Assignment:')
+        ? 'assignment'
+        : h.reason?.startsWith('Details updated')
+          ? 'edit'
+          : 'stage_change',
       at: h.createdAt,
       executiveName: h.changedBy?.name || 'System',
       executiveId: h.changedBy?._id || h.changedBy,
@@ -385,12 +431,67 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
     const leadFeedback = feedbackRows.find((f) => f.leadId === String(l._id));
     const ageDays = leadAgeInDays(l.createdAt);
     const ageBucket = leadAgeBucket(ageDays);
+
+    // Test drive status for this lead's customer.
+    const leadBookings = [
+      ...(bookingsByLead.get(String(l._id)) || []),
+      ...(bookingsByMobile.get(l.mobile) || []),
+      ...(l.tdBookingId && bookingById.has(String(l.tdBookingId))
+        ? [bookingById.get(String(l.tdBookingId))]
+        : []),
+    ];
+    const uniqueBookings = [...new Map(leadBookings.map((b) => [String(b._id), b])).values()];
+    const completedBooking = uniqueBookings.find((b) => b.bookingStatus === 'COMPLETED');
+    const awaitingApproval = uniqueBookings.some(
+      (b) => b.approvalStatus === 'PENDING' && !['CANCELLED', 'COMPLETED'].includes(b.bookingStatus),
+    );
+    const activeBooking = uniqueBookings.find((b) =>
+      ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'RESCHEDULED'].includes(b.bookingStatus),
+    );
+    const testDriveStatus = completedBooking
+      ? 'Done'
+      : awaitingApproval
+        ? 'Awaiting Approval'
+        : activeBooking
+          ? 'Booked'
+          : 'Not Booked';
+
+    const completionLog = completedBooking ? logByBooking.get(String(completedBooking._id)) : null;
+
+    // Delay / pending status for management attention.
+    const stage = normalizeStageLabel(l.status);
+    const isTerminal = TERMINAL_STATUSES.includes(stage);
+    const lastActivity = l.lastActivityAt || l.updatedAt || l.createdAt;
+    const daysSinceActivity = lastActivity
+      ? Math.floor((now - new Date(lastActivity)) / (24 * 60 * 60 * 1000))
+      : ageDays;
+    const followUpOverdue = Boolean(l.nextFollowUp && new Date(l.nextFollowUp) < now && !isTerminal);
+    const delayStatus = isTerminal
+      ? 'Closed'
+      : followUpOverdue
+        ? 'Overdue'
+        : daysSinceActivity > 7
+          ? 'Delayed'
+          : 'On Track';
+
+    // Suggested next action for management.
+    let actionRequired = null;
+    if (!isTerminal) {
+      if (!l.assignedTo) actionRequired = 'Assign executive';
+      else if (awaitingApproval) actionRequired = 'Approve repeat test drive request';
+      else if (followUpOverdue) actionRequired = 'Chase overdue follow-up';
+      else if (stage === 'Test Drive Completed' && leadFeedback?.overallRating == null)
+        actionRequired = 'Collect test drive feedback';
+      else if (daysSinceActivity > 7) actionRequired = `No activity for ${daysSinceActivity} days — review`;
+      else if (ageDays > 15 && !isConverted(l.status)) actionRequired = 'Stale lead — review or close';
+    }
+
     return {
       leadId: String(l._id),
       name: l.name,
       mobile: l.mobile,
       model: l.model,
-      status: normalizeStageLabel(l.status),
+      status: stage,
       source: l.source || '—',
       interest: l.interest || '—',
       assignedTo: l.assignedTo?.name || 'Unassigned',
@@ -405,6 +506,18 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
       converted: isConverted(l.status),
       ageDays,
       ageBucket,
+      // Test drive & completion evidence
+      testDriveStatus,
+      testDriveBooked: uniqueBookings.length > 0,
+      testDriveDone: Boolean(completedBooking),
+      testDriveBookingId: completedBooking?.bookingId || activeBooking?.bookingId || null,
+      customerPhotoUrl: completionLog?.customerPhotoUrl || null,
+      latitude: completionLog?.endLocation?.lat ?? null,
+      longitude: completionLog?.endLocation?.lng ?? null,
+      testDriveKm: completionLog?.totalKM ?? null,
+      // Management attention
+      delayStatus,
+      actionRequired: actionRequired || '—',
       createdAt: l.createdAt,
       updatedAt: l.updatedAt
     };
@@ -424,6 +537,12 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
       ? Math.round((feedbacks.reduce((s, f) => s + (f.overallRating || 0), 0) / feedbacks.length) * 10) / 10
       : 0;
 
+  const testDrivesBookedCount = leadDetailRows.filter((r) => r.testDriveBooked).length;
+  const testDrivesDoneCount = leadDetailRows.filter((r) => r.testDriveDone).length;
+  const pendingApprovalCount = leadDetailRows.filter((r) => r.testDriveStatus === 'Awaiting Approval').length;
+  const delayedCount = leadDetailRows.filter((r) => ['Overdue', 'Delayed'].includes(r.delayStatus)).length;
+  const actionRequiredCount = leadDetailRows.filter((r) => r.actionRequired && r.actionRequired !== '—').length;
+
   return {
     overview: {
       totalLeads,
@@ -435,7 +554,12 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
       followUpsCompleted,
       followUpsOverdue,
       feedbackCount: feedbacks.length,
-      avgFeedbackRating: avgFeedback
+      avgFeedbackRating: avgFeedback,
+      testDrivesBooked: testDrivesBookedCount,
+      testDrivesDone: testDrivesDoneCount,
+      repeatApprovalsPending: pendingApprovalCount,
+      delayedLeads: delayedCount,
+      actionRequired: actionRequiredCount
     },
     pipeline,
     bySource,

@@ -13,6 +13,10 @@ const tdFeedbackRoutes = require('./tdFeedback');
 const tdLogsRoutes = require('./tdLogs');
 const tdLeadsRoutes = require('./tdLeads');
 const crmLeadsRoutes = require('./crmLeads');
+const crmCustomersRoutes = require('./crmCustomers');
+const vehicleModelsRoutes = require('./vehicleModels');
+const vehicleStockRoutes = require('./vehicleStock');
+const seoPagesRoutes = require('./seoPages');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
@@ -44,6 +48,9 @@ router.post('/meta-leads', metaLeadsController.createManualMetaLead);
 router.post('/meta-leads/bulk', metaLeadsController.bulkCreateMetaLeads);
 router.put('/meta-leads/:id', mongoIdParam, validate, metaLeadsController.updateMetaLead);
 
+// Master data — vehicle models & variants (/api/v1/admin/vehicle-models)
+router.use('/vehicle-models', vehicleModelsRoutes);
+
 // Test Drive module (/api/v1/admin/td/*)
 router.use('/td/bookings', tdBookingsRoutes);
 router.use('/td/vehicles', tdVehiclesRoutes);
@@ -55,6 +62,13 @@ router.use('/td/leads', tdLeadsRoutes);
 
 // Standalone Lead CRM module (/api/v1/admin/crm/*)
 router.use('/crm/leads', crmLeadsRoutes);
+router.use('/crm/customers', crmCustomersRoutes);
+
+// Vehicle stock register with demo tagging (/api/v1/admin/stock/vehicles)
+router.use('/stock/vehicles', vehicleStockRoutes);
+
+// SEO module — district landing pages (/api/v1/admin/seo/*)
+router.use('/seo', seoPagesRoutes);
 router.get('/td/reports/admin', tdReportsController.getAdminReport);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 

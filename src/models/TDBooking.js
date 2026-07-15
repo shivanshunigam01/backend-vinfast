@@ -10,6 +10,9 @@ const TD_BOOKING_STATUSES = [
   'MISSED',
 ];
 
+/** Approval workflow for repeat test drives requested by executives. */
+const TD_APPROVAL_STATUSES = ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED'];
+
 const tdBookingSchema = new mongoose.Schema(
   {
     bookingId: { type: String, required: true, unique: true, trim: true, index: true },
@@ -28,6 +31,18 @@ const tdBookingSchema = new mongoose.Schema(
     cancellationReason: { type: String, trim: true },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDCustomer' },
     vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDVehicle' },
+    // Repeat test drive (customer already completed one for this model) — needs manager/superadmin approval.
+    isRepeatDrive: { type: Boolean, default: false },
+    repeatApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    createdByAdmin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    // Executive-raised repeat requests await a manager/superadmin decision here.
+    approvalStatus: { type: String, enum: TD_APPROVAL_STATUSES, default: 'NOT_REQUIRED', index: true },
+    approvalRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
+    approvalDecisionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
+    approvalDecidedAt: { type: Date },
+    approvalNote: { type: String, trim: true },
+    // CRM lead this booking was raised from (Book Test Drive inside CRM).
+    leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
     assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     assignedExecutiveEmail: { type: String, trim: true, lowercase: true, index: true },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
@@ -43,3 +58,4 @@ const tdBookingSchema = new mongoose.Schema(
 
 module.exports = mongoose.model('TDBooking', tdBookingSchema);
 module.exports.TD_BOOKING_STATUSES = TD_BOOKING_STATUSES;
+module.exports.TD_APPROVAL_STATUSES = TD_APPROVAL_STATUSES;

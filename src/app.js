@@ -74,6 +74,17 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json(healthPayload());
 });
 
+/**
+ * SEO crawler files. The frontend host (patliputravinfast.in) should rewrite
+ * /sitemap.xml and /robots.txt to these endpoints (also exposed under /api/v1
+ * in case only that prefix is publicly reachable).
+ */
+const seoController = require('./controllers/seoController');
+app.get('/sitemap.xml', seoController.getSitemap);
+app.get('/robots.txt', seoController.getRobots);
+app.get('/api/v1/sitemap.xml', seoController.getSitemap);
+app.get('/api/v1/robots.txt', seoController.getRobots);
+
 app.use('/api/v1', metaLeadsRoutes);
 app.use('/api/v1', publicRoutes);
 app.use('/api/v1/td/feedback', tdFeedbackRoutes);

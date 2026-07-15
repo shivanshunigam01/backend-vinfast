@@ -10,8 +10,14 @@ const siteConfigSchema = new mongoose.Schema(
     vf7Price: { type: String, trim: true },
     vf6Price: { type: String, trim: true },
     mpv7Price: { type: String, trim: true },
+    limoGreenPrice: { type: String, trim: true },
     vf7Range: { type: String, trim: true },
     vf6Range: { type: String, trim: true },
+    // Site-wide SEO defaults (served via GET /public/seo/global).
+    defaultMetaTitle: { type: String, trim: true },
+    defaultMetaDescription: { type: String, trim: true },
+    // Google Search Console verification token (content of the meta tag).
+    googleSiteVerification: { type: String, trim: true },
   },
   { timestamps: true }
 );

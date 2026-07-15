@@ -22,6 +22,11 @@ const productSchema = new mongoose.Schema(
     galleryImages: [{ type: String }],
     colorVariants: [colorVariantSchema],
     brochureUrl: { type: String, trim: true },
+    seo: {
+      metaTitle: { type: String, trim: true },
+      metaDescription: { type: String, trim: true },
+      keywords: [{ type: String, trim: true }],
+    },
   },
   { timestamps: true }
 );

@@ -30,6 +30,21 @@ const tdLogSchema = new mongoose.Schema(
     customerSignatureUrl: { type: String },
     customerOtpVerified: { type: Boolean, default: false },
     gpsRoute: [gpsPointSchema],
+    // Completion capture (recorded when the drive is marked completed)
+    customerPhotoUrl: { type: String },
+    customerPhotoPublicId: { type: String },
+    vehiclePhotoUrl: { type: String },
+    vehiclePhotoPublicId: { type: String },
+    endLocation: {
+      lat: { type: Number },
+      lng: { type: Number },
+      accuracy: { type: Number },
+      capturedAt: { type: Date },
+    },
+    // Driving licence snapshot copied from the booking at completion time
+    dlNumber: { type: String, trim: true, uppercase: true },
+    dlValidUntil: { type: Date },
+    dlImageUrl: { type: String },
     status: { type: String, enum: ['STARTED', 'COMPLETED', 'ABORTED'], default: 'STARTED' },
   },
   { timestamps: true },

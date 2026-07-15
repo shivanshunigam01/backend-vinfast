@@ -2,8 +2,10 @@ const Lead = require('../models/Lead');
 const TestDrive = require('../models/TestDrive');
 const Enquiry = require('../models/Enquiry');
 const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { syncTestDriveToTdBooking } = require('../utils/tdBookingSync');
+const { evaluateRepeatDrive } = require('../utils/tdRepeatDrive');
 const { intakePvLead } = require('../utils/pvLeadIntake');
 const { normalizeLeadModelForStorage } = require('../utils/leadModel');
 
@@ -37,6 +39,23 @@ exports.createLead = asyncHandler(async (req, res) => {
 });
 
 exports.createTestDrive = asyncHandler(async (req, res) => {
+  // Multiple test drives per customer are fine (different models); block only
+  // same-model duplicates and completed-drive repeats (those need admin approval).
+  const mobile10 = String(req.body.mobile || '').replace(/\D/g, '').slice(-10);
+  const summary = await evaluateRepeatDrive(mobile10, req.body.model);
+  if (summary.activeSameModel) {
+    throw new ApiError(
+      409,
+      `You already have a ${req.body.model} test drive booked (${summary.activeSameModel.bookingId}). Call the showroom to reschedule it.`,
+    );
+  }
+  if (summary.completedSameModel) {
+    throw new ApiError(
+      409,
+      `You have already completed a ${req.body.model} test drive. For a repeat test drive, please call the showroom — our team will arrange it for you.`,
+    );
+  }
+
   const testDrive = await TestDrive.create(req.body);
   await syncTestDriveToTdBooking(testDrive);
 

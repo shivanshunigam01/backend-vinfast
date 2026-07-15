@@ -1,6 +1,7 @@
 const PVCustomer = require('../models/PVCustomer');
 const Lead = require('../models/Lead');
 const LeadStageHistory = require('../models/LeadStageHistory');
+const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { normalizeLeadModelForStorage } = require('./leadModel');
 const { touchLeadActivity } = require('./leadAssignment');
 const { nextCustomerId, nextLeadId, nextOpportunityId } = require('./pvIdGenerator');
@@ -122,6 +123,8 @@ async function intakePvLead(input = {}) {
     tdBookingId,
     subCustomer,
     vehicleRegistration,
+    referredByCustomerId,
+    referredByMobile,
     changedBy,
     historyReason,
   } = input;
@@ -160,6 +163,8 @@ async function intakePvLead(input = {}) {
     enquiryId: enquiryId || undefined,
     testDriveId: testDriveId || undefined,
     tdBookingId: tdBookingId || undefined,
+    referredByCustomerId: referredByCustomerId || undefined,
+    referredByMobile: referredByMobile || undefined,
     lastActivityAt: new Date(),
   };
 
@@ -173,7 +178,17 @@ async function intakePvLead(input = {}) {
   }
 
   if (lead) {
+    // Re-syncs (Meta webhooks, TD booking updates) must not drag an advanced
+    // lead back down the pipeline — keep the further-along stage. A "Lost"
+    // lead is the exception: a fresh intake means the customer re-engaged.
+    const prevStage = normalizeStageLabel(lead.status);
+    const currentIdx = CRM_LEAD_STAGES.indexOf(prevStage);
+    const incomingIdx = CRM_LEAD_STAGES.indexOf(normalizeStageLabel(status));
+    const keepCurrentStatus = prevStage !== 'Lost' && incomingIdx !== -1 && currentIdx > incomingIdx;
+
+    const prevStatus = lead.status;
     Object.assign(lead, leadPatch);
+    if (keepCurrentStatus) lead.status = prevStatus;
     touchLeadActivity(lead);
     if (!lead.leadId || !lead.opportunityId) await assignPvIds(lead);
     await lead.save();

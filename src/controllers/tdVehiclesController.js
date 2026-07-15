@@ -1,12 +1,39 @@
 require('../models/tdModels');
 
 const TDVehicle = require('../models/TDVehicle');
+const VehicleModel = require('../models/VehicleModel');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { normalizeModel, branchFleetQuery } = require('../utils/tdVehicleLegacyImport');
 const { ensureTdFleet } = require('../utils/tdBootstrap');
+const { getActiveModelNames, getModelNamesSync } = require('../utils/vehicleCatalog');
+
+/** Exact catalog names win over the legacy fuzzy matcher (which would mangle e.g. "VF 7 Plus"). */
+function resolveModelName(raw) {
+  const s = String(raw || '').trim();
+  if (getModelNamesSync().includes(s)) return s;
+  return normalizeModel(s);
+}
+
+/** Demo-vehicle tagging is linked to the model/variant master. */
+async function assertCatalogModelVariant(model, variant) {
+  const models = await getActiveModelNames();
+  if (!models.includes(model)) {
+    throw new ApiError(400, `Unknown model "${model}". Add it under Model Master first.`);
+  }
+  const trimmedVariant = String(variant || '').trim();
+  if (!trimmedVariant) return;
+  const doc = await VehicleModel.findOne({ name: model }).lean();
+  const variantNames = (doc?.variants || []).filter((v) => v.active !== false).map((v) => v.name);
+  if (variantNames.length && !variantNames.includes(trimmedVariant)) {
+    throw new ApiError(
+      400,
+      `"${trimmedVariant}" is not a variant of ${model}. Valid variants: ${variantNames.join(', ')}`,
+    );
+  }
+}
 
 function formatVehicle(doc) {
   if (!doc) return null;
@@ -43,7 +70,7 @@ function buildVehicleQuery(req) {
     query.status = String(req.query.status).trim().toUpperCase();
   }
   if (req.query.model && req.query.model !== 'all') {
-    query.model = normalizeModel(req.query.model);
+    query.model = resolveModelName(req.query.model);
   }
   if (req.query.branchId) {
     Object.assign(query, branchFleetQuery(req.query.branchId));
@@ -95,9 +122,11 @@ exports.listVehicles = asyncHandler(async (req, res) => {
 
 exports.createVehicle = asyncHandler(async (req, res) => {
   const body = req.body || {};
+  const model = resolveModelName(body.model);
+  await assertCatalogModelVariant(model, body.variant);
   const doc = await TDVehicle.create({
     vehicleId: body.vehicleId || nextVehicleId(),
-    model: normalizeModel(body.model),
+    model,
     variant: body.variant,
     registrationNo: body.registrationNo,
     vinNo: body.vinNo,
@@ -135,7 +164,10 @@ exports.updateVehicle = asyncHandler(async (req, res) => {
   for (const key of fields) {
     if (body[key] !== undefined) doc[key] = body[key];
   }
-  if (body.model !== undefined) doc.model = normalizeModel(body.model);
+  if (body.model !== undefined) doc.model = resolveModelName(body.model);
+  if (body.model !== undefined || body.variant !== undefined) {
+    await assertCatalogModelVariant(doc.model, doc.variant);
+  }
 
   await doc.save();
   await doc.populate('branchId', 'name code');

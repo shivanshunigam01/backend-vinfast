@@ -3,6 +3,8 @@ require('../models/tdModels');
 const TDBooking = require('../models/TDBooking');
 const TDStaff = require('../models/TDStaff');
 const TDVehicle = require('../models/TDVehicle');
+const TDCustomer = require('../models/TDCustomer');
+const TestDrive = require('../models/TestDrive');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
@@ -18,6 +20,153 @@ const {
   repairExecutiveBookingAssignments,
 } = require('../utils/leadAssignment');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+const { getActiveModelNames } = require('../utils/vehicleCatalog');
+const { upsertTDCustomer } = require('../utils/tdCustomerResolver');
+const { nextBookingId, resolveBranch, normalizeSlotTime } = require('../utils/tdBookingSync');
+const { intakePvLead } = require('../utils/pvLeadIntake');
+const { evaluateRepeatDrive } = require('../utils/tdRepeatDrive');
+const Lead = require('../models/Lead');
+const LeadStageHistory = require('../models/LeadStageHistory');
+
+/**
+ * GET /admin/td/bookings/eligibility?mobile=…&model=… — drives the CRM
+ * "Book Test Drive" button state and the repeat-approval UI.
+ */
+exports.checkBookingEligibility = asyncHandler(async (req, res) => {
+  const mobile = String(req.query.mobile || '').replace(/\D/g, '').slice(-10);
+  if (!MOBILE_10_REGEX.test(mobile)) throw new ApiError(400, 'Valid 10-digit mobile is required');
+  const model = String(req.query.model || '').trim();
+
+  const summary = await evaluateRepeatDrive(mobile, model);
+  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  return successResponse(res, {
+    mobile,
+    model: model || null,
+    activeSameModel: summary.activeSameModel,
+    completedSameModel: summary.completedSameModel,
+    completedAny: summary.completedAny,
+    requiresApproval: Boolean(model && summary.completedSameModel),
+    canApproveRepeat: isAdmin,
+    bookings: summary.bookings,
+  });
+});
+
+/**
+ * POST /admin/td/bookings — staff-created test drive booking (multiple drives
+ * per customer profile; repeats after a completed drive need admin approval).
+ */
+exports.createBookingByStaff = asyncHandler(async (req, res) => {
+  const body = req.body || {};
+
+  const name = String(body.customerName || '').trim();
+  if (!name) throw new ApiError(400, 'Customer name is required');
+
+  const mobile = String(body.customerMobile || '').replace(/\D/g, '').slice(-10);
+  if (!MOBILE_10_REGEX.test(mobile)) {
+    throw new ApiError(400, 'Enter a valid 10-digit Indian mobile number');
+  }
+
+  const model = String(body.preferredModel || '').trim();
+  const validModels = await getActiveModelNames();
+  if (!validModels.includes(model)) {
+    throw new ApiError(400, `Invalid model. Use one of: ${validModels.join(', ')}`);
+  }
+
+  if (!body.slotDate) throw new ApiError(400, 'slotDate is required');
+  const slotDate = new Date(body.slotDate);
+  if (Number.isNaN(slotDate.getTime())) throw new ApiError(400, 'Invalid slotDate');
+  slotDate.setHours(0, 0, 0, 0);
+  if (!body.slotTime) throw new ApiError(400, 'slotTime is required');
+
+  const summary = await evaluateRepeatDrive(mobile, model);
+  if (summary.activeSameModel) {
+    throw new ApiError(
+      409,
+      `This customer already has an active ${model} test drive (${summary.activeSameModel.bookingId}, ${summary.activeSameModel.bookingStatus}). Reschedule it instead of creating a duplicate.`,
+    );
+  }
+
+  const isRepeat = Boolean(summary.completedSameModel);
+  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  if (isRepeat && !isAdmin) {
+    throw new ApiError(
+      403,
+      `This customer already completed a ${model} test drive (${summary.completedSameModel.bookingId}). A repeat test drive needs manager/admin approval — ask a manager to create it.`,
+    );
+  }
+
+  const customer = await upsertTDCustomer({
+    name,
+    mobile,
+    email: String(body.customerEmail || '').trim() || undefined,
+    city: String(body.customerCity || '').trim() || undefined,
+  });
+  const branch = await resolveBranch(body.branchName);
+
+  const booking = await TDBooking.create({
+    bookingId: nextBookingId(),
+    bookingStatus: 'CONFIRMED',
+    slotDate,
+    slotTime: normalizeSlotTime(body.slotTime),
+    slotDuration: 60,
+    preferredModel: model,
+    remarks: String(body.remarks || '').trim() || undefined,
+    customerId: customer._id,
+    branchId: branch._id,
+    customerName: name,
+    customerMobile: mobile,
+    customerEmail: String(body.customerEmail || '').trim() || undefined,
+    customerCity: String(body.customerCity || '').trim() || undefined,
+    isRepeatDrive: isRepeat,
+    repeatApprovedBy: isRepeat ? req.admin._id : undefined,
+    createdByAdmin: req.admin._id,
+  });
+
+  // Link the CRM side: update the source lead when given, otherwise run the standard intake.
+  let lead = null;
+  if (body.leadId) {
+    lead = await Lead.findById(body.leadId);
+  }
+  if (lead) {
+    lead.tdBookingId = booking._id;
+    if (!['Booking', 'Delivered', 'Lost'].includes(lead.status)) {
+      lead.status = 'Test Drive Booked';
+    }
+    lead.lastActivityAt = new Date();
+    await lead.save();
+    await LeadStageHistory.create({
+      leadId: lead._id,
+      bookingId: booking._id,
+      fromStage: lead.status,
+      toStage: lead.status,
+      changedBy: req.admin._id,
+      reason: `Test drive booked from CRM (${booking.bookingId}, ${model})${isRepeat ? ' — repeat drive approved' : ''}`,
+    });
+  } else {
+    await intakePvLead({
+      name,
+      mobile,
+      email: String(body.customerEmail || '').trim() || undefined,
+      city: String(body.customerCity || '').trim() || undefined,
+      model,
+      source: 'Test Drive',
+      status: 'Test Drive Booked',
+      interest: 'Test Drive',
+      tdBookingId: booking._id,
+      remarks: `Test drive booked by staff for ${slotDate.toISOString().slice(0, 10)} ${booking.slotTime}`,
+      changedBy: req.admin._id,
+      historyReason: `Test drive booked by ${req.admin.name || 'staff'}${isRepeat ? ' (repeat drive)' : ''}`,
+    }).catch((err) => console.error('[createBookingByStaff intake]', err));
+  }
+
+  const fresh = await findBookingById(booking._id);
+  return successResponse(
+    res,
+    formatTdBooking(fresh),
+    isRepeat ? 'Repeat test drive booked with admin approval' : 'Test drive booked',
+    201,
+  );
+});
 
 const BOOKING_POPULATE = [
   { path: 'customerId' },
@@ -51,6 +200,12 @@ function assertBookingReadable(booking, admin) {
   if (!isExecutiveScopedUser(admin)) return;
   if (!bookingAssignedToStaff(booking, admin._id, admin.email)) {
     throw new ApiError(403, 'This booking is not assigned to you');
+  }
+}
+
+function assertAdminEditRights(admin) {
+  if (!['manager', 'superadmin'].includes(admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can edit booking details');
   }
 }
 
@@ -135,16 +290,104 @@ exports.updateBooking = asyncHandler(async (req, res) => {
   return successResponse(res, formatTdBooking(doc), 'Updated successfully');
 });
 
+const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
+
+/**
+ * Admin edit of booking details: customer identity (name/mobile/email/city),
+ * vehicle model selection, and remarks. Syncs the linked TDCustomer profile
+ * and the original website TestDrive record so all views stay consistent.
+ */
+exports.updateBookingDetails = asyncHandler(async (req, res) => {
+  assertAdminEditRights(req.admin);
+  const doc = await findBookingById(req.params.id);
+
+  const { customerName, customerMobile, customerEmail, customerCity, preferredModel, remarks } =
+    req.body || {};
+
+  const name = customerName !== undefined ? String(customerName).trim() : undefined;
+  if (name !== undefined && !name) throw new ApiError(400, 'Customer name cannot be empty');
+
+  let mobile;
+  if (customerMobile !== undefined) {
+    mobile = String(customerMobile).replace(/\D/g, '').slice(-10);
+    if (!MOBILE_10_REGEX.test(mobile)) {
+      throw new ApiError(400, 'Enter a valid 10-digit Indian mobile number');
+    }
+  }
+
+  const email = customerEmail !== undefined ? String(customerEmail).trim() : undefined;
+  const city = customerCity !== undefined ? String(customerCity).trim() : undefined;
+
+  let model;
+  if (preferredModel !== undefined) {
+    model = String(preferredModel).trim();
+    const validModels = await getActiveModelNames();
+    if (!validModels.includes(model)) {
+      throw new ApiError(400, `Invalid model. Use one of: ${validModels.join(', ')}`);
+    }
+  }
+
+  // Booking (denormalized fields)
+  if (name !== undefined) doc.customerName = name;
+  if (mobile !== undefined) doc.customerMobile = mobile;
+  if (email !== undefined) doc.customerEmail = email || undefined;
+  if (city !== undefined) doc.customerCity = city || undefined;
+  if (remarks !== undefined) doc.remarks = String(remarks).trim() || undefined;
+
+  if (model !== undefined && doc.preferredModel !== model) {
+    doc.preferredModel = model;
+    // Release an assigned demo vehicle that no longer matches the chosen model.
+    if (doc.vehicleId) {
+      const assigned = await TDVehicle.findById(doc.vehicleId._id || doc.vehicleId);
+      if (assigned && assigned.model !== model) {
+        if (['BOOKED', 'AVAILABLE'].includes(assigned.status)) {
+          assigned.status = 'AVAILABLE';
+          await assigned.save();
+        }
+        doc.vehicleId = undefined;
+      }
+    }
+  }
+
+  await doc.save();
+
+  // Sync the linked TDCustomer profile.
+  const customerRef = doc.customerId?._id || doc.customerId;
+  if (customerRef && (name !== undefined || mobile !== undefined || email !== undefined || city !== undefined)) {
+    const update = {};
+    if (name !== undefined) update.name = name;
+    if (mobile !== undefined) update.mobile = mobile;
+    if (email !== undefined) update.email = email || undefined;
+    if (city !== undefined) update.city = city || undefined;
+    await TDCustomer.updateOne({ _id: customerRef }, { $set: update });
+  }
+
+  // Sync the original website TestDrive record shown in the booking dialog.
+  const testDriveRef = doc.testDriveId?._id || doc.testDriveId;
+  if (testDriveRef) {
+    const update = {};
+    if (name !== undefined) update.customerName = name;
+    if (mobile !== undefined) update.mobile = mobile;
+    if (email !== undefined) update.email = email || undefined;
+    if (city !== undefined) update.city = city || undefined;
+    if (model !== undefined) update.model = model;
+    if (remarks !== undefined) update.remarks = String(remarks).trim() || undefined;
+    if (Object.keys(update).length) {
+      await TestDrive.updateOne({ _id: testDriveRef }, { $set: update }, { runValidators: true });
+    }
+  }
+
+  const fresh = await findBookingById(doc._id);
+  return successResponse(res, formatTdBooking(fresh), 'Booking details updated');
+});
+
 exports.verifyDrivingLicence = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   assertBookingReadable(doc, req.admin);
 
-  if (doc.dlVerified && doc.dlImageUrl) {
-    await doc.populate(BOOKING_POPULATE);
-    return successResponse(res, formatTdBooking(doc), 'Driving licence already verified');
-  }
-
-  if (!req.file) {
+  const hasExistingImage = Boolean(doc.dlVerified && doc.dlImageUrl);
+  // A new image is mandatory on first verification; on re-edit the existing image is kept.
+  if (!req.file && !hasExistingImage) {
     throw new ApiError(400, 'Upload a driving licence image to verify');
   }
 
@@ -158,29 +401,32 @@ exports.verifyDrivingLicence = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Invalid driving licence validity date');
   }
 
-  if (!cloudinaryConfigured()) {
-    throw new ApiError(503, 'Image storage is not configured on the server');
-  }
-
-  const uploaded = await uploadBufferToCloudinary(req.file.buffer, {
-    public_id: `td-dl-${doc.bookingId || doc._id}-${Date.now()}`,
-  });
-
-  if (doc.dlImagePublicId && doc.dlImagePublicId !== uploaded.public_id) {
-    try {
-      const cloudinary = require('../config/cloudinary');
-      await cloudinary.uploader.destroy(doc.dlImagePublicId, { resource_type: 'image' });
-    } catch {
-      /* ignore cleanup errors */
+  if (req.file) {
+    if (!cloudinaryConfigured()) {
+      throw new ApiError(503, 'Image storage is not configured on the server');
     }
+
+    const uploaded = await uploadBufferToCloudinary(req.file.buffer, {
+      public_id: `td-dl-${doc.bookingId || doc._id}-${Date.now()}`,
+    });
+
+    if (doc.dlImagePublicId && doc.dlImagePublicId !== uploaded.public_id) {
+      try {
+        const cloudinary = require('../config/cloudinary');
+        await cloudinary.uploader.destroy(doc.dlImagePublicId, { resource_type: 'image' });
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
+
+    doc.dlImageUrl = uploaded.secure_url;
+    doc.dlImagePublicId = uploaded.public_id;
   }
 
   doc.dlVerified = true;
   doc.dlVerifiedAt = new Date();
   doc.dlNumber = dlNumber;
   doc.dlValidUntil = dlValidUntil;
-  doc.dlImageUrl = uploaded.secure_url;
-  doc.dlImagePublicId = uploaded.public_id;
 
   await doc.save();
   await doc.populate(BOOKING_POPULATE);
@@ -257,6 +503,96 @@ exports.assignVehicle = asyncHandler(async (req, res) => {
     formatTdBooking(doc),
     vehicleId ? 'Demo vehicle assigned to booking' : 'Vehicle removed from booking',
   );
+});
+
+/**
+ * Admin approval for repeat test drives. Executives raise repeat requests
+ * (approvalStatus PENDING); managers/superadmins approve or reject here.
+ */
+exports.decideRepeatApproval = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can approve repeat test drives');
+  }
+
+  const { decision, note } = req.body || {};
+  const normalized = String(decision || '').toUpperCase();
+  if (!['APPROVED', 'REJECTED'].includes(normalized)) {
+    throw new ApiError(400, 'decision must be APPROVED or REJECTED');
+  }
+
+  const doc = await findBookingById(req.params.id);
+  if (doc.approvalStatus !== 'PENDING') {
+    throw new ApiError(400, `This booking is not awaiting approval (${doc.approvalStatus})`);
+  }
+
+  doc.approvalStatus = normalized;
+  doc.approvalDecisionBy = req.admin._id;
+  doc.approvalDecidedAt = new Date();
+  if (note) doc.approvalNote = String(note).trim();
+
+  if (normalized === 'APPROVED') {
+    if (doc.bookingStatus === 'PENDING') doc.bookingStatus = 'CONFIRMED';
+  } else {
+    doc.bookingStatus = 'CANCELLED';
+    doc.cancellationReason = doc.approvalNote || 'Repeat test drive request rejected';
+  }
+  await doc.save();
+
+  // Reflect the decision on the linked CRM lead's history.
+  if (doc.leadId) {
+    const LeadStageHistory = require('../models/LeadStageHistory');
+    const Lead = require('../models/Lead');
+    const lead = await Lead.findById(doc.leadId);
+    if (lead) {
+      if (normalized === 'APPROVED') {
+        const prevStage = lead.status;
+        if (['Enquiry', 'Interested', 'Test Drive Booked', 'Test Drive Completed'].includes(lead.status)) {
+          lead.status = 'Test Drive Booked';
+        }
+        lead.tdBookingId = doc._id;
+        lead.lastActivityAt = new Date();
+        await lead.save();
+        await LeadStageHistory.create({
+          leadId: lead._id,
+          bookingId: doc._id,
+          fromStage: prevStage,
+          toStage: lead.status,
+          changedBy: req.admin._id,
+          reason: `Repeat test drive approved (${doc.bookingId})${doc.approvalNote ? ` · ${doc.approvalNote}` : ''}`,
+        });
+      } else {
+        await LeadStageHistory.create({
+          leadId: lead._id,
+          bookingId: doc._id,
+          fromStage: lead.status,
+          toStage: lead.status,
+          changedBy: req.admin._id,
+          reason: `Repeat test drive rejected (${doc.bookingId})${doc.approvalNote ? ` · ${doc.approvalNote}` : ''}`,
+        });
+      }
+    }
+  }
+
+  await doc.populate(BOOKING_POPULATE);
+  return successResponse(
+    res,
+    formatTdBooking(doc),
+    normalized === 'APPROVED' ? 'Repeat test drive approved' : 'Repeat test drive rejected',
+  );
+});
+
+/** Repeat test drive requests awaiting admin decision. */
+exports.listPendingApprovals = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can view approval requests');
+  }
+  const docs = await TDBooking.find({ approvalStatus: 'PENDING' })
+    .populate(BOOKING_POPULATE)
+    .populate('approvalRequestedBy', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(100);
+  const enriched = await ensureBookingsCustomers(docs);
+  return successResponse(res, enriched.map(formatTdBooking));
 });
 
 exports.rescheduleBooking = asyncHandler(async (req, res) => {

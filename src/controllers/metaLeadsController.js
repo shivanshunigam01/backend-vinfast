@@ -16,6 +16,7 @@ function normalizeModel(raw) {
   const compact = stripAfterUnderscore(raw).toUpperCase();
   const target = compact || (raw == null ? '' : String(raw).trim().toUpperCase());
   if (target.includes('VF6')) return 'VF 6';
+  if (target.includes('LIMO')) return 'Limo Green';
   if (target.includes('MPV')) return 'VF MPV 7';
   if (target.includes('VF7')) return 'VF 7';
   if (target.includes('BOTH')) return 'Both';

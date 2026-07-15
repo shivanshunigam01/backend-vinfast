@@ -17,6 +17,15 @@ const PORT = process.env.PORT || 2000;
       }
     }
 
+    if (process.env.SEO_AUTO_BOOTSTRAP !== 'false') {
+      try {
+        const { ensureSeoReady } = require('./src/utils/seoBootstrap');
+        await ensureSeoReady();
+      } catch (bootstrapErr) {
+        console.error('[SEO bootstrap] startup seed skipped:', bootstrapErr.message);
+      }
+    }
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

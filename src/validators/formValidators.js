@@ -7,12 +7,11 @@ const {
   purchaseTimelines,
 } = require('../constants/enums');
 const { isValidLeadModel } = require('../utils/leadModel');
+const { getActiveModelNames } = require('../utils/vehicleCatalog');
 
 const mobileRule = body('mobile')
   .matches(/^[6-9]\d{9}$/)
   .withMessage('Invalid mobile');
-
-const testDriveModels = productModels.filter((m) => m !== 'Both');
 
 exports.leadValidator = [
   body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
@@ -36,9 +35,14 @@ exports.leadValidator = [
 exports.testDriveValidator = [
   body('customerName').trim().isLength({ min: 2 }).withMessage('Customer name is required'),
   mobileRule,
-  body('model')
-    .isIn(testDriveModels)
-    .withMessage(`Model must be one of: ${testDriveModels.join(', ')}`),
+  body('model').custom(async (value) => {
+    // Model master is admin-managed; validate against the live catalog.
+    const models = await getActiveModelNames();
+    if (!models.includes(String(value || '').trim())) {
+      throw new Error(`Model must be one of: ${models.join(', ')}`);
+    }
+    return true;
+  }),
   body('preferredDate').isISO8601().withMessage('Preferred date is required'),
   body('preferredTestDriveLocation')
     .optional({ values: 'null' })

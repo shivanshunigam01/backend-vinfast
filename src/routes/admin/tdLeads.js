@@ -11,7 +11,11 @@ router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getA
 router.get('/', ctrl.getCrmLeads);
 router.post('/', crmCreateLeadValidator, validate, ctrl.createCrmLead);
 router.get('/:id', ctrl.getCrmLeadDetail);
+router.get('/:id/test-drives', ctrl.getLeadTestDrives);
+router.post('/:id/test-drive', ctrl.bookTestDriveForLead);
+router.post('/:id/convert', ctrl.convertLeadToSale);
 router.patch('/:id/assign', ctrl.assignLeadExecutive);
+router.patch('/:id/details', ctrl.updateLeadDetails);
 router.patch('/:id/stage', ctrl.updateLeadStage);
 router.patch('/:id/remarks', ctrl.updateLeadRemarks);
 router.post('/:id/follow-ups', ctrl.addFollowUp);

@@ -19,6 +19,7 @@ const defaultSiteConfig = {
   vf7Price: '₹22.99L*',
   vf6Price: '₹18.19L*',
   mpv7Price: '₹24.49L*',
+  limoGreenPrice: '₹22.99L*',
   vf7Range: '532 km',
   vf6Range: '468 km',
 };

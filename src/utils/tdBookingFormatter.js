@@ -129,6 +129,15 @@ function formatTdBooking(doc) {
     preferredModel: plain.preferredModel,
     remarks: plain.remarks,
     cancellationReason: plain.cancellationReason,
+    isRepeatDrive: Boolean(plain.isRepeatDrive),
+    approvalStatus: plain.approvalStatus || 'NOT_REQUIRED',
+    approvalNote: plain.approvalNote || null,
+    approvalDecidedAt: plain.approvalDecidedAt || null,
+    approvalRequestedBy:
+      plain.approvalRequestedBy && typeof plain.approvalRequestedBy === 'object'
+        ? { _id: plain.approvalRequestedBy._id, name: plain.approvalRequestedBy.name }
+        : plain.approvalRequestedBy || null,
+    leadId: plain.leadId || null,
     createdAt: plain.createdAt,
     customerId: resolveCustomerForBooking(plain),
     vehicleId: formatVehicle(plain.vehicleId),

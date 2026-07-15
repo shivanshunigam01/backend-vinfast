@@ -156,6 +156,47 @@ const FLEET_SEED = [
     currentOdometer: 920,
     status: 'AVAILABLE',
   },
+  // VF MPV 7 and Limo Green are single-lineup models (no separate trims).
+  {
+    vehicleId: 'TDV-MPV7-001',
+    model: 'VF MPV 7',
+    variant: '',
+    registrationNo: 'BR01TDM701',
+    color: 'Infinity Blanc',
+    batteryPercent: 90,
+    currentOdometer: 450,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-MPV7-002',
+    model: 'VF MPV 7',
+    variant: '',
+    registrationNo: 'BR01TDM702',
+    color: 'Jet Black',
+    batteryPercent: 85,
+    currentOdometer: 680,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-LIMO-001',
+    model: 'Limo Green',
+    variant: '',
+    registrationNo: 'BR01TDLG01',
+    color: 'Limo Green',
+    batteryPercent: 93,
+    currentOdometer: 380,
+    status: 'AVAILABLE',
+  },
+  {
+    vehicleId: 'TDV-LIMO-002',
+    model: 'Limo Green',
+    variant: '',
+    registrationNo: 'BR01TDLG02',
+    color: 'Infinity Blanc',
+    batteryPercent: 88,
+    currentOdometer: 540,
+    status: 'AVAILABLE',
+  },
 ];
 
 const DEFAULT_SLOT_TIMES = [

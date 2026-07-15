@@ -23,6 +23,8 @@ function normalizeModel(raw) {
   const s = String(raw || '').trim();
   if (!s) return 'VF 7';
   const up = s.toUpperCase().replace(/\s+/g, '');
+  if (up.includes('LIMO')) return 'Limo Green';
+  if (up.includes('MPV')) return 'VF MPV 7';
   if (up.includes('VF6')) return 'VF 6';
   if (up.includes('VF7')) return 'VF 7';
   return s;
