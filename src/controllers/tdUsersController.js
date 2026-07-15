@@ -141,6 +141,27 @@ exports.updateUser = asyncHandler(async (req, res) => {
   return successResponse(res, formatStaff(doc), 'User updated');
 });
 
+/**
+ * Reveal a staff member's saved password (User Master "eye" feature).
+ * Restricted to managers/superadmins. Users created before this feature
+ * have no stored copy until a new password is set via Edit.
+ */
+exports.getUserPassword = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can view passwords');
+  }
+
+  const doc = await TDStaff.findById(req.params.id).select('+passwordPlain name email');
+  if (!doc) throw new ApiError(404, 'User not found');
+
+  return successResponse(res, {
+    _id: doc._id,
+    email: doc.email,
+    password: doc.passwordPlain || null,
+    available: Boolean(doc.passwordPlain),
+  });
+});
+
 exports.patchUser = asyncHandler(async (req, res) => {
   const doc = await TDStaff.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'User not found');

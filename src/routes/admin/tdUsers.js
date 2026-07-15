@@ -8,6 +8,7 @@ const { mongoIdParam } = require('../../validators/adminValidators');
 router.get('/assignable', tdUsersController.listAssignable);
 router.get('/', tdUsersController.listUsers);
 router.post('/', tdUsersController.createUser);
+router.get('/:id/password', mongoIdParam, validate, tdUsersController.getUserPassword);
 router.put('/:id', mongoIdParam, validate, tdUsersController.updateUser);
 router.patch('/:id', mongoIdParam, validate, tdUsersController.patchUser);
 router.delete('/:id', mongoIdParam, validate, tdUsersController.deleteUser);

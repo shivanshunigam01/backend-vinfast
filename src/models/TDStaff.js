@@ -16,6 +16,9 @@ const tdStaffSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 8, select: false },
+    // Viewable copy of the password for the User Master "eye" feature.
+    // Only exposed to managers/superadmins via GET /admin/td/users/:id/password.
+    passwordPlain: { type: String, select: false },
     role: { type: String, default: 'executive', trim: true },
     // Known keys from STAFF_DESIGNATIONS, or a free-text custom position
     // (e.g. "Telecaller") typed by the admin in User Master.
@@ -31,6 +34,7 @@ const tdStaffSchema = new mongoose.Schema(
 
 tdStaffSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
+  this.passwordPlain = this.password;
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
