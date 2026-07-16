@@ -5,7 +5,7 @@ const PVCustomer = require('../models/PVCustomer');
 
 const Lead = require('../models/Lead');
 const { normalizeLeadModelForStorage, isValidLeadModel } = require('../utils/leadModel');
-const { intakePvLead } = require('../utils/pvLeadIntake');
+const { intakePvLead, findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
@@ -566,6 +566,19 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
 
   // Existing-customer detection — the UI shows the full-history popup when true.
   const existingCustomer = await findCustomerByMobile(mobile);
+
+  // Duplicate guard: one open lead per mobile. Staff must work the existing
+  // lead (test drives can still be booked on it) instead of creating a copy.
+  const duplicateLead = await findOpenLeadForCustomer({ mobile: String(mobile).trim() });
+  if (duplicateLead) {
+    const ref = duplicateLead.leadId || duplicateLead.opportunityId || duplicateLead._id;
+    throw new ApiError(
+      409,
+      `A lead already exists for mobile ${String(mobile).trim()} — ${ref} (stage: ${duplicateLead.status}${
+        duplicateLead.assignedToEmail ? `, assigned to ${duplicateLead.assignedToEmail}` : ''
+      }). Open that lead to follow up or book a test drive instead of creating a duplicate.`,
+    );
+  }
 
   const { lead } = await intakePvLead({
     name: String(name).trim(),

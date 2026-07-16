@@ -17,6 +17,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildDateRange, buildSearchQuery } = require('../utils/queryBuilder');
+const { findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 
 const LEAD_SEARCH_FIELDS = ['name', 'mobile', 'email', 'city', 'model', 'source', 'interest'];
 
@@ -48,7 +49,24 @@ exports.getAllLeads = asyncHandler(async (req, res) => {
   return successResponse(res, data, undefined, 200, { total: data.length });
 });
 exports.getLead = getOne(Lead, 'assignedTo');
-exports.createLead = createOne(Lead);
+
+/** Duplicate guard: one open lead per mobile (closed Lost/Delivered leads don't block). */
+exports.createLead = asyncHandler(async (req, res) => {
+  const mobile = String(req.body?.mobile || '').trim();
+  if (mobile) {
+    const duplicate = await findOpenLeadForCustomer({ mobile });
+    if (duplicate) {
+      const ref = duplicate.leadId || duplicate.opportunityId || duplicate._id;
+      throw new ApiError(
+        409,
+        `A lead already exists for mobile ${mobile} — ${ref} (stage: ${duplicate.status}). Update the existing lead instead of creating a duplicate.`,
+      );
+    }
+  }
+  const doc = await Lead.create(req.body);
+  return successResponse(res, doc, 'Created successfully', 201);
+});
+
 exports.updateLead = updateOne(Lead);
 exports.deleteLead = deleteOne(Lead);
 

@@ -93,6 +93,22 @@ async function assignPvIds(leadDoc) {
   return leadDoc;
 }
 
+/** Stages after which a customer may legitimately open a brand-new lead. */
+const CLOSED_LEAD_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
+
+/**
+ * The customer's open (not Lost/Delivered) lead, newest first. Used to
+ * dedupe intake by mobile: one open lead/opportunity per customer.
+ */
+async function findOpenLeadForCustomer({ parentId, mobile }) {
+  const or = [];
+  if (parentId) or.push({ pvCustomerId: parentId });
+  const mobileNorm = pickStr(mobile);
+  if (mobileNorm) or.push({ mobile: mobileNorm });
+  if (!or.length) return null;
+  return Lead.findOne({ $or: or, status: { $nin: CLOSED_LEAD_STATUSES } }).sort({ createdAt: -1 });
+}
+
 /**
  * Central intake: one parent customer per mobile, new lead + opportunity per intake.
  * Meta leads upsert by metaUniqueId. TD leads upsert by tdBookingId when provided.
@@ -177,6 +193,15 @@ async function intakePvLead(input = {}) {
     lead = await Lead.findOne({ tdBookingId });
   }
 
+  // Duplicate guard: same mobile re-enquiring (website form, walk-in, another
+  // test drive) updates the customer's open lead instead of creating a second
+  // lead/opportunity. A new lead is only created after the previous one closed
+  // (Lost/Delivered). Test drive bookings stay unlimited — TDBooking records
+  // are separate; the lead simply links to the latest booking.
+  if (!lead) {
+    lead = await findOpenLeadForCustomer({ parentId: parent._id, mobile: parent.mobile });
+  }
+
   if (lead) {
     // Re-syncs (Meta webhooks, TD booking updates) must not drag an advanced
     // lead back down the pipeline — keep the further-along stage. A "Lost"
@@ -219,4 +244,6 @@ module.exports = {
   ensureParentCustomer,
   ensureSubCustomer,
   assignPvIds,
+  findOpenLeadForCustomer,
+  CLOSED_LEAD_STATUSES,
 };
