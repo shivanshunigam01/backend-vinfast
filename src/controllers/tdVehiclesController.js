@@ -195,3 +195,47 @@ exports.updateVehicleStatus = asyncHandler(async (req, res) => {
   await doc.populate('branchId', 'name code');
   return successResponse(res, formatVehicle(doc), 'Vehicle status updated');
 });
+
+/**
+ * Permanently remove a junk/incorrect demo vehicle.
+ * Blocked while the car has an active booking (BOOKED / RUNNING / IN_PROGRESS).
+ * Unlinks any Vehicle Stock record that was tagged to this demo unit.
+ */
+exports.deleteVehicle = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can delete demo vehicles');
+  }
+
+  const doc = await TDVehicle.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Vehicle not found');
+
+  if (['BOOKED', 'RUNNING'].includes(doc.status)) {
+    throw new ApiError(400, `Cannot delete a vehicle that is currently ${doc.status} — free it first`);
+  }
+
+  const TDBooking = require('../models/TDBooking');
+  const active = await TDBooking.countDocuments({
+    vehicleId: doc._id,
+    bookingStatus: { $in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+  });
+  if (active > 0) {
+    throw new ApiError(
+      400,
+      `This vehicle has ${active} active booking(s). Cancel or complete them before deleting.`,
+    );
+  }
+
+  try {
+    const VehicleStock = require('../models/VehicleStock');
+    await VehicleStock.updateMany(
+      { demoVehicleId: doc._id },
+      { $set: { isDemo: false, status: 'FRESH_STOCK' }, $unset: { demoVehicleId: 1 } },
+    );
+  } catch {
+    // VehicleStock may be unavailable in older deployments — ignore unlink failure.
+  }
+
+  const vehicleId = doc.vehicleId;
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id, vehicleId }, `Vehicle ${vehicleId} deleted`);
+});

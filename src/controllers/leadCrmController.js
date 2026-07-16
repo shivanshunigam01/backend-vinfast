@@ -899,5 +899,26 @@ exports.checkOpportunityDuplicates = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Permanently delete a junk/incorrect CRM lead and its stage/follow-up history.
+ * Managers and superadmins only — executives cannot delete.
+ */
+exports.deleteCrmLead = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  assertAdminEditRights(req.admin);
+
+  const lead = await Lead.findById(req.params.id);
+  if (!lead) throw new ApiError(404, 'Lead not found');
+
+  const ref = lead.leadId || lead.opportunityId || String(lead._id);
+  await Promise.all([
+    LeadFollowUp.deleteMany({ leadId: lead._id }),
+    LeadStageHistory.deleteMany({ leadId: lead._id }),
+    lead.deleteOne(),
+  ]);
+
+  return successResponse(res, { _id: lead._id, leadId: lead.leadId }, `Lead ${ref} deleted`);
+});
+
 module.exports.buildLeadQuery = buildLeadQuery;
 module.exports.formatCrmLead = formatCrmLead;

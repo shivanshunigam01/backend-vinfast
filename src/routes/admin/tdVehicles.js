@@ -10,5 +10,6 @@ router.post('/', tdVehiclesController.createVehicle);
 router.patch('/:id/status', mongoIdParam, validate, tdVehiclesController.updateVehicleStatus);
 router.put('/:id', mongoIdParam, validate, tdVehiclesController.updateVehicle);
 router.patch('/:id', mongoIdParam, validate, tdVehiclesController.updateVehicle);
+router.delete('/:id', mongoIdParam, validate, tdVehiclesController.deleteVehicle);
 
 module.exports = router;

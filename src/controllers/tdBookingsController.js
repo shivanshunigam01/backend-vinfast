@@ -442,6 +442,33 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
   return successResponse(res, formatTdBooking(doc), 'Booking cancelled');
 });
 
+/**
+ * Permanently remove a junk/incorrect booking from the database.
+ * Managers/superadmins only. Releases any BOOKED demo vehicle back to AVAILABLE.
+ */
+exports.deleteBooking = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can delete bookings');
+  }
+
+  const doc = await findBookingById(req.params.id);
+  if (doc.bookingStatus === 'IN_PROGRESS') {
+    throw new ApiError(400, 'Cannot delete a booking that is currently in progress — end the drive first');
+  }
+
+  if (doc.vehicleId) {
+    const vehicle = await TDVehicle.findById(doc.vehicleId);
+    if (vehicle && ['BOOKED', 'AVAILABLE'].includes(vehicle.status)) {
+      vehicle.status = 'AVAILABLE';
+      await vehicle.save();
+    }
+  }
+
+  const bookingId = doc.bookingId;
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id, bookingId }, `Booking ${bookingId} deleted`);
+});
+
 exports.assignExecutive = asyncHandler(async (req, res) => {
   const { executiveId } = req.body || {};
   if (!executiveId) throw new ApiError(400, 'executiveId is required');

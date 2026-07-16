@@ -362,6 +362,40 @@ exports.updateMetaLead = asyncHandler(async (req, res) => {
 });
 
 /**
+ * DELETE /admin/meta-leads/:id
+ * Remove a junk Meta lead. Optionally deletes the linked CRM lead when
+ * `?deleteCrmLead=true` (default: keep CRM lead, only drop the Meta row).
+ */
+exports.deleteMetaLead = asyncHandler(async (req, res) => {
+  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only managers and admins can delete Meta leads');
+  }
+
+  const doc = await MetaLead.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Meta lead not found');
+
+  const alsoDeleteCrm = String(req.query.deleteCrmLead || '').toLowerCase() === 'true';
+  let crmDeleted = false;
+  if (alsoDeleteCrm && doc.leadId) {
+    const LeadFollowUp = require('../models/LeadFollowUp');
+    const LeadStageHistory = require('../models/LeadStageHistory');
+    await Promise.all([
+      LeadFollowUp.deleteMany({ leadId: doc.leadId }),
+      LeadStageHistory.deleteMany({ leadId: doc.leadId }),
+      Lead.findByIdAndDelete(doc.leadId),
+    ]);
+    crmDeleted = true;
+  }
+
+  await doc.deleteOne();
+  return successResponse(
+    res,
+    { _id: doc._id, crmDeleted },
+    crmDeleted ? 'Meta lead and linked CRM lead deleted' : 'Meta lead deleted',
+  );
+});
+
+/**
  * POST /admin/meta-leads (auth required)
  * Create a single Meta lead + linked CRM Lead from admin form.
  */

@@ -23,5 +23,6 @@ router.patch('/:id/stage', ctrl.updateLeadStage);
 router.patch('/:id/remarks', ctrl.updateLeadRemarks);
 router.post('/:id/follow-ups', ctrl.addFollowUp);
 router.patch('/:id/follow-ups/:followUpId', ctrl.updateFollowUp);
+router.delete('/:id', authorize('superadmin', 'manager'), ctrl.deleteCrmLead);
 
 module.exports = router;

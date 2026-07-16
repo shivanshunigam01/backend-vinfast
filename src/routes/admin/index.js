@@ -49,6 +49,13 @@ router.delete('/leads/:id', mongoIdParam, validate, authorize('superadmin'), ctr
 router.post('/meta-leads', metaLeadsController.createManualMetaLead);
 router.post('/meta-leads/bulk', metaLeadsController.bulkCreateMetaLeads);
 router.put('/meta-leads/:id', mongoIdParam, validate, metaLeadsController.updateMetaLead);
+router.delete(
+  '/meta-leads/:id',
+  mongoIdParam,
+  validate,
+  authorize('superadmin', 'manager'),
+  metaLeadsController.deleteMetaLead,
+);
 
 // Master data — vehicle models & variants (/api/v1/admin/vehicle-models)
 router.use('/vehicle-models', vehicleModelsRoutes);
