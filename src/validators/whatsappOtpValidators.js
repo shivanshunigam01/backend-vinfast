@@ -15,6 +15,6 @@ exports.whatsappOtpVerifyValidator = [
     .withMessage('Valid 10-digit Indian mobile is required'),
   body('code')
     .trim()
-    .matches(/^\d{6}$/)
-    .withMessage('Enter the 6-digit code'),
+    .matches(/^\d{4}$/)
+    .withMessage('Enter the 4-digit code'),
 ];

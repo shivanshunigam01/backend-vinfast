@@ -73,7 +73,8 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     return errorResponse(res, 'Valid 10-digit Indian mobile number is required.', 400);
   }
 
-  const otp = String(crypto.randomInt(100000, 1000000));
+  // 4-digit OTP — the WA campaign template expects a single 4-digit code param.
+  const otp = String(crypto.randomInt(1000, 10000));
   const codeHash = hashOtp(mobile, otp);
   const sentAt = new Date();
   const expiresAt = new Date(Date.now() + OTP_TTL_MS);
@@ -122,8 +123,8 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
     return successResponse(res, { verificationToken }, undefined, 200);
   }
 
-  if (rawCode.length !== 6) {
-    return errorResponse(res, 'Valid mobile and 6-digit code are required.', 400);
+  if (rawCode.length !== 4) {
+    return errorResponse(res, 'Valid mobile and 4-digit code are required.', 400);
   }
   const code = rawCode;
 

@@ -12,7 +12,7 @@ const ZENTROVERSE_WA_CAMPAIGN_URL =
 const ZENTROVERSE_WA_API_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTc2NWQxNGY3ZWZkMGUzMjM3Nzk3NiIsIm5hbWUiOiJQYXRsaXB1dHJhIE1vdG9ycyIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OWU3NjVkMTRmN2VmZDBlMzIzNzc5NmUiLCJhY3RpdmVQbGFuIjoiTk9ORSIsImlhdCI6MTc3Njc3MjU2MX0.OIxcKrvdMJtz1K8D9y096cqzAiQ5jW-lWzpErCEvaOM';
 
-const ZENTROVERSE_CAMPAIGN_NAME = 'whatssap_verify';
+const ZENTROVERSE_CAMPAIGN_NAME = 'test';
 const ZENTROVERSE_SOURCE = 'new-landing-page form';
 
 /**
@@ -41,9 +41,9 @@ function sanitizeWaTemplateParam(str, fallback = 'Customer') {
   return s.slice(0, 60);
 }
 
-/** OTP must be digits only for safety. */
+/** OTP must be digits only for safety (4-digit code). */
 function sanitizeOtpParam(otp) {
-  return String(otp ?? '').replace(/\D/g, '').slice(0, 6);
+  return String(otp ?? '').replace(/\D/g, '').slice(0, 4);
 }
 
 /**
@@ -105,12 +105,14 @@ async function sendOtpViaAisensy({ mobile10, displayName, otpCode }) {
     throw new Error('Invalid OTP');
   }
 
+  // Campaign "test" expects exactly ONE template param — the OTP.
+  // Sending more/fewer params triggers "Template params does not match the campaign".
   const payload = {
     apiKey: ZENTROVERSE_WA_API_KEY,
     campaignName: ZENTROVERSE_CAMPAIGN_NAME,
     destination,
     userName,
-    templateParams: ['$FirstName', otpStr],
+    templateParams: [otpStr],
     source: ZENTROVERSE_SOURCE,
     media: {},
     buttons: [
