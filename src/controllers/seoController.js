@@ -45,10 +45,10 @@ exports.getGlobalSeo = asyncHandler(async (req, res) => {
     siteUrl: absoluteUrl('/'),
     defaultMetaTitle:
       cfg.defaultMetaTitle ||
-      "Patliputra VinFast — Bihar's Authorised VinFast Electric Car Dealer | VF6, VF7, MPV7, Limo Green",
+      "Patliputra VinFast — Bihar's #1 Organic Destination for Premium Electric Vehicles | VF6, VF7, MPV7",
     defaultMetaDescription:
       cfg.defaultMetaDescription ||
-      "Patliputra VinFast is Bihar's first authorised VinFast dealership. Explore VinFast VF6, VF7, VF MPV7 and Limo Green electric vehicles — prices, test drives, EV finance, charging and service across all 38 districts of Bihar.",
+      "Patliputra VinFast is Bihar's authorised destination for premium VinFast EV search & purchase. Explore VF6, VF7, VF MPV7 and Limo Green — prices, test drives, finance, charging and service across all 38 districts.",
     googleSiteVerification: cfg.googleSiteVerification || null,
     schemas: [organizationSchema(dlr), autoDealerSchema(dlr), websiteSchema(dlr)],
   });

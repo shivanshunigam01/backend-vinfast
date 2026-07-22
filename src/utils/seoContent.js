@@ -82,6 +82,59 @@ function buildFaqs(district, model, { price, range } = {}) {
     {
       question: `Can I exchange my current car for a ${m}?`,
       answer: `Yes. ${DEALER_NAME} offers exchange benefits on your existing petrol, diesel or CNG car when you upgrade to the ${m}. Get an instant exchange valuation from our team in ${d}.`,
+    },
+    {
+      question: `Is the ${m} suitable for Bihar roads and city driving in ${d}?`,
+      answer: `Yes. The ${m} is ${model.positioning}, making it a strong match for daily driving in ${d} and highway trips across Bihar. Book a test drive to experience ride comfort yourself.`,
+    },
+    {
+      question: `How much does it cost to charge a ${m}?`,
+      answer: `Charging cost depends on your electricity tariff and usable battery energy. Use our charging calculator for an estimate — typically far lower than petrol or diesel for the same kilometres in ${d}.`,
+    },
+    {
+      question: `Can I install a home charger for the ${m} in ${d}?`,
+      answer: `Yes. Most homes and apartments in ${d} can support an AC home charger. ${DEALER_NAME} guides electrical assessment and installation partners.`,
+    },
+    {
+      question: `What is the on-road price of the ${m} in ${d}?`,
+      answer: price
+        ? `Ex-showroom pricing starts from ${price}. On-road price in ${d} includes registration, insurance and applicable offers — request a personalised quote from ${DEALER_NAME}.`
+        : `On-road price for the ${m} in ${d} depends on variant, insurance and current offers. Request a quote from ${DEALER_NAME} for an exact figure.`,
+    },
+    {
+      question: `Which ${m} variant should I buy?`,
+      answer:
+        model.variants.length > 1
+          ? `Choose based on features and budget: ${model.variants.join(', ')}. Our ${d} advisors walk you through differences in a showroom or video consultation.`
+          : `The ${m} ${model.variants[0]} configuration is thoughtfully equipped; confirm the latest feature list with ${DEALER_NAME}.`,
+    },
+    {
+      question: `Does the ${m} support DC fast charging?`,
+      answer: `Yes. The ${m} supports DC fast charging for quicker top-ups on the highway, in addition to AC charging at home in ${d}.`,
+    },
+    {
+      question: `Can I get insurance for the ${m} at the dealership?`,
+      answer: `Yes. ${DEALER_NAME} assists with EV insurance quotes and policy placement when you purchase the ${m} for use in ${d}.`,
+    },
+    {
+      question: `Is there a VinFast showroom near ${d}?`,
+      answer: `${DEALER_NAME}'s authorised showroom is in Patna and serves customers across ${d} and all of Bihar with sales, test drives, finance and service coordination.`,
+    },
+    {
+      question: `How do I book the ${m} online from ${d}?`,
+      answer: `Use the Pre-Booking / Book Now form on our website, or book a test drive first. Our team confirms next steps on WhatsApp for customers in ${d}.`,
+    },
+    {
+      question: `What are the maintenance costs of the ${m}?`,
+      answer: `Electric vehicles typically have lower routine maintenance than petrol or diesel cars. Scheduled service for the ${m} is available through ${DEALER_NAME} for owners in ${d}.`,
+    },
+    {
+      question: `Is the ${m} a good premium EV for families in ${d}?`,
+      answer: `With ${model.seats} seats and ${model.bodyType.toLowerCase()} practicality, the ${m} suits families in ${d} who want lower running costs and modern technology.`,
+    },
+    {
+      question: `Can corporates in ${d} buy the ${m}?`,
+      answer: `Yes. ${DEALER_NAME} supports corporate and fleet purchases across Bihar, including customers based in ${d}. Contact our corporate sales desk for a proposal.`,
     }
   );
 
