@@ -135,7 +135,7 @@ function generateDistrictPageContent(district, model, siteConfig = {}) {
     },
     {
       heading: `Book a ${model.name} test drive in ${d}`,
-      body: `Experience the ${model.name} yourself. Book a test drive online — it takes under a minute — and the ${DEALER_NAME} team will confirm your slot on WhatsApp. Home test drives can be arranged for select locations in ${d}.`,
+      body: `Experience the ${model.name} yourself. Book a test drive online — it takes under a minute — and the ${DEALER_NAME} team will confirm your slot on WhatsApp. Home test drives can be arranged across Bihar, including ${d}.`,
     },
   ];
 

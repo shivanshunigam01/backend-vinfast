@@ -6,7 +6,9 @@ const WhatsappOtpChallenge = require('../models/WhatsappOtpChallenge');
 const { sendOtpViaAisensy } = require('../utils/aisensyCampaign');
 
 const OTP_TTL_MS = Number(process.env.WHATSAPP_OTP_CODE_TTL_MS || 10 * 60 * 1000);
-const MAX_VERIFY_ATTEMPTS = Number(process.env.WHATSAPP_OTP_MAX_ATTEMPTS || 6);
+const MAX_VERIFY_ATTEMPTS = Number(process.env.WHATSAPP_OTP_MAX_ATTEMPTS || 5);
+const RESEND_COOLDOWN_MS = Number(process.env.WHATSAPP_OTP_RESEND_COOLDOWN_MS || 60 * 1000);
+const LOCK_MS = Number(process.env.WHATSAPP_OTP_LOCK_MS || 15 * 60 * 1000);
 const TOKEN_EXPIRES =
   process.env.WHATSAPP_OTP_TOKEN_EXPIRES_IN?.trim() || process.env.JWT_EXPIRES_IN?.trim() || '15m';
 
@@ -62,6 +64,9 @@ function issueVerificationToken(mobile) {
   });
 }
 
+/**
+ * Explicit customer request only — never called from verify on wrong attempts.
+ */
 exports.sendOtp = asyncHandler(async (req, res) => {
   if (!isOtpEnabled()) {
     return errorResponse(res, 'WhatsApp OTP is not enabled on this server.', 503);
@@ -73,7 +78,20 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     return errorResponse(res, 'Valid 10-digit Indian mobile number is required.', 400);
   }
 
-  // 4-digit OTP — the WA campaign template expects a single 4-digit code param.
+  const existing = await WhatsappOtpChallenge.findOne({ mobile });
+  if (existing?.otpSentAt) {
+    const elapsed = Date.now() - new Date(existing.otpSentAt).getTime();
+    if (elapsed < RESEND_COOLDOWN_MS) {
+      const retryAfterSec = Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000);
+      return errorResponse(
+        res,
+        `Please wait ${retryAfterSec}s before requesting a new code.`,
+        429,
+      );
+    }
+  }
+
+  // Fresh OTP only on explicit send — wrong verify attempts never reach here.
   const otp = String(crypto.randomInt(1000, 10000));
   const codeHash = hashOtp(mobile, otp);
   const sentAt = new Date();
@@ -87,8 +105,9 @@ exports.sendOtp = asyncHandler(async (req, res) => {
       otpSentAt: sentAt,
       verifiedAt: null,
       verifyAttempts: 0,
+      lockedUntil: null,
     },
-    { upsert: true, new: true }
+    { upsert: true, new: true },
   );
 
   try {
@@ -104,7 +123,17 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     return errorResponse(res, clientMsg, 502);
   }
 
-  return successResponse(res, { sent: true, mobileMasked: `${mobile.slice(0, 2)}******${mobile.slice(-2)}` }, undefined, 200);
+  return successResponse(
+    res,
+    {
+      sent: true,
+      mobileMasked: `${mobile.slice(0, 2)}******${mobile.slice(-2)}`,
+      resendCooldownSec: Math.ceil(RESEND_COOLDOWN_MS / 1000),
+      maxAttempts: MAX_VERIFY_ATTEMPTS,
+    },
+    undefined,
+    200,
+  );
 });
 
 exports.verifyOtp = asyncHandler(async (req, res) => {
@@ -129,29 +158,54 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
   const code = rawCode;
 
   const doc = await WhatsappOtpChallenge.findOne({ mobile });
-  if (!doc || doc.expiresAt.getTime() < Date.now()) {
-    return errorResponse(res, 'Code expired or not found. Request a new code on WhatsApp.', 400);
-  }
-
-  if (!doc.codeHash) {
+  if (!doc || !doc.codeHash) {
     return errorResponse(
       res,
-      'This number is already verified or no code is pending. Request a new code if you need to verify again.',
-      400
+      'No active code for this number. Request a new code on WhatsApp.',
+      400,
     );
   }
 
+  if (doc.lockedUntil && new Date(doc.lockedUntil).getTime() > Date.now()) {
+    return errorResponse(
+      res,
+      'Too many incorrect attempts. Request a new code to continue.',
+      429,
+    );
+  }
+
+  if (doc.expiresAt.getTime() < Date.now()) {
+    // Keep the row; do NOT auto-issue a new OTP — customer must tap Send again.
+    return errorResponse(res, 'Code expired. Request a new code on WhatsApp.', 400);
+  }
+
   if (doc.verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
-    await WhatsappOtpChallenge.deleteOne({ mobile });
-    return errorResponse(res, 'Too many attempts. Request a new code.', 429);
+    doc.lockedUntil = new Date(Date.now() + LOCK_MS);
+    await doc.save();
+    return errorResponse(
+      res,
+      'Too many incorrect attempts. Request a new code to continue.',
+      429,
+    );
   }
 
   const expected = doc.codeHash;
   const actual = hashOtp(mobile, code);
   if (!timingSafeEqualHex(expected, actual)) {
     doc.verifyAttempts += 1;
+    const remaining = Math.max(0, MAX_VERIFY_ATTEMPTS - doc.verifyAttempts);
+    if (doc.verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
+      doc.lockedUntil = new Date(Date.now() + LOCK_MS);
+    }
     await doc.save();
-    return errorResponse(res, 'Incorrect code. Try again.', 400);
+    // Same OTP remains valid until expiry / explicit resend — never mint a new one here.
+    return errorResponse(
+      res,
+      remaining > 0
+        ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+        : 'Too many incorrect attempts. Request a new code to continue.',
+      remaining > 0 ? 400 : 429,
+    );
   }
 
   const verifiedAt = new Date();
@@ -165,8 +219,9 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
         verifiedAt,
         expiresAt: sessionUntil,
         verifyAttempts: 0,
+        lockedUntil: null,
       },
-    }
+    },
   );
 
   const verificationToken = issueVerificationToken(mobile);

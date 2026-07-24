@@ -14,10 +14,12 @@ const { ensureBookingsCustomers, ensureBookingCustomer } = require('../utils/tdC
 const { syncAllLegacyTestDrives } = require('../utils/tdBookingSync');
 const {
   isExecutiveScopedUser,
+  isTeamScopedUser,
   assignedExecutiveFilterAsync,
   bookingAssignedToStaff,
   applyBookingExecutiveAssignment,
   repairExecutiveBookingAssignments,
+  resolveStaffIdsForUser,
 } = require('../utils/leadAssignment');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { getActiveModelNames } = require('../utils/vehicleCatalog');
@@ -196,11 +198,13 @@ async function findBookingById(id) {
   return doc;
 }
 
-function assertBookingReadable(booking, admin) {
-  if (!isExecutiveScopedUser(admin)) return;
-  if (!bookingAssignedToStaff(booking, admin._id, admin.email)) {
-    throw new ApiError(403, 'This booking is not assigned to you');
-  }
+async function assertBookingReadable(booking, admin) {
+  if (!isTeamScopedUser(admin)) return;
+  const staffIds = await resolveStaffIdsForUser(admin);
+  const assigned = booking?.assignedExecutive?._id || booking?.assignedExecutive;
+  if (assigned && staffIds.includes(String(assigned))) return;
+  if (bookingAssignedToStaff(booking, admin._id, admin.email)) return;
+  throw new ApiError(403, 'This booking is not in your team');
 }
 
 function assertAdminEditRights(admin) {
@@ -213,12 +217,17 @@ exports.listBookings = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
 
+  // MoM #12: SM/SH/SE limited to reporting tree; MD/CEO/GM see all.
+  if (isTeamScopedUser(req.admin)) {
+    Object.assign(query, await assignedExecutiveFilterAsync(req.admin));
+  }
+
   let [docs, total] = await Promise.all([
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
 
-  if (total === 0 && page === 1 && !req.query.status && !req.query.date) {
+  if (total === 0 && page === 1 && !req.query.status && !req.query.date && !isTeamScopedUser(req.admin)) {
     await syncAllLegacyTestDrives();
     [docs, total] = await Promise.all([
       TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
@@ -235,13 +244,9 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
 
-  if (isExecutiveScopedUser(req.admin)) {
-    await repairExecutiveBookingAssignments(req.admin);
-    Object.assign(query, await assignedExecutiveFilterAsync(req.admin));
-  } else {
-    const staffId = req.tdStaff?._id || req.admin?._id;
-    if (staffId) query.assignedExecutive = staffId;
-  }
+  // My Bookings: always scoped to self + reporting subtree (even for managers).
+  await repairExecutiveBookingAssignments(req.admin);
+  Object.assign(query, await assignedExecutiveFilterAsync(req.admin));
 
   const [docs, total] = await Promise.all([
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
@@ -271,7 +276,7 @@ exports.listExecutives = asyncHandler(async (req, res) => {
 
 exports.getBooking = asyncHandler(async (req, res) => {
   let doc = await findBookingById(req.params.id);
-  assertBookingReadable(doc, req.admin);
+  await assertBookingReadable(doc, req.admin);
   doc = await ensureBookingCustomer(doc);
   await doc.populate(BOOKING_POPULATE);
   return successResponse(res, formatTdBooking(doc));
@@ -279,15 +284,32 @@ exports.getBooking = asyncHandler(async (req, res) => {
 
 exports.updateBooking = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
-  assertBookingReadable(doc, req.admin);
+  await assertBookingReadable(doc, req.admin);
   const { bookingStatus, dlVerified } = req.body || {};
 
-  if (bookingStatus !== undefined) doc.bookingStatus = String(bookingStatus).toUpperCase();
+  if (bookingStatus !== undefined) {
+    const next = String(bookingStatus).toUpperCase();
+    // MoM #9: DL mandatory before starting / confirming drive initiation.
+    if (['IN_PROGRESS', 'CONFIRMED'].includes(next) && next !== doc.bookingStatus) {
+      const hasDl = Boolean(doc.dlVerified && doc.dlImageUrl);
+      if (!hasDl && next === 'IN_PROGRESS') {
+        throw new ApiError(
+          400,
+          'Driving licence must be uploaded and verified before starting the test drive.',
+        );
+      }
+    }
+    if (next === 'COMPLETED') {
+      const { notifyTestDriveCompleted } = require('../utils/notifications');
+      await notifyTestDriveCompleted({ booking: doc, customer: doc.customerId });
+    }
+    doc.bookingStatus = next;
+  }
   if (dlVerified !== undefined) doc.dlVerified = Boolean(dlVerified);
 
   await doc.save();
   await doc.populate(BOOKING_POPULATE);
-  return successResponse(res, formatTdBooking(doc), 'Updated successfully');
+  return successResponse(res, formatTdBooking(doc), 'Booking updated');
 });
 
 const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
@@ -383,7 +405,7 @@ exports.updateBookingDetails = asyncHandler(async (req, res) => {
 
 exports.verifyDrivingLicence = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
-  assertBookingReadable(doc, req.admin);
+  await assertBookingReadable(doc, req.admin);
 
   const hasExistingImage = Boolean(doc.dlVerified && doc.dlImageUrl);
   // A new image is mandatory on first verification; on re-edit the existing image is kept.
@@ -478,10 +500,89 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   if (!staff || !staff.active) throw new ApiError(404, 'Executive not found');
 
   applyBookingExecutiveAssignment(doc, staff);
+  doc.assignmentStatus = 'PENDING_ACCEPTANCE';
+  doc.assignmentRespondedAt = undefined;
+  doc.assignmentRejectReason = undefined;
+  // Stay PENDING until executive accepts; do not auto-confirm on assign alone.
+  await doc.save();
+
+  const { notifyTestDriveAssignment } = require('../utils/notifications');
+  await notifyTestDriveAssignment({
+    booking: doc,
+    executive: staff,
+    customer: doc.customerId,
+  });
+
+  await doc.populate(BOOKING_POPULATE);
+  return successResponse(
+    res,
+    formatTdBooking(doc),
+    'Executive assigned — awaiting acceptance',
+  );
+});
+
+/**
+ * Assigned executive Accepts the assignment (MoM #7).
+ */
+exports.acceptAssignment = asyncHandler(async (req, res) => {
+  const doc = await findBookingById(req.params.id);
+  await assertBookingReadable(doc, req.admin);
+
+  if (!bookingAssignedToStaff(doc, req.admin) && !['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only the assigned executive can accept this assignment');
+  }
+  if (doc.assignmentStatus !== 'PENDING_ACCEPTANCE') {
+    throw new ApiError(400, `Assignment is not awaiting acceptance (${doc.assignmentStatus || 'UNASSIGNED'})`);
+  }
+
+  doc.assignmentStatus = 'ACCEPTED';
+  doc.assignmentRespondedAt = new Date();
   if (doc.bookingStatus === 'PENDING') doc.bookingStatus = 'CONFIRMED';
   await doc.save();
+
+  const { notifySlotConfirmation } = require('../utils/notifications');
+  await notifySlotConfirmation({ booking: doc, customer: doc.customerId });
+
   await doc.populate(BOOKING_POPULATE);
-  return successResponse(res, formatTdBooking(doc), 'Executive assigned');
+  return successResponse(res, formatTdBooking(doc), 'Assignment accepted');
+});
+
+/**
+ * Assigned executive Rejects — booking returns for reassignment (MoM #7).
+ */
+exports.rejectAssignment = asyncHandler(async (req, res) => {
+  const doc = await findBookingById(req.params.id);
+  await assertBookingReadable(doc, req.admin);
+
+  if (!bookingAssignedToStaff(doc, req.admin) && !['manager', 'superadmin'].includes(req.admin.role)) {
+    throw new ApiError(403, 'Only the assigned executive can reject this assignment');
+  }
+  if (doc.assignmentStatus !== 'PENDING_ACCEPTANCE') {
+    throw new ApiError(400, `Assignment is not awaiting acceptance (${doc.assignmentStatus || 'UNASSIGNED'})`);
+  }
+
+  const reason = req.body?.reason ? String(req.body.reason).trim() : undefined;
+  const previousExecutive = doc.assignedExecutive;
+
+  applyBookingExecutiveAssignment(doc, null);
+  doc.assignmentStatus = 'UNASSIGNED';
+  doc.assignmentRespondedAt = new Date();
+  doc.assignmentRejectReason = reason;
+  if (doc.bookingStatus === 'CONFIRMED') doc.bookingStatus = 'PENDING';
+  await doc.save();
+
+  const { notifyAssignmentRejected } = require('../utils/notifications');
+  const TDStaffModel = require('../models/TDStaff');
+  const execDoc = previousExecutive
+    ? await TDStaffModel.findById(previousExecutive).catch(() => null)
+    : null;
+  await notifyAssignmentRejected({
+    booking: doc,
+    executive: execDoc || { name: req.admin?.name },
+  });
+
+  await doc.populate(BOOKING_POPULATE);
+  return successResponse(res, formatTdBooking(doc), 'Assignment rejected — returned for reassignment');
 });
 
 exports.assignVehicle = asyncHandler(async (req, res) => {

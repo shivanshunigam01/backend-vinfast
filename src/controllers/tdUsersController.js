@@ -14,6 +14,15 @@ const STAFF_ROLES = ['executive', 'manager'];
 
 function formatStaff(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  let reportsTo = plain.reportsTo || null;
+  if (reportsTo && typeof reportsTo === 'object') {
+    reportsTo = {
+      _id: reportsTo._id,
+      name: reportsTo.name,
+      email: reportsTo.email,
+      designation: reportsTo.designation,
+    };
+  }
   return {
     _id: plain._id,
     name: plain.name,
@@ -22,9 +31,10 @@ function formatStaff(doc) {
     designation: plain.designation,
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
     isCustomDesignation: !STAFF_DESIGNATIONS.includes(plain.designation),
-    reportsTo: plain.reportsTo || null,
+    reportsTo,
     active: Boolean(plain.active),
     allowedModules: Array.isArray(plain.allowedModules) ? plain.allowedModules : [],
+    allowedActions: Array.isArray(plain.allowedActions) ? plain.allowedActions : [],
     createdAt: plain.createdAt,
   };
 }
@@ -74,7 +84,11 @@ exports.listUsers = asyncHandler(async (req, res) => {
   }
 
   let [docs, total] = await Promise.all([
-    TDStaff.find(query).sort({ designation: 1, name: 1 }).skip(skip).limit(limit),
+    TDStaff.find(query)
+      .populate('reportsTo', 'name email designation')
+      .sort({ designation: 1, name: 1 })
+      .skip(skip)
+      .limit(limit),
     TDStaff.countDocuments(query),
   ]);
 
@@ -85,7 +99,11 @@ exports.listUsers = asyncHandler(async (req, res) => {
   ) {
     await ensureTdStaff();
     [docs, total] = await Promise.all([
-      TDStaff.find(query).sort({ designation: 1, name: 1 }).skip(skip).limit(limit),
+      TDStaff.find(query)
+        .populate('reportsTo', 'name email designation')
+        .sort({ designation: 1, name: 1 })
+        .skip(skip)
+        .limit(limit),
       TDStaff.countDocuments(query),
     ]);
   }
@@ -94,7 +112,8 @@ exports.listUsers = asyncHandler(async (req, res) => {
 });
 
 exports.createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } =
+    req.body || {};
   if (!name || !email) throw new ApiError(400, 'Name and email are required');
   if (!password || String(password).length < 8) {
     throw new ApiError(400, 'Password must be at least 8 characters');
@@ -106,6 +125,13 @@ exports.createUser = asyncHandler(async (req, res) => {
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
 
+  let reportsToId = null;
+  if (reportsTo) {
+    const manager = await TDStaff.findById(reportsTo);
+    if (!manager) throw new ApiError(400, 'reportsTo manager not found');
+    reportsToId = manager._id;
+  }
+
   const doc = await TDStaff.create({
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
@@ -114,6 +140,10 @@ exports.createUser = asyncHandler(async (req, res) => {
     role: resolveRole(resolvedDesignation, role),
     active: active !== false,
     allowedModules: modules || [],
+    allowedActions: Array.isArray(allowedActions)
+      ? allowedActions.map((a) => String(a).trim()).filter(Boolean)
+      : [],
+    reportsTo: reportsToId,
   });
 
   return successResponse(res, formatStaff(doc), 'User created', 201);
@@ -123,7 +153,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   const doc = await TDStaff.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'User not found');
 
-  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
   if (password) doc.password = String(password);
@@ -136,6 +166,21 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (active !== undefined) doc.active = Boolean(active);
   const modules = sanitizeModules(allowedModules);
   if (modules !== undefined) doc.allowedModules = modules;
+  if (Array.isArray(allowedActions)) {
+    doc.allowedActions = allowedActions.map((a) => String(a).trim()).filter(Boolean);
+  }
+  if (reportsTo !== undefined) {
+    if (!reportsTo) {
+      doc.reportsTo = null;
+    } else {
+      if (String(reportsTo) === String(doc._id)) {
+        throw new ApiError(400, 'A user cannot report to themselves');
+      }
+      const manager = await TDStaff.findById(reportsTo);
+      if (!manager) throw new ApiError(400, 'reportsTo manager not found');
+      doc.reportsTo = manager._id;
+    }
+  }
 
   await doc.save();
   return successResponse(res, formatStaff(doc), 'User updated');

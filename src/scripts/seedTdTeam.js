@@ -1,11 +1,12 @@
 /**
- * Seed the real Patliputra VinFast sales team into TD staff / User Master,
- * preserving the reporting hierarchy (Sales Head → Sales Manager → Sales Executive)
- * so leads and test drives can be assigned to the correct people.
+ * Seed the real Patliputra VinFast sales org hierarchy into TD staff / User Master.
+ *
+ * Hierarchy (from dealership org chart):
+ *   MD → CEO → General Manager → Sales Head (Pranay Ranjan)
+ *     → Sales Managers → Sales Executives
  *
  * Idempotent: re-running updates names / designations / reporting links for existing
- * emails and only sets the default password on first insert (never overwrites a
- * password that already exists).
+ * emails and only sets the default password on first insert.
  *
  * Usage:
  *   npm run seed:td-team
@@ -19,26 +20,31 @@ const TDStaff = require('../models/TDStaff');
 
 const DEFAULT_PASSWORD = process.env.SEED_TD_TEAM_PASSWORD || 'Patliputra@123';
 
-// Top of the chain.
+/** Leadership chain above Sales Head (reports upward). */
+const LEADERSHIP = [
+  { name: 'Managing Director', email: 'md@patliputravinfast.com', designation: 'md' },
+  { name: 'Chief Executive Officer', email: 'ceo@patliputravinfast.com', designation: 'ceo' },
+  { name: 'General Manager', email: 'gm@patliputravinfast.com', designation: 'gm' },
+];
+
 const SALES_HEAD = {
   name: 'Pranay Ranjan',
   email: 'pranay.ranjan@patliputravinfast.com',
   designation: 'sales_head',
 };
 
-// Sales Manager → the Sales Executive(s) reporting to them.
+/**
+ * Sales Manager → exactly one Sales Executive (org chart 21 Jul 2026).
+ * Jaya reports to Rahul Singh (not Rahul Kumar).
+ */
 const TEAM = [
   {
     manager: { name: 'Rajan Singh', email: 'rajan.singh@patliputravinfast.com' },
     executives: [{ name: 'Pranay Singh', email: 'pranay.singh@patliputravinfast.com' }],
   },
   {
-    manager: { name: 'Saurav', email: 'saurav@patliputravinfast.com' },
-    executives: [{ name: 'Prashant', email: 'prashant@patliputravinfast.com' }],
-  },
-  {
     manager: { name: 'Rahul Singh', email: 'rahul.singh@patliputravinfast.com' },
-    executives: [{ name: 'Abhishek', email: 'abhishek@patliputravinfast.com' }],
+    executives: [{ name: 'Jaya', email: 'jaya@patliputravinfast.com' }],
   },
   {
     manager: { name: 'Dilip Choudhary', email: 'dilip.choudhary@patliputravinfast.com' },
@@ -46,21 +52,25 @@ const TEAM = [
   },
   {
     manager: { name: 'Rahul Kumar', email: 'rahul.kumar@patliputravinfast.com' },
-    executives: [
-      { name: 'Mayank', email: 'mayank@patliputravinfast.com' },
-      { name: 'Jaya', email: 'jaya@patliputravinfast.com' },
-    ],
+    executives: [{ name: 'Mayank', email: 'mayank@patliputravinfast.com' }],
+  },
+  {
+    manager: { name: 'Saurav', email: 'saurav@patliputravinfast.com' },
+    executives: [{ name: 'Prashant', email: 'prashant@patliputravinfast.com' }],
   },
 ];
 
+/** Former chart placements that should no longer report under the wrong manager. */
+const DEACTIVATE_OR_UNLINK = [
+  'abhishek@patliputravinfast.com', // was under Rahul Singh; not on current chart
+];
+
 function roleForDesignation(designation) {
-  return designation === 'sales_executive' ? 'executive' : 'manager';
+  if (designation === 'sales_executive') return 'executive';
+  if (['md', 'ceo'].includes(designation)) return 'superadmin';
+  return 'manager';
 }
 
-/**
- * Upsert a staff member without clobbering an existing password.
- * Uses .save()/.create() so the bcrypt pre-save hook runs on insert.
- */
 async function upsertStaff({ name, email, designation, reportsTo = null }) {
   const normEmail = String(email).trim().toLowerCase();
   const role = roleForDesignation(designation);
@@ -96,9 +106,22 @@ async function upsertStaff({ name, email, designation, reportsTo = null }) {
     let updated = 0;
     const summary = [];
 
-    const head = await upsertStaff({ ...SALES_HEAD, reportsTo: null });
+    let parentId = null;
+    let parentName = '—';
+
+    for (const leader of LEADERSHIP) {
+      const row = await upsertStaff({ ...leader, reportsTo: parentId });
+      row.created ? created++ : updated++;
+      summary.push(
+        `${leader.designation.toUpperCase().padEnd(4)} ${row.doc.name} <${row.doc.email}>  → reports to ${parentName}`,
+      );
+      parentId = row.doc._id;
+      parentName = row.doc.name;
+    }
+
+    const head = await upsertStaff({ ...SALES_HEAD, reportsTo: parentId });
     head.created ? created++ : updated++;
-    summary.push(`SH  ${head.doc.name} <${head.doc.email}>`);
+    summary.push(`SH   ${head.doc.name} <${head.doc.email}>  → reports to ${parentName}`);
 
     for (const group of TEAM) {
       const mgr = await upsertStaff({
@@ -122,7 +145,17 @@ async function upsertStaff({ name, email, designation, reportsTo = null }) {
       }
     }
 
-    console.log('\nSales team hierarchy:\n');
+    for (const email of DEACTIVATE_OR_UNLINK) {
+      const stale = await TDStaff.findOne({ email: String(email).toLowerCase() });
+      if (stale) {
+        stale.active = false;
+        stale.reportsTo = null;
+        await stale.save();
+        summary.push(`  (deactivated) ${stale.name} <${stale.email}>`);
+      }
+    }
+
+    console.log('\nPatliputra VinFast org hierarchy:\n');
     console.log(summary.join('\n'));
     console.log(`\nDone. Created ${created}, updated ${updated}.`);
     console.log(`Default password for newly created users: ${DEFAULT_PASSWORD}`);

@@ -17,10 +17,13 @@ const crmCustomersRoutes = require('./crmCustomers');
 const vehicleModelsRoutes = require('./vehicleModels');
 const vehicleStockRoutes = require('./vehicleStock');
 const seoPagesRoutes = require('./seoPages');
+const fleetHealthRoutes = require('./fleetHealth');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
 const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
 const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
+const calendarController = require('../../controllers/calendarController');
+const geocodeController = require('../../controllers/geocodeController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
 const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slideReorderValidator } = require('../../validators/adminValidators');
@@ -37,6 +40,9 @@ router.use(protect);
 
 // Dashboard
 router.get('/dashboard/stats', dashboardController.getStats);
+router.get('/dashboard/calendar', calendarController.getCalendarEvents);
+router.get('/geocode/reverse', geocodeController.reverseGeocode);
+router.post('/geocode/reverse', geocodeController.reverseGeocode);
 
 // Leads
 router.get('/leads', ctrl.getLeads);
@@ -68,6 +74,7 @@ router.use('/td/slots', tdSlotsRoutes);
 router.use('/td/feedback', tdFeedbackRoutes);
 router.use('/td/logs', tdLogsRoutes);
 router.use('/td/leads', tdLeadsRoutes);
+router.use('/td/fleet', fleetHealthRoutes);
 
 // Standalone Lead CRM module (/api/v1/admin/crm/*)
 router.use('/crm/leads', crmLeadsRoutes);

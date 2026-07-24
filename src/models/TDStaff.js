@@ -28,6 +28,8 @@ const tdStaffSchema = new mongoose.Schema(
     active: { type: Boolean, default: true },
     // Admin-panel modules this user may see. Empty = default access for their role.
     allowedModules: { type: [String], default: [] },
+    // Optional action-level ACL (e.g. td_bookings:assign). Empty = all actions for allowed modules.
+    allowedActions: { type: [String], default: [] },
   },
   { timestamps: true },
 );

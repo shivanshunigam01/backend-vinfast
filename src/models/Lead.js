@@ -69,6 +69,9 @@ const leadSchema = new mongoose.Schema(
     convertedCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: 'PVCustomer', index: true },
     convertedAt: { type: Date },
     convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
+    // Duplicate elimination (MoM #15) — soft-merge markers
+    isDuplicate: { type: Boolean, default: false, index: true },
+    duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
   },
   { timestamps: true },
 );

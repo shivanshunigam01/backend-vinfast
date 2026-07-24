@@ -20,9 +20,11 @@ const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
   isExecutiveScopedUser,
+  isTeamScopedUser,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
   leadAssignedToStaff,
+  leadReadableByAdmin,
   applyLeadAssignment,
   applyBookingExecutiveAssignment,
   repairExecutiveLeadAssignments,
@@ -64,10 +66,11 @@ function assertAdminEditRights(admin) {
   }
 }
 
-function assertLeadReadable(lead, admin) {
+async function assertLeadReadable(lead, admin) {
   if (!lead) throw new ApiError(404, 'Lead not found');
-  if (isExecutiveScopedUser(admin) && !leadAssignedToStaff(lead, admin._id, admin.email)) {
-    throw new ApiError(403, 'This lead is not assigned to you');
+  if (isTeamScopedUser(admin)) {
+    const ok = await leadReadableByAdmin(lead, admin);
+    if (!ok) throw new ApiError(403, 'This lead is not in your team');
   }
 }
 
@@ -100,7 +103,8 @@ function formatCrmLead(doc) {
 
 async function buildLeadQuery(admin, queryParams = {}) {
   const query = {};
-  if (isExecutiveScopedUser(admin)) {
+  // MoM #12: SE/SM/SH/BM see own + reporting subtree; MD/CEO/GM/superadmin see all.
+  if (isTeamScopedUser(admin)) {
     query.$and = query.$and || [];
     query.$and.push(await assignedToStaffFilterAsync(admin));
   } else if (queryParams.assignedTo) {
@@ -189,7 +193,7 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
 exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   let lead = await Lead.findById(req.params.id).populate(LEAD_POPULATE);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
   await ensureLeadIds(lead);
 
   const [history, followUps, siblingLeads, testDriveState] = await Promise.all([
@@ -243,7 +247,7 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   }
 
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   const prevStage = lead.status;
   if (prevStage === stage) {
@@ -382,7 +386,7 @@ exports.updateLeadRemarks = asyncHandler(async (req, res) => {
   if (remarks == null) throw new ApiError(400, 'Remarks are required');
 
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   lead.remarks = String(remarks).trim();
   touchLeadActivity(lead);
@@ -398,7 +402,7 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
   if (!note || !String(note).trim()) throw new ApiError(400, 'Follow-up note is required');
 
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   const scheduled = scheduledAt ? new Date(scheduledAt) : null;
   const isCompleted = Boolean(markCompleted) || !scheduled || scheduled <= new Date();
@@ -426,7 +430,7 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
 exports.updateFollowUp = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   const followUp = await LeadFollowUp.findOne({ _id: req.params.followUpId, leadId: lead._id });
   if (!followUp) throw new ApiError(404, 'Follow-up not found');
@@ -625,7 +629,7 @@ exports.createCrmLead = asyncHandler(async (req, res) => {
 exports.getLeadTestDrives = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   const state = await getCustomerTestDriveState(lead.mobile);
   const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
@@ -649,7 +653,7 @@ exports.getLeadTestDrives = asyncHandler(async (req, res) => {
 exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   const { slotDate, slotTime, model, remarks, branch } = req.body || {};
   if (!slotDate) throw new ApiError(400, 'slotDate is required');
@@ -776,7 +780,7 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
 exports.convertLeadToSale = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
-  assertLeadReadable(lead, req.admin);
+  await assertLeadReadable(lead, req.admin);
 
   if (lead.convertedAt) {
     throw new ApiError(409, `This opportunity was already converted on ${lead.convertedAt.toLocaleDateString('en-IN')}`);

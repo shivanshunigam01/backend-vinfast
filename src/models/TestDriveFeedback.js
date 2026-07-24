@@ -24,6 +24,12 @@ const testDriveFeedbackSchema = new mongoose.Schema(
     leadSource: { type: String, trim: true, default: 'Digital' },
     purchaseIntent: { type: String, required: true, trim: true },
     mainConcern: { type: String, trim: true, default: 'None' },
+    /** Brochure-style product highlights the customer liked (multi-select). */
+    likedFeatures: { type: [String], default: [] },
+    /** Free-text: what they did not like about the product. */
+    dislikedAboutProduct: { type: String, trim: true },
+    /** Free-text: suggestions / feedback for Patliputra VinFast. */
+    dealerSuggestions: { type: String, trim: true },
     comment: { type: String, trim: true },
     ratings: {
       designComfort: rating,

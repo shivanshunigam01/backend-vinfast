@@ -28,6 +28,20 @@ const ADMIN_MODULE_KEYS = [
   'vehicle_stock',
   'td_reports',
   'td_config',
+  // MoM enhancements
+  'calendar',
+  'td_reschedule_history',
+  'td_fleet_health',
 ];
 
-module.exports = { ADMIN_MODULE_KEYS };
+/** Optional action-level permissions nested under modules (granular RBAC). */
+const ADMIN_MODULE_ACTIONS = {
+  td_bookings: ['view', 'assign', 'reschedule_approve', 'verify_dl', 'start_drive', 'cancel'],
+  crm_leads: ['view', 'create', 'update', 'assign', 'export'],
+  td_users: ['view', 'create', 'update', 'view_password'],
+  td_fleet_health: ['view', 'schedule_charge', 'log_maintenance'],
+  calendar: ['view'],
+  td_reschedule_history: ['view', 'approve'],
+};
+
+module.exports = { ADMIN_MODULE_KEYS, ADMIN_MODULE_ACTIONS };
