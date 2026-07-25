@@ -3,3 +3,15 @@ node_modules/
 .env.*.local
 npm-debug.log*
 logs/
+
+# Frontend local env (never commit secrets)
+career-section-nanak/.env
+career-section-nanak/.env.local
+career-section-nanak/.env.development
+career-section-nanak/.env.production
+career-section-nanak/.env.*.local
+
+career-section-nanak/career-section-nanak/
+
+# Local backup of old nested frontend git history
+.career-section-nanak.git.backup/

@@ -1,0 +1,298 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 20% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+
+    --primary: 358 79% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 20% 10%;
+
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 44%;
+
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 20% 10%;
+
+    --destructive: 0 84.2% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 358 79% 44%;
+
+    --radius: 0.75rem;
+
+    --surface: 220 14% 96%;
+    --glass: 220 20% 10%;
+    --glass-opacity: 0.03;
+    --glass-border-opacity: 0.08;
+
+    --sidebar-background: 220 20% 98%;
+    --sidebar-foreground: 220 20% 10%;
+    --sidebar-primary: 358 79% 44%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 94%;
+    --sidebar-accent-foreground: 220 20% 10%;
+    --sidebar-border: 220 13% 88%;
+    --sidebar-ring: 358 79% 44%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    letter-spacing: -0.04em;
+  }
+
+  /* High-quality raster display: no extra filters; best interpolation when scaling */
+  img,
+  picture,
+  video {
+    filter: none;
+    backdrop-filter: none;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    image-rendering: auto;
+  }
+
+  /* Best photo down/upscaling where supported (Chrome 124+, Safari 17.4+, recent Edge) */
+  @supports (image-rendering: high-quality) {
+    img,
+    picture {
+      image-rendering: high-quality;
+    }
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: hsl(0 0% 100%);
+    border: 1px solid hsl(var(--border));
+    border-radius: 1.5rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .glass-card-sm {
+    background: hsl(0 0% 100%);
+    border: 1px solid hsl(var(--border));
+    border-radius: 1rem;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--muted-foreground)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-red {
+    background: linear-gradient(135deg, hsl(358, 79%, 55%), hsl(358, 79%, 40%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .section-dark {
+    background: hsl(var(--background));
+  }
+
+  .section-surface {
+    background: hsl(var(--surface));
+  }
+
+  .shadow-luxury {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.14);
+  }
+
+  .shadow-glow-red {
+    box-shadow: 0 0 40px rgba(226, 31, 38, 0.15);
+  }
+
+  /**
+   * Hero blocks on photos (homepage + VF 6 / VF 7): light black shadow only (no stroke).
+   */
+  .text-hero-plain {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  }
+
+  .text-hero-plain-lg {
+    color: #fff;
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.58),
+      0 2px 8px rgba(0, 0, 0, 0.28);
+  }
+
+  .text-hero-plain-soft {
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .text-hero-plain-muted {
+    color: rgba(255, 255, 255, 0.78);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+
+  /**
+   * Readable overlay type on busy photos (e.g. About hero): shadow only.
+   */
+  .text-on-image {
+    color: #fff;
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.92),
+      0 2px 12px rgba(0, 0, 0, 0.5),
+      0 4px 24px rgba(0, 0, 0, 0.38);
+  }
+
+  .text-on-image-lg {
+    color: #fff;
+    text-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.95),
+      0 3px 14px rgba(0, 0, 0, 0.65),
+      0 6px 28px rgba(0, 0, 0, 0.42);
+  }
+
+  .text-on-image-soft {
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.9),
+      0 2px 10px rgba(0, 0, 0, 0.45),
+      0 4px 18px rgba(0, 0, 0, 0.3);
+  }
+
+  .text-on-image-ghost {
+    color: rgba(255, 255, 255, 0.6);
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.88),
+      0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  .animate-fade-up {
+    animation: fadeUp 0.8s ease-out forwards;
+    opacity: 0;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.6s ease-out forwards;
+    opacity: 0;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@layer utilities {
+  .image-high-quality {
+    image-rendering: high-quality;
+  }
+
+  /**
+   * Full-bleed hero slider: best-effort sharp scaling + stable compositing
+   * (opacity crossfades) without filters on the photo itself.
+   */
+  .hero-slider-image {
+    image-rendering: high-quality;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: translateZ(0);
+  }
+
+  /*
+   * Only on very small landscape phones — never on tablet/desktop widths.
+   * Using object-contain on wider short viewports left a letterbox gap on the sides.
+   */
+  @media (max-width: 768px) and (orientation: landscape) and (max-height: 480px) {
+    .hero-slider-image {
+      object-fit: cover;
+      object-position: center center;
+    }
+  }
+
+  /**
+   * Hero media wrapper without visual overlay, to keep imagery clear.
+   */
+  .hero-media-scrim {
+    isolation: isolate;
+  }
+
+  .hero-media-scrim::after {
+    content: none;
+  }
+}
+
+/* Smooth scrolling; extra bottom inset on small viewports so content clears fixed mobile CTA bar */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-bottom: max(6.5rem, env(safe-area-inset-bottom, 0px));
+  overflow-x: clip;
+}
+
+@media (max-width: 768px) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  html {
+    scroll-padding-bottom: 0;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
