@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatApiErrors } from "@/lib/api";
-import { getAdminUser, isFieldStaffUser } from "@/lib/adminAuth";
+import { getAdminUser, isFieldStaffUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   addPvCrmFollowUp,
   assignPvCrmLeadExecutive,
@@ -65,7 +65,11 @@ const PAGE_SIZE = 20;
 export default function AdminCrmLeads() {
   const adminUser = getAdminUser();
   const isExecutive = isFieldStaffUser(adminUser);
-  const canAssignLeads = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canCreate = canPerformAction(adminUser, "crm_leads", "create");
+  const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
+  const canAssignLeads = canPerformManagerAction(adminUser, "crm_leads", "assign");
+  const canEditDetails = canPerformManagerAction(adminUser, "crm_leads", "update");
+  const canDelete = canPerformManagerAction(adminUser, "crm_leads", "delete");
 
   const [leads, setLeads] = useState<PvCrmLead[]>([]);
   const [page, setPage] = useState(1);
@@ -248,7 +252,7 @@ export default function AdminCrmLeads() {
   };
 
   const handleDetailsSave = async () => {
-    if (!selected || !canAssignLeads) return;
+    if (!selected || !canEditDetails) return;
     const mobileDigits = editMobile.replace(/\D/g, "").slice(0, 10);
     if (!editName.trim()) {
       toast.error("Name is required");
@@ -424,7 +428,7 @@ export default function AdminCrmLeads() {
   };
 
   const handleDeleteLead = async () => {
-    if (!selected || !canAssignLeads) return;
+    if (!selected || !canDelete) return;
     const label = selected.leadId || selected.name;
     if (!window.confirm(`Permanently delete lead "${label}"? Follow-ups and stage history will also be removed. This cannot be undone.`)) {
       return;
@@ -457,9 +461,11 @@ export default function AdminCrmLeads() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
+          {canCreate ? (
+            <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
           {canAssignLeads ? (
             <Button variant="outline" size="sm" onClick={() => void openOpportunityReport()}>
               <ShieldAlert className="w-4 h-4 mr-2" /> Opportunity health
@@ -625,9 +631,11 @@ export default function AdminCrmLeads() {
           <Users className="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p>No leads found{isExecutive ? " assigned to you" : ""}.</p>
           <p className="text-xs mt-2">Use <strong>Add Lead</strong> to register a walk-in or referral customer.</p>
-          <Button size="sm" className="mt-4 bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
+          {canCreate ? (
+            <Button size="sm" className="mt-4 bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -744,7 +752,7 @@ export default function AdminCrmLeads() {
                     History
                   </Button>
                   {/* Book Test Drive: hidden for executives once the drive is done — repeats need admin approval. */}
-                  {canAssignLeads || normalizeCrmStage(detail.lead.status) !== "Test Drive Completed" ? (
+                  {canUpdate && (canAssignLeads || normalizeCrmStage(detail.lead.status) !== "Test Drive Completed") ? (
                     <Button
                       type="button"
                       size="sm"
@@ -755,7 +763,7 @@ export default function AdminCrmLeads() {
                       <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Book Test Drive
                     </Button>
                   ) : null}
-                  {canAssignLeads ? (
+                  {canDelete ? (
                     <Button
                       type="button"
                       size="sm"
@@ -830,7 +838,7 @@ export default function AdminCrmLeads() {
               <Tabs defaultValue="stage">
                 <TabsList className="bg-secondary/50 w-full flex flex-wrap h-auto">
                   <TabsTrigger value="stage" className="text-xs">Stage</TabsTrigger>
-                  {canAssignLeads ? (
+                  {canEditDetails ? (
                     <TabsTrigger value="edit" className="text-xs">Edit details</TabsTrigger>
                   ) : null}
                   {!detail.lead.convertedAt ? (
@@ -872,13 +880,13 @@ export default function AdminCrmLeads() {
                       className="bg-secondary/50"
                     />
                   </div>
-                  <Button onClick={() => void handleStageUpdate()} disabled={saving} className="w-full">
+                  <Button onClick={() => void handleStageUpdate()} disabled={saving || !canUpdate} className="w-full">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowRight className="w-4 h-4 mr-2" />}
                     Update stage
                   </Button>
                 </TabsContent>
 
-                {canAssignLeads ? (
+                {canEditDetails ? (
                   <TabsContent value="edit" className="mt-4 space-y-3">
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -1017,7 +1025,7 @@ export default function AdminCrmLeads() {
                         <Input value={convertRemarks} onChange={(e) => setConvertRemarks(e.target.value)} className="bg-secondary/50" />
                       </div>
                     </div>
-                    <Button onClick={() => void handleConvertToSale()} disabled={saving} className="w-full">
+                    <Button onClick={() => void handleConvertToSale()} disabled={saving || !canUpdate} className="w-full">
                       {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trophy className="w-4 h-4 mr-2" />}
                       Convert to sale
                     </Button>
@@ -1032,10 +1040,13 @@ export default function AdminCrmLeads() {
                     rows={5}
                     className="bg-secondary/50"
                     placeholder="Customer preferences, objections, next steps…"
+                    readOnly={!canUpdate}
                   />
-                  <Button onClick={() => void handleRemarksSave()} disabled={saving} variant="outline" className="w-full">
-                    Save remarks
-                  </Button>
+                  {canUpdate ? (
+                    <Button onClick={() => void handleRemarksSave()} disabled={saving} variant="outline" className="w-full">
+                      Save remarks
+                    </Button>
+                  ) : null}
                 </TabsContent>
 
                 <TabsContent value="followups" className="mt-4 space-y-4">
@@ -1079,7 +1090,7 @@ export default function AdminCrmLeads() {
                       />
                       Mark as completed (call already done)
                     </label>
-                    <Button onClick={() => void handleAddFollowUp()} disabled={saving} size="sm" className="w-full">
+                    <Button onClick={() => void handleAddFollowUp()} disabled={saving || !canUpdate} size="sm" className="w-full">
                       Add follow-up
                     </Button>
                   </div>

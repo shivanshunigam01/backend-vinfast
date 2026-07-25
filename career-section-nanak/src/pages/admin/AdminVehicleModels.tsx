@@ -17,6 +17,7 @@ import {
   type AdminVehicleModel,
 } from "@/lib/vehicleCatalogApi";
 import { invalidateVehicleCatalog } from "@/hooks/useVehicleCatalog";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 
 type VariantDraft = { name: string; active: boolean };
 
@@ -31,6 +32,10 @@ type FormState = {
 const emptyForm: FormState = { name: "", active: true, displayOrder: 0, variants: [] };
 
 export default function AdminVehicleModels() {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "td_models", "create");
+  const canUpdate = canPerformAction(adminUser, "td_models", "update");
+  const canDelete = canPerformManagerAction(adminUser, "td_models", "delete");
   const [models, setModels] = useState<AdminVehicleModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -141,9 +146,11 @@ export default function AdminVehicleModels() {
         </div>
         <div className="flex gap-2">
           <Button onClick={() => void fetchData()} variant="outline" size="sm"><RefreshCw className="w-4 h-4" /></Button>
-          <Button onClick={openCreate} size="sm" className="bg-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add Model
-          </Button>
+          {canCreate ? (
+            <Button onClick={openCreate} size="sm" className="bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add Model
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -202,17 +209,21 @@ export default function AdminVehicleModels() {
               )}
 
               <div className="flex gap-1.5 border-t border-border/30 pt-3">
-                <Button size="sm" variant="ghost" className="flex-1 text-xs h-8" onClick={() => openEdit(m)}>
-                  <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="flex-1 text-xs h-8 text-destructive hover:text-destructive"
-                  onClick={() => setDeleteTarget(m)}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
-                </Button>
+                {canUpdate ? (
+                  <Button size="sm" variant="ghost" className="flex-1 text-xs h-8" onClick={() => openEdit(m)}>
+                    <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                  </Button>
+                ) : null}
+                {canDelete ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="flex-1 text-xs h-8 text-destructive hover:text-destructive"
+                    onClick={() => setDeleteTarget(m)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                  </Button>
+                ) : null}
               </div>
             </Card>
           ))}

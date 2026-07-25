@@ -45,7 +45,7 @@ const ADMIN_MODULE_ACTIONS = {
   media: ['view', 'create', 'update', 'delete'],
   settings: ['view', 'update'],
   my_dashboard: ['view'],
-  td_my_bookings: ['view', 'update', 'reschedule', 'cancel', 'complete'],
+  td_my_bookings: ['view', 'update', 'verify_dl', 'start_drive', 'reschedule', 'cancel', 'complete'],
   feedback_test_drive: ['view', 'delete'],
   feedback_post_delivery: ['view', 'delete'],
   td_lead_reports: ['view', 'export'],

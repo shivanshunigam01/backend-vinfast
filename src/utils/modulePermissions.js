@@ -142,6 +142,23 @@ function requireModuleActionOrRoles(moduleKey, action, ...roles) {
   };
 }
 
+/**
+ * Accept any one of several module:action pairs (e.g. DL verify from My Bookings or TD Bookings).
+ * Custom-ACL users need at least one matching token; unrestricted users pass.
+ */
+function requireAnyModuleAction(pairs) {
+  const list = Array.isArray(pairs) ? pairs : [];
+  return (req, _res, next) => {
+    const user = req.admin;
+    if (!user) return next(new ApiError(401, 'Not authenticated'));
+    if (!hasCustomModuleAcl(user)) return next();
+    for (const [moduleKey, action] of list) {
+      if (canPerformAction(user, moduleKey, action)) return next();
+    }
+    return next(new ApiError(403, 'You do not have permission to perform this action'));
+  };
+}
+
 module.exports = {
   canAccessModule,
   canPerformAction,
@@ -151,5 +168,6 @@ module.exports = {
   sanitizeActions,
   requireModuleAction,
   requireModuleActionOrRoles,
+  requireAnyModuleAction,
   actionToken,
 };

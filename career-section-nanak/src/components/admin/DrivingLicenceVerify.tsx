@@ -14,6 +14,8 @@ type DrivingLicenceVerifyProps = {
   dlNumber?: string | null;
   dlValidUntil?: string | null;
   disabled?: boolean;
+  /** When false, licence is read-only (view permission only). Defaults to false. */
+  canEdit?: boolean;
   onVerified: () => void | Promise<void>;
 };
 
@@ -43,6 +45,7 @@ export function DrivingLicenceVerify({
   dlNumber,
   dlValidUntil,
   disabled,
+  canEdit = false,
   onVerified,
 }: DrivingLicenceVerifyProps) {
   const inputId = useId();
@@ -53,7 +56,7 @@ export function DrivingLicenceVerify({
   const [numberDraft, setNumberDraft] = useState("");
   const [validUntilDraft, setValidUntilDraft] = useState("");
 
-  const showForm = !dlVerified || editing;
+  const showForm = canEdit && (!dlVerified || editing);
 
   const startEditing = () => {
     setNumberDraft(dlNumber ?? "");
@@ -127,10 +130,14 @@ export function DrivingLicenceVerify({
           <p className="text-xs text-muted-foreground mt-1">
             {showForm
               ? "Enter licence number, validity date, and photo — then verify and save."
-              : "Verified — use Edit to correct the licence details."}
+              : dlVerified
+                ? canEdit
+                  ? "Verified — use Edit to correct the licence details."
+                  : "Verified (view only)."
+                : "Not verified yet."}
           </p>
         </div>
-        {dlVerified && !editing ? (
+        {canEdit && dlVerified && !editing ? (
           <Button
             size="sm"
             variant="outline"

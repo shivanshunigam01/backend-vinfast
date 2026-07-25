@@ -73,6 +73,26 @@ describe("canPerformAction / canPerformManagerAction", () => {
     expect(canPerformManagerAction(user, "feedback_test_drive", "delete")).toBe(true);
   });
 
+  it("custom ACL view-only cannot verify DL on my bookings", () => {
+    const user = staff({
+      role: "executive",
+      allowedModules: ["td_my_bookings"],
+      allowedActions: ["td_my_bookings:view"],
+    });
+    expect(canPerformAction(user, "td_my_bookings", "view")).toBe(true);
+    expect(canPerformAction(user, "td_my_bookings", "verify_dl")).toBe(false);
+    expect(canPerformAction(user, "td_my_bookings", "update")).toBe(false);
+  });
+
+  it("custom ACL with verify_dl can edit licence", () => {
+    const user = staff({
+      role: "executive",
+      allowedModules: ["td_my_bookings"],
+      allowedActions: ["td_my_bookings:view", "td_my_bookings:verify_dl"],
+    });
+    expect(canPerformAction(user, "td_my_bookings", "verify_dl")).toBe(true);
+  });
+
   it("custom ACL view-only cannot delete feedback", () => {
     const user = staff({
       role: "executive",

@@ -122,6 +122,21 @@ check('empty actions on custom modules = all actions', () => {
   assert.strictEqual(canPerformAction(user, 'crm_leads', 'view'), false);
 });
 
+check('view-only my bookings cannot verify DL', () => {
+  const user = staff({
+    allowedModules: ['td_my_bookings'],
+    allowedActions: ['td_my_bookings:view'],
+  });
+  assert.strictEqual(canPerformAction(user, 'td_my_bookings', 'view'), true);
+  assert.strictEqual(canPerformAction(user, 'td_my_bookings', 'verify_dl'), false);
+  assert.strictEqual(canPerformAction(user, 'td_my_bookings', 'start_drive'), false);
+});
+
+check('td_my_bookings catalog includes verify_dl and start_drive', () => {
+  assert.ok(ADMIN_MODULE_ACTIONS.td_my_bookings.includes('verify_dl'));
+  assert.ok(ADMIN_MODULE_ACTIONS.td_my_bookings.includes('start_drive'));
+});
+
 if (process.exitCode) {
   console.log(`\nFAILED — ${passed} checks passed before failure\n`);
 } else {

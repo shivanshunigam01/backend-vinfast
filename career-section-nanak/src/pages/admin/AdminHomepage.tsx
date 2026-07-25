@@ -12,6 +12,7 @@ import CloudinaryUpload from "@/components/admin/CloudinaryUpload";
 import { getStoredState, setStoredState } from "@/lib/vfLocalStorage";
 import { hasApi } from "@/lib/apiConfig";
 import { adminDeleteJson, adminGetData, adminPostJson, adminPutJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import { isMongoId } from "@/lib/apiMappers";
 import { toast } from "sonner";
 
@@ -140,6 +141,10 @@ function siteConfigFromApi(doc: Record<string, unknown>): SiteConfig {
 }
 
 const AdminHomepage = () => {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "homepage", "create");
+  const canUpdate = canPerformAction(adminUser, "homepage", "update");
+  const canDelete = canPerformManagerAction(adminUser, "homepage", "delete");
   const useRemote = hasApi();
   const [hydrated, setHydrated] = useState(false);
   const [slides, setSlides] = useState<HeroSlide[]>(() => (useRemote ? [] : initialSlides));
@@ -296,9 +301,11 @@ const AdminHomepage = () => {
         <TabsContent value="slides" className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-muted-foreground">{slides.length} slide(s) · drag to reorder</p>
-            <Button onClick={() => { setEditSlide(emptySlide); setShowForm(true); }} className="bg-primary text-primary-foreground" size="sm">
-              <Plus className="w-4 h-4 mr-2" /> Add Slide
-            </Button>
+            {canCreate ? (
+              <Button onClick={() => { setEditSlide(emptySlide); setShowForm(true); }} className="bg-primary text-primary-foreground" size="sm">
+                <Plus className="w-4 h-4 mr-2" /> Add Slide
+              </Button>
+            ) : null}
           </div>
           <div className="space-y-3">
             {sortedSlides.map((slide) => (
@@ -320,15 +327,23 @@ const AdminHomepage = () => {
                           <span className="text-[10px] text-muted-foreground">→ {slide.ctaPrimaryLink}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <Switch checked={slide.active} onCheckedChange={() => toggleSlide(slide.id)} />
-                        <button onClick={() => { setEditSlide(slide); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => handleDeleteSlide(slide.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {(canUpdate || canDelete) ? (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {canUpdate ? (
+                            <Switch checked={slide.active} onCheckedChange={() => toggleSlide(slide.id)} />
+                          ) : null}
+                          {canUpdate ? (
+                            <button onClick={() => { setEditSlide(slide); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button onClick={() => handleDeleteSlide(slide.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -393,9 +408,11 @@ const AdminHomepage = () => {
               </div>
             </div>
           </Card>
-          <Button onClick={() => void handleSaveConfig()} className="bg-primary text-primary-foreground">
-            {saved ? "✓ Saved!" : "Save Configuration"}
-          </Button>
+          {canUpdate ? (
+            <Button onClick={() => void handleSaveConfig()} className="bg-primary text-primary-foreground">
+              {saved ? "✓ Saved!" : "Save Configuration"}
+            </Button>
+          ) : null}
         </TabsContent>
 
         {/* Contact & WhatsApp */}
@@ -416,9 +433,11 @@ const AdminHomepage = () => {
                 <Input value={config.phoneNumber} onChange={e => updateConfig("phoneNumber", e.target.value)} className="bg-secondary/50" placeholder="+91 9231445060" />
               </div>
             </div>
-            <Button onClick={() => void handleSaveConfig()} className="bg-primary text-primary-foreground">
-              {saved ? "✓ Saved!" : "Save"}
-            </Button>
+            {canUpdate ? (
+              <Button onClick={() => void handleSaveConfig()} className="bg-primary text-primary-foreground">
+                {saved ? "✓ Saved!" : "Save"}
+              </Button>
+            ) : null}
           </Card>
         </TabsContent>
       </Tabs>

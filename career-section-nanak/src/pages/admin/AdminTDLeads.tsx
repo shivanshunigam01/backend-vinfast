@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatApiErrors } from "@/lib/api";
-import { getAdminUser, isFieldStaffUser } from "@/lib/adminAuth";
+import { getAdminUser, isFieldStaffUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   addCrmFollowUp,
   assignCrmLeadExecutive,
@@ -51,7 +51,9 @@ function formatDateTime(iso?: string) {
 export default function AdminTDLeads() {
   const adminUser = getAdminUser();
   const isExecutive = isFieldStaffUser(adminUser);
-  const canAssignLeads = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canCreate = canPerformAction(adminUser, "crm_leads", "create");
+  const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
+  const canAssignLeads = canPerformManagerAction(adminUser, "crm_leads", "assign");
 
   const [leads, setLeads] = useState<CrmLead[]>([]);
   const [executives, setExecutives] = useState<AssignableStaffUser[]>([]);
@@ -265,9 +267,11 @@ export default function AdminTDLeads() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
+          {canCreate ? (
+            <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
           {!isExecutive ? (
             <Button variant="outline" size="sm" asChild>
               <Link to="/admin/td/leads/reports">
@@ -346,9 +350,11 @@ export default function AdminTDLeads() {
           <Users className="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p>No leads found{isExecutive ? " assigned to you" : ""}.</p>
           <p className="text-xs mt-2">Use <strong>Add Lead</strong> to register a walk-in or referral customer.</p>
-          <Button size="sm" className="mt-4 bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
+          {canCreate ? (
+            <Button size="sm" className="mt-4 bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -485,7 +491,7 @@ export default function AdminTDLeads() {
                       className="bg-secondary/50"
                     />
                   </div>
-                  <Button onClick={() => void handleStageUpdate()} disabled={saving} className="w-full">
+                  <Button onClick={() => void handleStageUpdate()} disabled={saving || !canUpdate} className="w-full">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowRight className="w-4 h-4 mr-2" />}
                     Update stage
                   </Button>
@@ -500,7 +506,7 @@ export default function AdminTDLeads() {
                     className="bg-secondary/50"
                     placeholder="Customer preferences, objections, next steps…"
                   />
-                  <Button onClick={() => void handleRemarksSave()} disabled={saving} variant="outline" className="w-full">
+                  <Button onClick={() => void handleRemarksSave()} disabled={saving || !canUpdate} variant="outline" className="w-full">
                     Save remarks
                   </Button>
                 </TabsContent>
@@ -546,7 +552,7 @@ export default function AdminTDLeads() {
                       />
                       Mark as completed (call already done)
                     </label>
-                    <Button onClick={() => void handleAddFollowUp()} disabled={saving} size="sm" className="w-full">
+                    <Button onClick={() => void handleAddFollowUp()} disabled={saving || !canUpdate} size="sm" className="w-full">
                       Add follow-up
                     </Button>
                   </div>

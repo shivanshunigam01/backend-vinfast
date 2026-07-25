@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getStoredState, setStoredState } from "@/lib/vfLocalStorage";
 import { API_BASE, hasApi, LIVE_API_BASE } from "@/lib/apiConfig";
 import { adminGetData, adminPutJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction } from "@/lib/adminAuth";
 import { toast } from "sonner";
 
 const STORAGE_KEY = "vf_admin_settings";
@@ -47,6 +48,8 @@ const emptySettings: DealerForm = {
 };
 
 const AdminSettings = () => {
+  const adminUser = getAdminUser();
+  const canUpdate = canPerformAction(adminUser, "settings", "update");
   const useRemote = hasApi();
   const [hydrated, setHydrated] = useState(false);
   const [settings, setSettings] = useState<DealerForm>(() => (hasApi() ? emptySettings : defaultSettings));
@@ -125,13 +128,17 @@ const AdminSettings = () => {
                 value={settings[key]}
                 onChange={(e) => setSettings((prev) => ({ ...prev, [key]: e.target.value }))}
                 className="bg-secondary/50"
+                disabled={!canUpdate}
+                readOnly={!canUpdate}
               />
             </div>
           ))}
         </div>
-        <Button className="bg-primary text-primary-foreground mt-2" disabled={saving} onClick={() => void persist()}>
-          {saving ? "Saving…" : "Save Settings"}
-        </Button>
+        {canUpdate ? (
+          <Button className="bg-primary text-primary-foreground mt-2" disabled={saving} onClick={() => void persist()}>
+            {saving ? "Saving…" : "Save Settings"}
+          </Button>
+        ) : null}
       </Card>
 
       <Card className="bg-card border-border/50 p-5 space-y-3">

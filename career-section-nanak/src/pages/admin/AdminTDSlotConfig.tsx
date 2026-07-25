@@ -12,6 +12,7 @@ import {
   Ban, CheckCircle2, Search, Zap, Car, Plus, Trash2, Wand2
 } from "lucide-react";
 import { toast } from "sonner";
+import { getAdminUser, canPerformAction } from "@/lib/adminAuth";
 import {
   DEFAULT_SLOT_SCHEDULE,
   formatTime12h,
@@ -47,6 +48,8 @@ type SlotAvailability = {
 type FleetSummary = { model: string; variant?: string; label: string; available: number; total: number; capacity: number };
 
 export default function AdminTDSlotConfig() {
+  const adminUser = getAdminUser();
+  const canUpdate = canPerformAction(adminUser, "td_config", "update");
   const { models: catalogModels } = useVehicleCatalog();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [configs, setConfigs] = useState<SlotConfig[]>([]);
@@ -472,25 +475,27 @@ export default function AdminTDSlotConfig() {
                         </p>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={handleGenerateTimings}>
-                          <Wand2 className="w-4 h-4 mr-2" /> Apply preview to slot list
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => void handleSaveScheduleToWebsite()}
-                          disabled={saving}
-                          className="bg-primary text-primary-foreground"
-                        >
-                          {saving ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          ) : (
-                            <Save className="w-4 h-4 mr-2" />
-                          )}
-                          Save schedule to website (all dates)
-                        </Button>
-                      </div>
+                      {canUpdate ? (
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={handleGenerateTimings}>
+                            <Wand2 className="w-4 h-4 mr-2" /> Apply preview to slot list
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void handleSaveScheduleToWebsite()}
+                            disabled={saving}
+                            className="bg-primary text-primary-foreground"
+                          >
+                            {saving ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Save className="w-4 h-4 mr-2" />
+                            )}
+                            Save schedule to website (all dates)
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div>
@@ -533,22 +538,26 @@ export default function AdminTDSlotConfig() {
                       </p>
                     ) : null}
 
-                    <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/40">
-                      <Input
-                        type="time"
-                        value={newSlotTime}
-                        onChange={(e) => setNewSlotTime(e.target.value)}
-                        className="bg-secondary/50 sm:max-w-[10rem]"
-                      />
-                      <Button type="button" variant="outline" onClick={handleAddSlotTime}>
-                        <Plus className="w-4 h-4 mr-2" /> Add time slot
-                      </Button>
-                    </div>
+                    {canUpdate ? (
+                      <>
+                        <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/40">
+                          <Input
+                            type="time"
+                            value={newSlotTime}
+                            onChange={(e) => setNewSlotTime(e.target.value)}
+                            className="bg-secondary/50 sm:max-w-[10rem]"
+                          />
+                          <Button type="button" variant="outline" onClick={handleAddSlotTime}>
+                            <Plus className="w-4 h-4 mr-2" /> Add time slot
+                          </Button>
+                        </div>
 
-                    <Button onClick={() => void handleSave()} disabled={saving} variant="outline" className="w-full">
-                      {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                      Save manual slot list only
-                    </Button>
+                        <Button onClick={() => void handleSave()} disabled={saving} variant="outline" className="w-full">
+                          {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                          Save manual slot list only
+                        </Button>
+                      </>
+                    ) : null}
                   </Card>
                 </TabsContent>
 
@@ -602,18 +611,20 @@ export default function AdminTDSlotConfig() {
                               reason: full ? "full" : adminOff ? "blocked" : s.reason,
                             };
                           })}
-                          toggleMode
+                          toggleMode={canUpdate}
                           adminDisabledTimes={dailyDisabled}
-                          onToggleAdmin={toggleDailySlot}
+                          onToggleAdmin={canUpdate ? toggleDailySlot : undefined}
                         />
-                        <Button
-                          onClick={() => void saveDailyOverrides()}
-                          disabled={dailySaving}
-                          className="w-full bg-primary text-primary-foreground"
-                        >
-                          {dailySaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                          Save availability for {dailyDate}
-                        </Button>
+                        {canUpdate ? (
+                          <Button
+                            onClick={() => void saveDailyOverrides()}
+                            disabled={dailySaving}
+                            className="w-full bg-primary text-primary-foreground"
+                          >
+                            {dailySaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                            Save availability for {dailyDate}
+                          </Button>
+                        ) : null}
                       </>
                     ) : dailyDate && !dailyLoading ? (
                       <p className="text-sm text-muted-foreground text-center py-6">
@@ -675,9 +686,11 @@ export default function AdminTDSlotConfig() {
                       <p>Same date + time + model: second customer sees slot as <span className="text-red-400">Full</span>.</p>
                     </div>
 
-                    <Button onClick={() => void handleSave()} disabled={saving} className="bg-primary text-primary-foreground w-full">
-                      {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />} Save Configuration
-                    </Button>
+                    {canUpdate ? (
+                      <Button onClick={() => void handleSave()} disabled={saving} className="bg-primary text-primary-foreground w-full">
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />} Save Configuration
+                      </Button>
+                    ) : null}
                   </Card>
                 </TabsContent>
 
@@ -719,12 +732,16 @@ export default function AdminTDSlotConfig() {
                     <h3 className="font-semibold flex items-center gap-2"><Calendar className="w-4 h-4 text-primary" /> Blocked Dates</h3>
                     <div className="flex gap-3">
                       <Input type="date" value={blockDate} onChange={(e) => setBlockDate(e.target.value)} className="bg-secondary/50 flex-1" />
-                      <Button onClick={() => void handleBlockDate("block")} disabled={blockLoading} variant="destructive" className="shrink-0">
-                        <Ban className="w-4 h-4 mr-1" /> Block
-                      </Button>
-                      <Button onClick={() => void handleBlockDate("unblock")} disabled={blockLoading} variant="outline" className="shrink-0 text-green-400 border-green-400/20 hover:bg-green-400/10">
-                        <CheckCircle2 className="w-4 h-4 mr-1" /> Unblock
-                      </Button>
+                      {canUpdate ? (
+                        <>
+                          <Button onClick={() => void handleBlockDate("block")} disabled={blockLoading} variant="destructive" className="shrink-0">
+                            <Ban className="w-4 h-4 mr-1" /> Block
+                          </Button>
+                          <Button onClick={() => void handleBlockDate("unblock")} disabled={blockLoading} variant="outline" className="shrink-0 text-green-400 border-green-400/20 hover:bg-green-400/10">
+                            <CheckCircle2 className="w-4 h-4 mr-1" /> Unblock
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                     {blockedDates.length > 0 ? (
                       <div className="space-y-2">

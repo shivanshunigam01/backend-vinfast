@@ -47,21 +47,33 @@ router.get('/geocode/reverse', geocodeController.reverseGeocode);
 router.post('/geocode/reverse', geocodeController.reverseGeocode);
 
 // Leads
-router.get('/leads', ctrl.getLeads);
-router.post('/leads', ctrl.createLead);
-router.get('/leads/:id', mongoIdParam, validate, ctrl.getLead);
-router.put('/leads/:id', mongoIdParam, validate, ctrl.updateLead);
-router.delete('/leads/:id', mongoIdParam, validate, authorize('superadmin'), ctrl.deleteLead);
+router.get('/leads', requireModuleAction('crm_leads', 'view'), ctrl.getLeads);
+router.post('/leads', requireModuleAction('crm_leads', 'create'), ctrl.createLead);
+router.get('/leads/:id', mongoIdParam, validate, requireModuleAction('crm_leads', 'view'), ctrl.getLead);
+router.put('/leads/:id', mongoIdParam, validate, requireModuleAction('crm_leads', 'update'), ctrl.updateLead);
+router.delete(
+  '/leads/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('crm_leads', 'delete', 'superadmin'),
+  ctrl.deleteLead,
+);
 
 // Meta leads (DB-backed webhook records)
-router.post('/meta-leads', metaLeadsController.createManualMetaLead);
-router.post('/meta-leads/bulk', metaLeadsController.bulkCreateMetaLeads);
-router.put('/meta-leads/:id', mongoIdParam, validate, metaLeadsController.updateMetaLead);
+router.post('/meta-leads', requireModuleAction('crm_leads', 'create'), metaLeadsController.createManualMetaLead);
+router.post('/meta-leads/bulk', requireModuleAction('crm_leads', 'create'), metaLeadsController.bulkCreateMetaLeads);
+router.put(
+  '/meta-leads/:id',
+  mongoIdParam,
+  validate,
+  requireModuleAction('crm_leads', 'update'),
+  metaLeadsController.updateMetaLead,
+);
 router.delete(
   '/meta-leads/:id',
   mongoIdParam,
   validate,
-  authorize('superadmin', 'manager'),
+  requireModuleActionOrRoles('crm_leads', 'delete', 'superadmin', 'manager'),
   metaLeadsController.deleteMetaLead,
 );
 
@@ -117,67 +129,158 @@ router.get('/td/reports/admin', tdReportsController.getAdminReport);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 
 // Test drives (legacy CRM)
-router.get('/test-drives', ctrl.getTestDrives);
-router.get('/test-drives/:id', mongoIdParam, validate, ctrl.getTestDrive);
-router.put('/test-drives/:id', mongoIdParam, validate, ctrl.updateTestDrive);
-router.delete('/test-drives/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteTestDrive);
+router.get('/test-drives', requireModuleAction('td_bookings', 'view'), ctrl.getTestDrives);
+router.get('/test-drives/:id', mongoIdParam, validate, requireModuleAction('td_bookings', 'view'), ctrl.getTestDrive);
+router.put('/test-drives/:id', mongoIdParam, validate, requireModuleAction('td_bookings', 'update'), ctrl.updateTestDrive);
+router.delete(
+  '/test-drives/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('td_bookings', 'cancel', 'superadmin', 'manager'),
+  ctrl.deleteTestDrive,
+);
 
 // Enquiries
-router.get('/enquiries', ctrl.getEnquiries);
-router.get('/enquiries/:id', mongoIdParam, validate, ctrl.getEnquiry);
-router.put('/enquiries/:id', mongoIdParam, validate, ctrl.updateEnquiry);
-router.delete('/enquiries/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteEnquiry);
+router.get('/enquiries', requireModuleAction('crm_leads', 'view'), ctrl.getEnquiries);
+router.get('/enquiries/:id', mongoIdParam, validate, requireModuleAction('crm_leads', 'view'), ctrl.getEnquiry);
+router.put('/enquiries/:id', mongoIdParam, validate, requireModuleAction('crm_leads', 'update'), ctrl.updateEnquiry);
+router.delete(
+  '/enquiries/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('crm_leads', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteEnquiry,
+);
 
 // Products
-router.get('/products', ctrl.getProducts);
-router.post('/products', productValidator, validate, ctrl.createProduct);
-router.get('/products/:id', mongoIdParam, validate, ctrl.getProduct);
-router.put('/products/:id', mongoIdParam, productValidator, validate, ctrl.updateProduct);
-router.delete('/products/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteProduct);
+router.get('/products', requireModuleAction('products', 'view'), ctrl.getProducts);
+router.post('/products', requireModuleAction('products', 'create'), productValidator, validate, ctrl.createProduct);
+router.get('/products/:id', mongoIdParam, validate, requireModuleAction('products', 'view'), ctrl.getProduct);
+router.put(
+  '/products/:id',
+  mongoIdParam,
+  productValidator,
+  validate,
+  requireModuleAction('products', 'update'),
+  ctrl.updateProduct,
+);
+router.delete(
+  '/products/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('products', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteProduct,
+);
 
 // Offers
-router.get('/offers', ctrl.getOffers);
-router.post('/offers', ctrl.createOffer);
-router.get('/offers/:id', mongoIdParam, validate, ctrl.getOffer);
-router.put('/offers/:id', mongoIdParam, validate, ctrl.updateOffer);
-router.delete('/offers/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteOffer);
+router.get('/offers', requireModuleAction('offers', 'view'), ctrl.getOffers);
+router.post('/offers', requireModuleAction('offers', 'create'), ctrl.createOffer);
+router.get('/offers/:id', mongoIdParam, validate, requireModuleAction('offers', 'view'), ctrl.getOffer);
+router.put('/offers/:id', mongoIdParam, validate, requireModuleAction('offers', 'update'), ctrl.updateOffer);
+router.delete(
+  '/offers/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('offers', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteOffer,
+);
 
 // Homepage
-router.get('/homepage/slides', ctrl.getSlides);
-router.post('/homepage/slides', ctrl.createSlide);
-router.put('/homepage/slides/:id', mongoIdParam, validate, ctrl.updateSlide);
-router.delete('/homepage/slides/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteSlide);
-router.patch('/homepage/slides/reorder', slideReorderValidator, validate, ctrl.reorderSlides);
-router.get('/homepage/site-config', ctrl.getSiteConfig);
-router.put('/homepage/site-config', ctrl.updateSiteConfig);
+router.get('/homepage/slides', requireModuleAction('homepage', 'view'), ctrl.getSlides);
+router.post('/homepage/slides', requireModuleAction('homepage', 'create'), ctrl.createSlide);
+router.put(
+  '/homepage/slides/:id',
+  mongoIdParam,
+  validate,
+  requireModuleAction('homepage', 'update'),
+  ctrl.updateSlide,
+);
+router.delete(
+  '/homepage/slides/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('homepage', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteSlide,
+);
+router.patch(
+  '/homepage/slides/reorder',
+  slideReorderValidator,
+  validate,
+  requireModuleAction('homepage', 'update'),
+  ctrl.reorderSlides,
+);
+router.get('/homepage/site-config', requireModuleAction('homepage', 'view'), ctrl.getSiteConfig);
+router.put('/homepage/site-config', requireModuleAction('homepage', 'update'), ctrl.updateSiteConfig);
 
 // Content
-router.get('/content/banners', ctrl.getBanners);
-router.post('/content/banners', ctrl.createBanner);
-router.get('/content/banners/:id', mongoIdParam, validate, ctrl.getBanner);
-router.put('/content/banners/:id', mongoIdParam, validate, ctrl.updateBanner);
-router.delete('/content/banners/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteBanner);
+router.get('/content/banners', requireModuleAction('content', 'view'), ctrl.getBanners);
+router.post('/content/banners', requireModuleAction('content', 'create'), ctrl.createBanner);
+router.get('/content/banners/:id', mongoIdParam, validate, requireModuleAction('content', 'view'), ctrl.getBanner);
+router.put(
+  '/content/banners/:id',
+  mongoIdParam,
+  validate,
+  requireModuleAction('content', 'update'),
+  ctrl.updateBanner,
+);
+router.delete(
+  '/content/banners/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('content', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteBanner,
+);
 
-router.get('/content/faqs', ctrl.getFaqs);
-router.post('/content/faqs', ctrl.createFaq);
-router.get('/content/faqs/:id', mongoIdParam, validate, ctrl.getFaq);
-router.put('/content/faqs/:id', mongoIdParam, validate, ctrl.updateFaq);
-router.delete('/content/faqs/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteFaq);
+router.get('/content/faqs', requireModuleAction('content', 'view'), ctrl.getFaqs);
+router.post('/content/faqs', requireModuleAction('content', 'create'), ctrl.createFaq);
+router.get('/content/faqs/:id', mongoIdParam, validate, requireModuleAction('content', 'view'), ctrl.getFaq);
+router.put('/content/faqs/:id', mongoIdParam, validate, requireModuleAction('content', 'update'), ctrl.updateFaq);
+router.delete(
+  '/content/faqs/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('content', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteFaq,
+);
 
-router.get('/content/testimonials', ctrl.getTestimonials);
-router.post('/content/testimonials', ctrl.createTestimonial);
-router.get('/content/testimonials/:id', mongoIdParam, validate, ctrl.getTestimonial);
-router.put('/content/testimonials/:id', mongoIdParam, validate, ctrl.updateTestimonial);
-router.delete('/content/testimonials/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteTestimonial);
+router.get('/content/testimonials', requireModuleAction('content', 'view'), ctrl.getTestimonials);
+router.post('/content/testimonials', requireModuleAction('content', 'create'), ctrl.createTestimonial);
+router.get(
+  '/content/testimonials/:id',
+  mongoIdParam,
+  validate,
+  requireModuleAction('content', 'view'),
+  ctrl.getTestimonial,
+);
+router.put(
+  '/content/testimonials/:id',
+  mongoIdParam,
+  validate,
+  requireModuleAction('content', 'update'),
+  ctrl.updateTestimonial,
+);
+router.delete(
+  '/content/testimonials/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('content', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteTestimonial,
+);
 
 // Media
-router.get('/media', ctrl.getMedia);
-router.post('/media', mediaValidator, validate, ctrl.createMedia);
-router.delete('/media/:id', mongoIdParam, validate, authorize('superadmin', 'manager'), ctrl.deleteMedia);
+router.get('/media', requireModuleAction('media', 'view'), ctrl.getMedia);
+router.post('/media', requireModuleAction('media', 'create'), mediaValidator, validate, ctrl.createMedia);
+router.delete(
+  '/media/:id',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('media', 'delete', 'superadmin', 'manager'),
+  ctrl.deleteMedia,
+);
 
 // Settings
-router.get('/settings/dealer', ctrl.getDealerSettings);
-router.put('/settings/dealer', ctrl.updateDealerSettings);
+router.get('/settings/dealer', requireModuleAction('settings', 'view'), ctrl.getDealerSettings);
+router.put('/settings/dealer', requireModuleAction('settings', 'update'), ctrl.updateDealerSettings);
 
 // Admin users
 router.get('/users', authorize('superadmin'), ctrl.getAdmins);

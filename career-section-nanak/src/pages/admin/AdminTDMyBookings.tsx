@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminGet, adminPatchJson, formatApiErrors } from "@/lib/api";
-import { getAdminUser, isFieldStaffUser } from "@/lib/adminAuth";
+import { getAdminUser, isFieldStaffUser, canPerformAction } from "@/lib/adminAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,6 +117,15 @@ export default function AdminTDMyBookings() {
   const [showAddLead, setShowAddLead] = useState(false);
 
   const isExecutive = isFieldStaffUser(adminUser);
+  const canVerifyDl = canPerformAction(adminUser, "td_my_bookings", "verify_dl");
+  const canUpdateAssignment = canPerformAction(adminUser, "td_my_bookings", "update");
+  const canStartDrive = canPerformAction(adminUser, "td_my_bookings", "start_drive");
+  const canComplete = canPerformAction(adminUser, "td_my_bookings", "complete");
+  const canReschedule = canPerformAction(adminUser, "td_my_bookings", "reschedule");
+  const canCancel = canPerformAction(adminUser, "td_my_bookings", "cancel");
+  const canCreateLead = canPerformAction(adminUser, "crm_leads", "create");
+  const canManageDrive =
+    canUpdateAssignment || canStartDrive || canComplete || canReschedule || canCancel;
 
   const isTerminalStatus = (status: string) => ["COMPLETED", "CANCELLED", "MISSED"].includes(status);
 
@@ -370,9 +379,11 @@ export default function AdminTDMyBookings() {
           </p>
         </div>
         <div className="flex gap-2 shrink-0 flex-wrap">
+          {canCreateLead ? (
           <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
             <Plus className="w-4 h-4 mr-2" /> Add Lead
           </Button>
+          ) : null}
           <Button onClick={() => setFilterDate(todayIso())} variant={filterDate === todayIso() ? "default" : "outline"} size="sm">Today</Button>
           <Button onClick={() => setFilterDate("")} variant={filterDate === "" ? "default" : "outline"} size="sm">All dates</Button>
           <Button onClick={() => void fetchBookings()} variant="outline" size="sm"><RefreshCw className="w-4 h-4" /></Button>
@@ -457,6 +468,7 @@ export default function AdminTDMyBookings() {
                       dlNumber={selected.dlNumber}
                       dlValidUntil={selected.dlValidUntil}
                       disabled={actionLoading}
+                      canEdit={canVerifyDl}
                       onVerified={async () => {
                         await refreshSelected(selected._id);
                         void fetchBookings();
@@ -464,10 +476,10 @@ export default function AdminTDMyBookings() {
                     />
                   </div>
 
-                  {!isTerminalStatus(selected.bookingStatus) ? (
+                  {!isTerminalStatus(selected.bookingStatus) && canManageDrive ? (
                     <div className="rounded-lg border border-primary/25 bg-primary/5 p-4 space-y-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-primary">Manage test drive</p>
-                      {selected.assignmentStatus === "PENDING_ACCEPTANCE" ? (
+                      {canUpdateAssignment && selected.assignmentStatus === "PENDING_ACCEPTANCE" ? (
                         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
                           <p className="text-sm text-foreground font-medium">Assignment awaiting your response</p>
                           <p className="text-xs text-muted-foreground">
@@ -494,6 +506,7 @@ export default function AdminTDMyBookings() {
                           </div>
                         </div>
                       ) : null}
+                      {(canStartDrive || canComplete) ? (
                       <div className="grid sm:grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <Label htmlFor="my-opening-odometer" className="text-xs">
@@ -508,7 +521,7 @@ export default function AdminTDMyBookings() {
                             placeholder="e.g. 1240"
                             value={openingOdometer}
                             onChange={(e) => setOpeningOdometer(e.target.value)}
-                            disabled={actionLoading || selected.bookingStatus === "IN_PROGRESS"}
+                            disabled={actionLoading || selected.bookingStatus === "IN_PROGRESS" || !canStartDrive}
                             className="bg-background/80"
                           />
                           {selected.vehicleId?.currentOdometer != null ? (
@@ -530,7 +543,7 @@ export default function AdminTDMyBookings() {
                             placeholder="After test drive"
                             value={closingOdometer}
                             onChange={(e) => setClosingOdometer(e.target.value)}
-                            disabled={actionLoading || selected.bookingStatus !== "IN_PROGRESS"}
+                            disabled={actionLoading || selected.bookingStatus !== "IN_PROGRESS" || !canComplete}
                             className="bg-background/80"
                           />
                           {tdLog?.totalKM != null ? (
@@ -540,7 +553,9 @@ export default function AdminTDMyBookings() {
                           ) : null}
                         </div>
                       </div>
+                      ) : null}
                       <div className="grid grid-cols-2 gap-2">
+                        {canStartDrive ? (
                         <Button
                           size="sm"
                           className="h-10"
@@ -554,6 +569,8 @@ export default function AdminTDMyBookings() {
                         >
                           <Play className="w-4 h-4 mr-2" /> Start driving
                         </Button>
+                        ) : null}
+                        {canComplete ? (
                         <Button
                           size="sm"
                           className="h-10 bg-green-600 hover:bg-green-700 disabled:opacity-40"
@@ -562,12 +579,17 @@ export default function AdminTDMyBookings() {
                         >
                           <CheckCircle2 className="w-4 h-4 mr-2" /> Mark completed
                         </Button>
+                        ) : null}
+                        {canReschedule ? (
                         <Button size="sm" variant="outline" className="h-10" disabled={actionLoading} onClick={() => { openRescheduleDialog(selected); setSelected(null); }}>
                           <CalendarClock className="w-4 h-4 mr-2" /> Reschedule
                         </Button>
+                        ) : null}
+                        {canCancel ? (
                         <Button size="sm" variant="destructive" className="h-10" disabled={actionLoading} onClick={() => { setCancelDialog(selected); setSelected(null); }}>
                           <Ban className="w-4 h-4 mr-2" /> Cancel booking
                         </Button>
+                        ) : null}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
                         {selected.assignmentStatus === "PENDING_ACCEPTANCE"

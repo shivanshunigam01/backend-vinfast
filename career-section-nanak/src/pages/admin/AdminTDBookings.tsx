@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson, formatApiErrors } from "@/lib/api";
-import { getAdminUser } from "@/lib/adminAuth";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,7 +118,15 @@ const todayIso = () => {
 export default function AdminTDBookings() {
   const adminUser = getAdminUser();
   const { models: catalogModels } = useVehicleCatalog();
-  const canEditDetails = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canCreate = canPerformAction(adminUser, "td_bookings", "create");
+  const canUpdate = canPerformAction(adminUser, "td_bookings", "update");
+  const canAssign = canPerformAction(adminUser, "td_bookings", "assign");
+  const canVerifyDl = canPerformAction(adminUser, "td_bookings", "verify_dl");
+  const canStartDrive = canPerformAction(adminUser, "td_bookings", "start_drive");
+  const canCancel = canPerformAction(adminUser, "td_bookings", "cancel");
+  const canReschedule = canPerformAction(adminUser, "td_bookings", "reschedule_approve");
+  const canEditDetails = canPerformManagerAction(adminUser, "td_bookings", "update");
+  const canDelete = canEditDetails;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -553,9 +561,11 @@ export default function AdminTDBookings() {
           <Button onClick={() => void fetchBookings()} variant="outline" size="sm">
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
+          {canCreate ? (
           <Button onClick={() => setShowNewBooking(true)} size="sm">
             <CalendarClock className="w-4 h-4 mr-2" /> New booking
           </Button>
+          ) : null}
         </div>
       </div>
 
@@ -843,6 +853,8 @@ export default function AdminTDBookings() {
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-xs">Assign staff</Label>
+                        {canAssign ? (
+                          <>
                         <Select value={assignExecutiveId} onValueChange={setAssignExecutiveId}>
                           <SelectTrigger className="bg-secondary/50"><SelectValue placeholder="Choose staff member" /></SelectTrigger>
                           <SelectContent>
@@ -862,6 +874,12 @@ export default function AdminTDBookings() {
                         >
                           <UserCheck className="w-4 h-4 mr-2" /> Save executive
                         </Button>
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground pt-1">
+                            {selected.assignedExecutive?.name || "Not assigned"} · view only
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <DrivingLicenceVerify
@@ -871,6 +889,7 @@ export default function AdminTDBookings() {
                           dlNumber={selected.dlNumber}
                           dlValidUntil={selected.dlValidUntil}
                           disabled={actionLoading}
+                          canEdit={canVerifyDl}
                           onVerified={async () => {
                             if (selected?._id) await refreshSelected(selected._id);
                             void fetchBookings();
@@ -905,6 +924,8 @@ export default function AdminTDBookings() {
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs">Available demo fleet ({selected.preferredModel || selected.testDriveId?.model || "all"})</Label>
+                      {canAssign ? (
+                      <>
                       {vehiclesLoading ? (
                         <p className="text-xs text-muted-foreground flex items-center gap-2">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading vehicles…
@@ -938,6 +959,14 @@ export default function AdminTDBookings() {
                       >
                         <Car className="w-4 h-4 mr-2" /> Save vehicle assignment
                       </Button>
+                      </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {selected.vehicleId?.registrationNo
+                            ? `${selected.vehicleId.registrationNo} · view only`
+                            : "Not assigned · view only"}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1012,6 +1041,7 @@ export default function AdminTDBookings() {
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
+                        {canStartDrive ? (
                         <Button
                           size="sm"
                           className="h-10"
@@ -1020,6 +1050,8 @@ export default function AdminTDBookings() {
                         >
                           <Play className="w-4 h-4 mr-2" /> Start driving
                         </Button>
+                        ) : null}
+                        {canStartDrive ? (
                         <Button
                           size="sm"
                           className="h-10 bg-green-600 hover:bg-green-700 disabled:opacity-40"
@@ -1028,6 +1060,8 @@ export default function AdminTDBookings() {
                         >
                           <CheckCircle2 className="w-4 h-4 mr-2" /> Mark completed
                         </Button>
+                        ) : null}
+                        {canReschedule ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -1040,6 +1074,8 @@ export default function AdminTDBookings() {
                         >
                           <CalendarClock className="w-4 h-4 mr-2" /> Reschedule
                         </Button>
+                        ) : null}
+                        {canCancel ? (
                         <Button
                           size="sm"
                           variant="destructive"
@@ -1052,7 +1088,8 @@ export default function AdminTDBookings() {
                         >
                           <Ban className="w-4 h-4 mr-2" /> Cancel booking
                         </Button>
-                        {canEditDetails ? (
+                        ) : null}
+                        {canDelete ? (
                           <Button
                             size="sm"
                             variant="outline"

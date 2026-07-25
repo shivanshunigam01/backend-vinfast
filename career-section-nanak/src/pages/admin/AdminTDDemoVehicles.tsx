@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
-import { getAdminUser } from "@/lib/adminAuth";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 
 type Vehicle = {
   _id: string;
@@ -92,7 +92,9 @@ const WEBSITE_COLORS = ["Infinity Blanc", "Crimson Red", "Jet Black", "Desert Si
 export default function AdminTDDemoVehicles() {
   const { models: catalogModels, trimsFor } = useVehicleCatalog();
   const adminUser = getAdminUser();
-  const canDelete = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canCreate = canPerformAction(adminUser, "td_vehicles", "create");
+  const canUpdate = canPerformAction(adminUser, "td_vehicles", "update");
+  const canDelete = canPerformManagerAction(adminUser, "td_vehicles", "delete");
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,9 +216,11 @@ export default function AdminTDDemoVehicles() {
         </div>
         <div className="flex gap-2">
           <Button onClick={() => void fetchData()} variant="outline" size="sm"><RefreshCw className="w-4 h-4" /></Button>
-          <Button onClick={() => { setForm(emptyVehicle); setEditVehicle(null); setShowForm(true); }} size="sm" className="bg-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add Vehicle
-          </Button>
+          {canCreate ? (
+            <Button onClick={() => { setForm(emptyVehicle); setEditVehicle(null); setShowForm(true); }} size="sm" className="bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add Vehicle
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -306,41 +310,47 @@ export default function AdminTDDemoVehicles() {
                   </p>
                 )}
 
-                <div className="flex gap-1.5 border-t border-border/30 pt-3">
-                  <Button size="sm" variant="ghost" className="flex-1 text-xs h-8" onClick={() => {
-                    setForm({
-                      ...emptyVehicle,
-                      ...v,
-                      branchId: v.branchId?._id ?? "",
-                      _id: v._id,
-                      availableAgainAt: toDatetimeLocal(v.availableAgainAt),
-                    });
-                    setEditVehicle(v);
-                    setShowForm(true);
-                  }}>
-                    <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
-                  </Button>
-                  <Button size="sm" variant="ghost" className="flex-1 text-xs h-8 text-primary" onClick={() => {
-                    setStatusDialog(v);
-                    setNewStatus(v.status);
-                    setStatusReason("");
-                    setStatusBattery(String(v.batteryPercent));
-                    setStatusAvailableAgain(toDatetimeLocal(v.availableAgainAt));
-                  }}>
-                    <Gauge className="w-3.5 h-3.5 mr-1" /> Status
-                  </Button>
-                  {canDelete ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      disabled={actionLoading}
-                      onClick={() => void handleDeleteVehicle(v)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : null}
-                </div>
+                {(canUpdate || canDelete) ? (
+                  <div className="flex gap-1.5 border-t border-border/30 pt-3">
+                    {canUpdate ? (
+                      <Button size="sm" variant="ghost" className="flex-1 text-xs h-8" onClick={() => {
+                        setForm({
+                          ...emptyVehicle,
+                          ...v,
+                          branchId: v.branchId?._id ?? "",
+                          _id: v._id,
+                          availableAgainAt: toDatetimeLocal(v.availableAgainAt),
+                        });
+                        setEditVehicle(v);
+                        setShowForm(true);
+                      }}>
+                        <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
+                      </Button>
+                    ) : null}
+                    {canUpdate ? (
+                      <Button size="sm" variant="ghost" className="flex-1 text-xs h-8 text-primary" onClick={() => {
+                        setStatusDialog(v);
+                        setNewStatus(v.status);
+                        setStatusReason("");
+                        setStatusBattery(String(v.batteryPercent));
+                        setStatusAvailableAgain(toDatetimeLocal(v.availableAgainAt));
+                      }}>
+                        <Gauge className="w-3.5 h-3.5 mr-1" /> Status
+                      </Button>
+                    ) : null}
+                    {canDelete ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={actionLoading}
+                        onClick={() => void handleDeleteVehicle(v)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </Card>
             );
           })}

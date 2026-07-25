@@ -10,6 +10,7 @@ import CloudinaryUpload from "@/components/admin/CloudinaryUpload";
 import { getStoredState, setStoredState } from "@/lib/vfLocalStorage";
 import { hasApi } from "@/lib/apiConfig";
 import { adminDeleteJson, adminGetData, adminPostJson, adminPutJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   adminProductFromApi,
   adminProductToApiPayload,
@@ -76,6 +77,10 @@ const emptyProduct: Product = {
 };
 
 const AdminProducts = () => {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "products", "create");
+  const canUpdate = canPerformAction(adminUser, "products", "update");
+  const canDelete = canPerformManagerAction(adminUser, "products", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [products, setProducts] = useState<Product[]>(() => (hasApi() ? [] : initialProducts));
   const [editProduct, setEditProduct] = useState<Product | null>(null);
@@ -169,9 +174,11 @@ const AdminProducts = () => {
           <h1 className="font-display text-2xl font-bold text-foreground">Products</h1>
           <p className="text-muted-foreground text-sm">Manage car models, specs, images & colour variants</p>
         </div>
-        <Button onClick={() => { setEditProduct(emptyProduct); setShowForm(true); }} className="bg-primary text-primary-foreground">
-          <Plus className="w-4 h-4 mr-2" /> Add Product
-        </Button>
+        {canCreate ? (
+          <Button onClick={() => { setEditProduct(emptyProduct); setShowForm(true); }} className="bg-primary text-primary-foreground">
+            <Plus className="w-4 h-4 mr-2" /> Add Product
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid sm:grid-cols-2 gap-5">
@@ -182,10 +189,16 @@ const AdminProducts = () => {
                 ? <img src={p.heroImage} alt={p.name} className="w-full h-full object-cover" />
                 : <div className="w-full h-full flex items-center justify-center text-muted-foreground/30 text-sm">No hero image</div>
               }
-              <div className="absolute top-2 right-2 flex gap-1">
-                <button onClick={() => { setEditProduct(p); setShowForm(true); }} className="p-1.5 rounded bg-white/80 hover:bg-white text-foreground shadow"><Edit2 className="w-3.5 h-3.5" /></button>
-                <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded bg-white/80 hover:bg-red-50 text-destructive shadow"><Trash2 className="w-3.5 h-3.5" /></button>
-              </div>
+              {(canUpdate || canDelete) ? (
+                <div className="absolute top-2 right-2 flex gap-1">
+                  {canUpdate ? (
+                    <button onClick={() => { setEditProduct(p); setShowForm(true); }} className="p-1.5 rounded bg-white/80 hover:bg-white text-foreground shadow"><Edit2 className="w-3.5 h-3.5" /></button>
+                  ) : null}
+                  {canDelete ? (
+                    <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded bg-white/80 hover:bg-red-50 text-destructive shadow"><Trash2 className="w-3.5 h-3.5" /></button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="p-5 space-y-3">
               <div>

@@ -29,6 +29,7 @@ import {
   designationLabel,
 } from "@/lib/staffRoles";
 import { MODULE_GROUPS, modulesForGroup, actionToken, ACTION_LABELS, allActionTokensForModules, type AdminModuleKey, type AdminModuleAction } from "@/lib/adminModules";
+import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
 
 type StaffUser = {
   _id: string;
@@ -75,6 +76,11 @@ const DESIGNATION_COLORS: Record<string, string> = {
 const CUSTOM_DESIGNATION_COLOR = "bg-teal-400/10 text-teal-400 border-teal-400/20";
 
 export default function AdminTDUsers() {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformManagerAction(adminUser, "td_users", "create");
+  const canUpdate = canPerformManagerAction(adminUser, "td_users", "update");
+  const canDelete = canPerformManagerAction(adminUser, "td_users", "delete");
+  const canViewPassword = canPerformManagerAction(adminUser, "td_users", "view_password");
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -323,9 +329,11 @@ export default function AdminTDUsers() {
         </div>
         <div className="flex gap-2">
           <Button onClick={() => void fetchUsers()} variant="outline" size="sm"><RefreshCw className="w-4 h-4" /></Button>
-          <Button onClick={openCreate} size="sm" className="bg-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add User
-          </Button>
+          {canCreate ? (
+            <Button onClick={openCreate} size="sm" className="bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add User
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -414,41 +422,49 @@ export default function AdminTDUsers() {
                   <Badge variant="outline" className={user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}>
                     {user.active ? "Active" : "Inactive"}
                   </Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={revealLoadingId === user._id}
-                    title={revealedPasswords[user._id] !== undefined ? "Hide password" : "View password"}
-                    onClick={() => void toggleRevealPassword(user)}
-                  >
-                    {revealLoadingId === user._id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : revealedPasswords[user._id] !== undefined ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => void openEdit(user)}>
-                    <Edit2 className="w-4 h-4 mr-1" /> Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={actionLoading}
-                    onClick={() => void toggleActive(user)}
-                  >
-                    {user.active ? "Deactivate" : "Activate"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={actionLoading}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setDeleteTarget(user)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" /> Delete
-                  </Button>
+                  {canViewPassword ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={revealLoadingId === user._id}
+                      title={revealedPasswords[user._id] !== undefined ? "Hide password" : "View password"}
+                      onClick={() => void toggleRevealPassword(user)}
+                    >
+                      {revealLoadingId === user._id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : revealedPasswords[user._id] !== undefined ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </Button>
+                  ) : null}
+                  {canUpdate ? (
+                    <Button variant="outline" size="sm" onClick={() => void openEdit(user)}>
+                      <Edit2 className="w-4 h-4 mr-1" /> Edit
+                    </Button>
+                  ) : null}
+                  {canUpdate ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionLoading}
+                      onClick={() => void toggleActive(user)}
+                    >
+                      {user.active ? "Deactivate" : "Activate"}
+                    </Button>
+                  ) : null}
+                  {canDelete ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionLoading}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleteTarget(user)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" /> Delete
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </Card>

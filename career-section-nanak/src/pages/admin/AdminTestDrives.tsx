@@ -22,6 +22,7 @@ import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { Search, Plus, Edit2, Trash2, CheckCircle, XCircle, Clock, Download, FileText, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   OWNS_CAR_OPTIONS,
   PURCHASE_TIMELINE_OPTIONS,
@@ -49,6 +50,10 @@ const getLocalISODate = () => {
 
 const AdminTestDrives = () => {
   const useRemote = hasApi();
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "td_bookings", "create");
+  const canUpdate = canPerformAction(adminUser, "td_bookings", "update");
+  const canDelete = canPerformManagerAction(adminUser, "td_bookings", "cancel");
   const [hydrated, setHydrated] = useState(false);
   const [bookings, setBookings] = useState<TestDriveBooking[]>(() => (hasApi() ? [] : mockTestDrives));
   const [search, setSearch] = useState("");
@@ -330,9 +335,11 @@ const AdminTestDrives = () => {
           <p className="text-muted-foreground text-sm">{bookings.length} total bookings</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <Button onClick={() => { setEditBooking(emptyBooking); setShowForm(true); }} className="bg-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add Booking
-          </Button>
+          {canCreate ? (
+            <Button onClick={() => { setEditBooking(emptyBooking); setShowForm(true); }} className="bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add Booking
+            </Button>
+          ) : null}
           <Button onClick={() => void exportCsv()} variant="outline" className="bg-secondary/50">
             <Download className="w-4 h-4 mr-2" /> Export CSV
           </Button>
@@ -403,8 +410,12 @@ const AdminTestDrives = () => {
               <button onClick={() => quickStatus(td.id, "Completed")} title="Complete" className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"><Clock className="w-3.5 h-3.5" /></button>
               <button onClick={() => quickStatus(td.id, "Cancelled")} title="Cancel" className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><XCircle className="w-3.5 h-3.5" /></button>
               <div className="flex-1" />
-              <button onClick={() => { setEditBooking(td); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
-              <button onClick={() => handleDelete(td.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+              {canUpdate ? (
+                <button onClick={() => { setEditBooking(td); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
+              ) : null}
+              {canDelete ? (
+                <button onClick={() => handleDelete(td.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+              ) : null}
             </div>
           </Card>
         ))}

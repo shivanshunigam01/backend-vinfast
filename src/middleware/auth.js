@@ -57,3 +57,4 @@ exports.authorize = (...roles) => (req, res, next) => {
 const { requireModuleAction } = require('../utils/modulePermissions');
 exports.requireModuleAction = requireModuleAction;
 exports.requireModuleActionOrRoles = require('../utils/modulePermissions').requireModuleActionOrRoles;
+exports.requireAnyModuleAction = require('../utils/modulePermissions').requireAnyModuleAction;

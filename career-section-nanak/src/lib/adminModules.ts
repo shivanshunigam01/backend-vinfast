@@ -88,7 +88,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "media", label: "Media", path: "/admin/media", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "settings", label: "Settings", path: "/admin/settings", group: "Core", actions: ["view", "update"] },
   { key: "my_dashboard", label: "My Dashboard", path: "/admin/my-dashboard", group: "Staff portal", actions: ["view"] },
-  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Staff portal", actions: ["view", "update", "reschedule", "cancel", "complete"] },
+  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Staff portal", actions: ["view", "update", "verify_dl", "start_drive", "reschedule", "cancel", "complete"] },
   { key: "feedback_test_drive", label: "TD Feedback Forms", path: "/admin/feedback/test-drive", group: "Feedback", actions: ["view", "delete"] },
   { key: "feedback_post_delivery", label: "Delivery Feedback Forms", path: "/admin/feedback/post-delivery", group: "Feedback", actions: ["view", "delete"] },
   { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "TD Management", actions: ["view", "export"] },

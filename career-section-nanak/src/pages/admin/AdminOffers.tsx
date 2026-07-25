@@ -10,6 +10,7 @@ import { Edit2, Trash2, Plus, Tag } from "lucide-react";
 import { getStoredState, setStoredState } from "@/lib/vfLocalStorage";
 import { hasApi } from "@/lib/apiConfig";
 import { adminDeleteJson, adminGetData, adminPostJson, adminPutJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   adminOfferFromApi,
   adminOfferToApiPayload,
@@ -21,6 +22,10 @@ import { toast } from "sonner";
 type Offer = AdminOfferRow;
 
 const AdminOffers = () => {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "offers", "create");
+  const canUpdate = canPerformAction(adminUser, "offers", "update");
+  const canDelete = canPerformManagerAction(adminUser, "offers", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [editOffer, setEditOffer] = useState<Offer | null>(null);
@@ -141,9 +146,11 @@ const AdminOffers = () => {
           <h1 className="font-display text-2xl font-bold text-foreground">Offers</h1>
           <p className="text-muted-foreground text-sm">Manage deals and promotions</p>
         </div>
-        <Button onClick={() => { setEditOffer(emptyOffer); setShowForm(true); }} className="bg-primary text-primary-foreground">
-          <Plus className="w-4 h-4 mr-2" /> Add Offer
-        </Button>
+        {canCreate ? (
+          <Button onClick={() => { setEditOffer(emptyOffer); setShowForm(true); }} className="bg-primary text-primary-foreground">
+            <Plus className="w-4 h-4 mr-2" /> Add Offer
+          </Button>
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -172,9 +179,15 @@ const AdminOffers = () => {
                 <p className="text-xs text-muted-foreground mt-1">Valid till: {offer.validTill}</p>
               </div>
               <div className="flex items-center gap-2">
-                <Switch checked={offer.active} onCheckedChange={() => toggleActive(offer.id)} />
-                <button onClick={() => { setEditOffer(offer); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-4 h-4" /></button>
-                <button onClick={() => handleDelete(offer.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                {canUpdate ? (
+                  <Switch checked={offer.active} onCheckedChange={() => toggleActive(offer.id)} />
+                ) : null}
+                {canUpdate ? (
+                  <button onClick={() => { setEditOffer(offer); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-4 h-4" /></button>
+                ) : null}
+                {canDelete ? (
+                  <button onClick={() => handleDelete(offer.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                ) : null}
               </div>
             </div>
           </Card>

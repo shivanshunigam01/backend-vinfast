@@ -27,6 +27,7 @@ import {
   parseMetaLeadSpreadsheet,
   type MetaLeadImportRow,
 } from "@/lib/metaLeadImport";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 
 const EMPTY_META_LEAD: MetaLeadRow = {
   id: "",
@@ -51,6 +52,10 @@ const EMPTY_META_LEAD: MetaLeadRow = {
 
 const AdminMetaLeadCRM = () => {
   const useRemote = hasApi();
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "crm_leads", "create");
+  const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
+  const canDelete = canPerformManagerAction(adminUser, "crm_leads", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [leads, setLeads] = useState<MetaLeadRow[]>([]);
 
@@ -250,29 +255,35 @@ const AdminMetaLeadCRM = () => {
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-          <Button
-            onClick={() => setShowAdd(true)}
-            className="bg-primary text-primary-foreground"
-            disabled={!hydrated || !useRemote}
-          >
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
-          <Button
-            variant="outline"
-            className="bg-secondary/50"
-            disabled={!hydrated || !useRemote}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="w-4 h-4 mr-2" /> Import Excel
-          </Button>
-          <Button
-            variant="outline"
-            className="bg-secondary/50"
-            onClick={downloadMetaLeadImportTemplate}
-            type="button"
-          >
-            <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
-          </Button>
+          {canCreate ? (
+            <Button
+              onClick={() => setShowAdd(true)}
+              className="bg-primary text-primary-foreground"
+              disabled={!hydrated || !useRemote}
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
+          {canCreate ? (
+            <Button
+              variant="outline"
+              className="bg-secondary/50"
+              disabled={!hydrated || !useRemote}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4 mr-2" /> Import Excel
+            </Button>
+          ) : null}
+          {canCreate ? (
+            <Button
+              variant="outline"
+              className="bg-secondary/50"
+              onClick={downloadMetaLeadImportTemplate}
+              type="button"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
+            </Button>
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"
@@ -402,22 +413,26 @@ const AdminMetaLeadCRM = () => {
                     <td className="p-3 hidden md:table-cell text-muted-foreground">{lead.existingVehicle}</td>
                     <td className="p-3 hidden md:table-cell text-muted-foreground">{lead.email}</td>
                     <td className="p-3">
-                      <Select
-                        value={lead.status}
-                        onValueChange={(v) => void updateStatus(lead, v)}
-                        disabled={savingId === lead.id}
-                      >
-                        <SelectTrigger className="h-7 w-40 bg-secondary/50 text-[11px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEAD_STATUSES.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {canUpdate ? (
+                        <Select
+                          value={lead.status}
+                          onValueChange={(v) => void updateStatus(lead, v)}
+                          disabled={savingId === lead.id}
+                        >
+                          <SelectTrigger className="h-7 w-40 bg-secondary/50 text-[11px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LEAD_STATUSES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{lead.status}</span>
+                      )}
                     </td>
                     <td className="p-3 hidden md:table-cell text-muted-foreground text-xs whitespace-nowrap">
                       {formatLeadSubmittedAt(lead.createdAt)}
@@ -427,25 +442,29 @@ const AdminMetaLeadCRM = () => {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => {
-                            setEditLead(lead);
-                            setShowEdit(true);
-                          }}
-                          className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
-                          disabled={savingId === lead.id}
-                          title="Edit"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => void handleDelete(lead)}
-                          className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                          disabled={savingId === lead.id}
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canUpdate ? (
+                          <button
+                            onClick={() => {
+                              setEditLead(lead);
+                              setShowEdit(true);
+                            }}
+                            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
+                            disabled={savingId === lead.id}
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button
+                            onClick={() => void handleDelete(lead)}
+                            className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                            disabled={savingId === lead.id}
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

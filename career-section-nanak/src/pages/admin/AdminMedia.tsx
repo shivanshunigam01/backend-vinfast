@@ -6,6 +6,7 @@ import CloudinaryUpload from "@/components/admin/CloudinaryUpload";
 import { getStoredState, setStoredState } from "@/lib/vfLocalStorage";
 import { hasApi } from "@/lib/apiConfig";
 import { adminDeleteJson, adminGetData, adminPostJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import { toast } from "sonner";
 
 interface MediaItem {
@@ -35,6 +36,9 @@ function mediaFromApi(doc: Record<string, unknown>): MediaItem {
 }
 
 const AdminMedia = () => {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "media", "create");
+  const canDelete = canPerformManagerAction(adminUser, "media", "delete");
   const useRemote = hasApi();
   const [hydrated, setHydrated] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>(() => (hasApi() ? [] : initialMedia));
@@ -141,28 +145,30 @@ const AdminMedia = () => {
       </div>
 
       {/* Upload New */}
-      <Card className="bg-card border-border/50 p-5">
-        <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Upload className="w-4 h-4 text-primary" /> Upload New Image
-        </h3>
-        <div className="grid sm:grid-cols-3 gap-4 mb-4">
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Image Name / Label</p>
-            <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. VF7 Crimson Red" className="bg-secondary/50" />
+      {canCreate ? (
+        <Card className="bg-card border-border/50 p-5">
+          <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Upload className="w-4 h-4 text-primary" /> Upload New Image
+          </h3>
+          <div className="grid sm:grid-cols-3 gap-4 mb-4">
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Image Name / Label</p>
+              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. VF7 Crimson Red" className="bg-secondary/50" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Tag / Category</p>
+              <select
+                value={newTag}
+                onChange={e => setNewTag(e.target.value)}
+                className="h-10 w-full px-3 rounded-lg bg-secondary/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {TAGS.filter(t => t !== "All").map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Tag / Category</p>
-            <select
-              value={newTag}
-              onChange={e => setNewTag(e.target.value)}
-              className="h-10 w-full px-3 rounded-lg bg-secondary/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {TAGS.filter(t => t !== "All").map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-        </div>
-        <CloudinaryUpload value="" onUpload={handleUpload} label="Click to upload to Cloudinary" aspectRatio="21/9" />
-      </Card>
+          <CloudinaryUpload value="" onUpload={handleUpload} label="Click to upload to Cloudinary" aspectRatio="21/9" />
+        </Card>
+      ) : null}
 
       {/* Filter & Search */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -203,13 +209,15 @@ const AdminMedia = () => {
                   >
                     {copiedId === item.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    title="Remove from library"
-                    className="w-8 h-8 bg-destructive/80 hover:bg-destructive rounded-full flex items-center justify-center text-white transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {canDelete ? (
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      title="Remove from library"
+                      className="w-8 h-8 bg-destructive/80 hover:bg-destructive rounded-full flex items-center justify-center text-white transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="p-3">

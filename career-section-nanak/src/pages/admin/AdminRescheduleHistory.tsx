@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { adminGet, adminPatchJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction } from "@/lib/adminAuth";
 
 type Slot = { slotDate?: string; slotTime?: string };
 type RescheduleRow = {
@@ -37,6 +38,8 @@ function slotLabel(s?: Slot) {
 }
 
 export default function AdminRescheduleHistory() {
+  const adminUser = getAdminUser();
+  const canApprove = canPerformAction(adminUser, "td_reschedule_history", "approve");
   const [rows, setRows] = useState<RescheduleRow[]>([]);
   const [status, setStatus] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -126,7 +129,7 @@ export default function AdminRescheduleHistory() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold">{r.bookingCode || "—"}</span>
                 <Badge variant="outline">{r.status}</Badge>
-                {r.status === "PENDING" ? (
+                {r.status === "PENDING" && canApprove ? (
                   <Button size="sm" variant="outline" onClick={() => { setDecideTarget(r); setPreferredIndex("0"); }}>
                     Review
                   </Button>

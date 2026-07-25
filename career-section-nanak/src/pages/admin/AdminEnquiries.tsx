@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Phone, Mail, CheckCircle, MessageSquare, Archive, Download, FileText, MessageCircle, Trash2 } from "lucide-react";
-import { getAdminUser } from "@/lib/adminAuth";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 
 const statusColors: Record<string, string> = {
   Open: "bg-amber-400/10 text-amber-400",
@@ -29,7 +29,8 @@ const statusColors: Record<string, string> = {
 const AdminEnquiries = () => {
   const useRemote = hasApi();
   const adminUser = getAdminUser();
-  const canDelete = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
+  const canDelete = canPerformManagerAction(adminUser, "crm_leads", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [enquiries, setEnquiries] = useState<Enquiry[]>(() => (hasApi() ? [] : mockEnquiries));
   const [search, setSearch] = useState("");
@@ -276,8 +277,12 @@ const AdminEnquiries = () => {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={() => updateStatus(enq.id, "Responded")} title="Mark Responded" className="p-1.5 rounded hover:bg-green-400/10 text-muted-foreground hover:text-green-400"><MessageSquare className="w-4 h-4" /></button>
-                <button onClick={() => updateStatus(enq.id, "Closed")} title="Close" className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Archive className="w-4 h-4" /></button>
+                {canUpdate ? (
+                  <>
+                    <button onClick={() => updateStatus(enq.id, "Responded")} title="Mark Responded" className="p-1.5 rounded hover:bg-green-400/10 text-muted-foreground hover:text-green-400"><MessageSquare className="w-4 h-4" /></button>
+                    <button onClick={() => updateStatus(enq.id, "Closed")} title="Close" className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Archive className="w-4 h-4" /></button>
+                  </>
+                ) : null}
                 {canDelete ? (
                   <button
                     onClick={() => void handleDelete(enq)}

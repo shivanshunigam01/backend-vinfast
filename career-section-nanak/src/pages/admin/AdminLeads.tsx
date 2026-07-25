@@ -22,11 +22,16 @@ import { leadModelLabel, parseStoredModelLine } from "@/data/vinfastModels";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { Search, Plus, Edit2, Trash2, Phone, Mail, Download, FileText, MessageCircle } from "lucide-react";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 
 const CRM_LEAD_SOURCES = ["Website", "Google Ads", "Meta Ads", "WhatsApp", "Walk-in", "Referral"] as const;
 
 const AdminLeads = () => {
   const useRemote = hasApi();
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "crm_leads", "create");
+  const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
+  const canDelete = canPerformManagerAction(adminUser, "crm_leads", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [leads, setLeads] = useState<Lead[]>(() => (hasApi() ? [] : mockLeads));
   const [leadsTotal, setLeadsTotal] = useState(0);
@@ -265,9 +270,11 @@ const AdminLeads = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <Button onClick={() => { setEditLead(emptyLead); setShowForm(true); }} className="bg-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add Lead
-          </Button>
+          {canCreate ? (
+            <Button onClick={() => { setEditLead(emptyLead); setShowForm(true); }} className="bg-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
           <Button onClick={() => void exportCsv()} variant="outline" className="bg-secondary/50">
             <Download className="w-4 h-4 mr-2" /> Export CSV
           </Button>
@@ -342,8 +349,12 @@ const AdminLeads = () => {
                   <td className="p-3 hidden lg:table-cell text-muted-foreground text-xs">{lead.nextFollowUp || "—"}</td>
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => { setEditLead(lead); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleDelete(lead.id, lead.name)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                      {canUpdate ? (
+                        <button onClick={() => { setEditLead(lead); setShowForm(true); }} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
+                      ) : null}
+                      {canDelete ? (
+                        <button onClick={() => handleDelete(lead.id, lead.name)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

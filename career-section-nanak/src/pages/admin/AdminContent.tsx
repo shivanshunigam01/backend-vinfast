@@ -14,6 +14,7 @@ import { leadModelLabel, parseStoredModelLine } from "@/data/vinfastModels";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { hasApi } from "@/lib/apiConfig";
 import { adminDeleteJson, adminGetData, adminPostJson, adminPutJson, formatApiErrors } from "@/lib/api";
+import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import {
   adminBannerFromApi,
   adminBannerToApiPayload,
@@ -53,6 +54,10 @@ const emptyFaq: FAQ = { id: "", question: "", answer: "", category: "General", a
 const emptyTestimonial: Testimonial = { id: "", name: "", city: "", model: "VF 7", rating: 5, text: "", photo: "", active: true, order: 0 };
 
 const AdminContent = () => {
+  const adminUser = getAdminUser();
+  const canCreate = canPerformAction(adminUser, "content", "create");
+  const canUpdate = canPerformAction(adminUser, "content", "update");
+  const canDelete = canPerformManagerAction(adminUser, "content", "delete");
   const [hydrated, setHydrated] = useState(false);
   const [banners, setBanners] = useState<Banner[]>(() => (hasApi() ? [] : initialBanners));
   const [faqs, setFaqs] = useState<FAQ[]>(() => (hasApi() ? [] : initialFaqs));
@@ -291,11 +296,13 @@ const AdminContent = () => {
 
         {/* Banners */}
         <TabsContent value="banners" className="space-y-3">
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => setEditBanner(emptyBanner)} className="bg-primary text-primary-foreground gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Banner
-            </Button>
-          </div>
+          {canCreate ? (
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setEditBanner(emptyBanner)} className="bg-primary text-primary-foreground gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add Banner
+              </Button>
+            </div>
+          ) : null}
           {banners.map(b => (
             <Card key={b.id} className={`bg-card border-border/50 p-4 transition-opacity ${b.active ? "" : "opacity-50"}`}>
               <div className="flex flex-col sm:flex-row gap-4">
@@ -308,11 +315,19 @@ const AdminContent = () => {
                   <p className="text-xs text-muted-foreground">{b.subtitle}</p>
                   <p className="text-[10px] text-muted-foreground mt-1">→ {b.link}</p>
                 </div>
-                <div className="flex items-start gap-1 flex-shrink-0">
-                  <Switch checked={b.active} onCheckedChange={() => void toggleBannerActive(b)} />
-                  <button onClick={() => setEditBanner(b)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => void deleteBanner(b.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
+                {(canUpdate || canDelete) ? (
+                  <div className="flex items-start gap-1 flex-shrink-0">
+                    {canUpdate ? (
+                      <Switch checked={b.active} onCheckedChange={() => void toggleBannerActive(b)} />
+                    ) : null}
+                    {canUpdate ? (
+                      <button onClick={() => setEditBanner(b)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                    {canDelete ? (
+                      <button onClick={() => void deleteBanner(b.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </Card>
           ))}
@@ -320,11 +335,13 @@ const AdminContent = () => {
 
         {/* FAQs */}
         <TabsContent value="faqs" className="space-y-3">
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => setEditFaq(emptyFaq)} className="bg-primary text-primary-foreground gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add FAQ
-            </Button>
-          </div>
+          {canCreate ? (
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setEditFaq(emptyFaq)} className="bg-primary text-primary-foreground gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add FAQ
+              </Button>
+            </div>
+          ) : null}
           {faqs.map(f => (
             <Card key={f.id} className="bg-card border-border/50 p-4">
               <div className="flex items-start justify-between gap-4">
@@ -333,10 +350,16 @@ const AdminContent = () => {
                   <p className="text-xs text-muted-foreground mt-1">{f.answer}</p>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground mt-2 inline-block">{f.category}</span>
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => setEditFaq(f)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => void deleteFaq(f.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
+                {(canUpdate || canDelete) ? (
+                  <div className="flex gap-1 flex-shrink-0">
+                    {canUpdate ? (
+                      <button onClick={() => setEditFaq(f)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                    {canDelete ? (
+                      <button onClick={() => void deleteFaq(f.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </Card>
           ))}
@@ -344,11 +367,13 @@ const AdminContent = () => {
 
         {/* Testimonials */}
         <TabsContent value="testimonials" className="space-y-3">
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => setEditTestimonial(emptyTestimonial)} className="bg-primary text-primary-foreground gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> Add Testimonial
-            </Button>
-          </div>
+          {canCreate ? (
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setEditTestimonial(emptyTestimonial)} className="bg-primary text-primary-foreground gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add Testimonial
+              </Button>
+            </div>
+          ) : null}
           {testimonials.map(t => (
             <Card key={t.id} className="bg-card border-border/50 p-4">
               <div className="flex gap-4">
@@ -364,10 +389,16 @@ const AdminContent = () => {
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">"{t.text}"</p>
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => setEditTestimonial(t)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => void deleteTestimonial(t.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
+                {(canUpdate || canDelete) ? (
+                  <div className="flex gap-1 flex-shrink-0">
+                    {canUpdate ? (
+                      <button onClick={() => setEditTestimonial(t)} className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"><Edit2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                    {canDelete ? (
+                      <button onClick={() => void deleteTestimonial(t.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </Card>
           ))}
