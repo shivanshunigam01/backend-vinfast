@@ -28,7 +28,7 @@ import {
   STAFF_DESIGNATIONS,
   designationLabel,
 } from "@/lib/staffRoles";
-import { MODULE_GROUPS, modulesForGroup, type AdminModuleKey } from "@/lib/adminModules";
+import { MODULE_GROUPS, modulesForGroup, actionToken, ACTION_LABELS, allActionTokensForModules, type AdminModuleKey, type AdminModuleAction } from "@/lib/adminModules";
 
 type StaffUser = {
   _id: string;
@@ -41,6 +41,7 @@ type StaffUser = {
   reportsTo?: string | { _id: string; name?: string } | null;
   active: boolean;
   allowedModules?: string[];
+  allowedActions?: string[];
   createdAt?: string;
 };
 
@@ -57,6 +58,7 @@ const emptyForm = {
   accessLevel: "executive" as "executive" | "manager",
   reportsTo: NO_MANAGER as string,
   allowedModules: [] as AdminModuleKey[],
+  allowedActions: [] as string[],
   active: true,
 };
 
@@ -130,19 +132,52 @@ export default function AdminTDUsers() {
       accessLevel: user.role === "manager" ? "manager" : "executive",
       reportsTo: reportsToId || NO_MANAGER,
       allowedModules: (user.allowedModules ?? []) as AdminModuleKey[],
+      allowedActions: user.allowedActions ?? [],
       active: user.active,
     });
     setShowForm(true);
   };
 
   const toggleModule = (key: AdminModuleKey, checked: boolean) => {
-    setForm((f) => ({
-      ...f,
-      allowedModules: checked
-        ? [...new Set([...f.allowedModules, key])]
-        : f.allowedModules.filter((m) => m !== key),
-    }));
+    setForm((f) => {
+      if (checked) {
+        const modules = [...new Set([...f.allowedModules, key])];
+        const moduleTokens = allActionTokensForModules([key]);
+        const actions = [...new Set([...f.allowedActions, ...moduleTokens])];
+        return { ...f, allowedModules: modules, allowedActions: actions };
+      }
+      return {
+        ...f,
+        allowedModules: f.allowedModules.filter((m) => m !== key),
+        allowedActions: f.allowedActions.filter((a) => !a.startsWith(`${key}:`)),
+      };
+    });
   };
+
+  const toggleAction = (key: AdminModuleKey, action: AdminModuleAction, checked: boolean) => {
+    const token = actionToken(key, action);
+    setForm((f) => {
+      // Enabling any action also enables the module (and ensures view is present).
+      if (checked) {
+        const modules = f.allowedModules.includes(key) ? f.allowedModules : [...f.allowedModules, key];
+        let actions = [...new Set([...f.allowedActions, token])];
+        const viewToken = actionToken(key, "view");
+        if (!actions.includes(viewToken)) actions = [...actions, viewToken];
+        return { ...f, allowedModules: modules, allowedActions: actions };
+      }
+      // Disabling view removes the whole module.
+      if (action === "view") {
+        return {
+          ...f,
+          allowedModules: f.allowedModules.filter((m) => m !== key),
+          allowedActions: f.allowedActions.filter((a) => !a.startsWith(`${key}:`)),
+        };
+      }
+      return { ...f, allowedActions: f.allowedActions.filter((a) => a !== token) };
+    });
+  };
+
+  const clearModuleAccess = () => setForm((f) => ({ ...f, allowedModules: [], allowedActions: [] }));
 
   const isOtherDesignation = form.designation === OTHER_DESIGNATION;
 
@@ -168,6 +203,7 @@ export default function AdminTDUsers() {
         designation: isOtherDesignation ? form.customDesignation.trim() : form.designation,
         active: form.active,
         allowedModules: form.allowedModules,
+        allowedActions: form.allowedModules.length ? form.allowedActions : [],
         reportsTo: form.reportsTo === NO_MANAGER ? null : form.reportsTo,
       };
       // Custom positions carry an explicit access level; standard ones derive it from the designation.
@@ -346,7 +382,11 @@ export default function AdminTDUsers() {
                   </Badge>
                   {(user.allowedModules?.length ?? 0) > 0 && (
                     <Badge variant="outline" className="border-primary/30 text-primary">
-                      <ShieldCheck className="mr-1 h-3 w-3" /> {user.allowedModules!.length} module{user.allowedModules!.length === 1 ? "" : "s"}
+                      <ShieldCheck className="mr-1 h-3 w-3" />
+                      {user.allowedModules!.length} module{user.allowedModules!.length === 1 ? "" : "s"}
+                      {(user.allowedActions?.length ?? 0) > 0
+                        ? ` · ${user.allowedActions!.length} action${user.allowedActions!.length === 1 ? "" : "s"}`
+                        : ""}
                     </Badge>
                   )}
                   <Badge variant="outline" className={user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}>
@@ -500,30 +540,57 @@ export default function AdminTDUsers() {
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs text-muted-foreground"
-                    onClick={() => setForm({ ...form, allowedModules: [] })}
+                    onClick={clearModuleAccess}
                   >
                     Clear (use role default)
                   </Button>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Tick the modules this user can open after login. Leave everything unticked for the default access of
-                their role (Sales Executives get the staff portal; managers and above get full TD Management).
+                Tick a module to grant access, then choose which actions they can perform (View, Edit, Delete, …).
+                Leave everything unticked for the default access of their role.
               </p>
-              <div className="space-y-3 pt-1">
+              <div className="max-h-[50vh] space-y-3 overflow-y-auto pt-1 pr-1">
                 {MODULE_GROUPS.map((group) => (
                   <div key={group}>
                     <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{group}</p>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                      {modulesForGroup(group).map((m) => (
-                        <label key={m.key} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                          <Checkbox
-                            checked={form.allowedModules.includes(m.key)}
-                            onCheckedChange={(v) => toggleModule(m.key, v === true)}
-                          />
-                          <span className="truncate">{m.label}</span>
-                        </label>
-                      ))}
+                    <div className="space-y-2">
+                      {modulesForGroup(group).map((m) => {
+                        const moduleOn = form.allowedModules.includes(m.key);
+                        return (
+                          <div
+                            key={m.key}
+                            className="rounded-lg border border-border/40 bg-secondary/20 px-2.5 py-2"
+                          >
+                            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
+                              <Checkbox
+                                checked={moduleOn}
+                                onCheckedChange={(v) => toggleModule(m.key, v === true)}
+                              />
+                              <span className="truncate">{m.label}</span>
+                            </label>
+                            {moduleOn && m.actions.length > 0 ? (
+                              <div className="mt-2 ml-6 flex flex-wrap gap-x-3 gap-y-1.5">
+                                {m.actions.map((action) => {
+                                  const token = actionToken(m.key, action);
+                                  return (
+                                    <label
+                                      key={token}
+                                      className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+                                    >
+                                      <Checkbox
+                                        checked={form.allowedActions.includes(token)}
+                                        onCheckedChange={(v) => toggleAction(m.key, action, v === true)}
+                                      />
+                                      <span>{ACTION_LABELS[action]}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

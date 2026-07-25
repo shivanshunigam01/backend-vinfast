@@ -20,6 +20,8 @@ import {
   ChevronLeft, ChevronRight, CarFront, PackageCheck, Inbox
 } from "lucide-react";
 import { toast } from "sonner";
+import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
+import type { AdminModuleKey } from "@/lib/adminModules";
 
 type FeedbackRow = {
   _id: string;
@@ -148,6 +150,9 @@ function Stars({ value, size = "h-3.5 w-3.5" }: { value?: number; size?: string 
 
 export default function AdminFeedbackSubmissions({ kind }: { kind: "testDrive" | "postDelivery" }) {
   const config = CONFIGS[kind];
+  const moduleKey: AdminModuleKey =
+    kind === "testDrive" ? "feedback_test_drive" : "feedback_post_delivery";
+  const canDelete = canPerformManagerAction(getAdminUser(), moduleKey, "delete");
 
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [meta, setMeta] = useState<FeedbackMeta | null>(null);
@@ -293,14 +298,16 @@ export default function AdminFeedbackSubmissions({ kind }: { kind: "testDrive" |
                   <Button variant="outline" size="sm" onClick={() => setViewRow(row)}>
                     <Eye className="w-4 h-4 mr-1" /> View
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setDeleteRow(row)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  {canDelete ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setDeleteRow(row)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </Card>

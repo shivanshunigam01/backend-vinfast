@@ -1,6 +1,8 @@
 /**
  * Admin-panel module catalog for per-user access control (User Master).
- * Keys must stay in sync with the backend (src/constants/adminModules.js).
+ * Keys / actions must stay in sync with the backend (src/constants/adminModules.js).
+ *
+ * Action tokens are stored as `moduleKey:action` (e.g. feedback_test_drive:delete).
  */
 
 export type AdminModuleKey =
@@ -28,37 +30,77 @@ export type AdminModuleKey =
   | "td_reschedule_history"
   | "td_fleet_health";
 
+export type AdminModuleAction =
+  | "view"
+  | "create"
+  | "update"
+  | "delete"
+  | "assign"
+  | "export"
+  | "reschedule"
+  | "cancel"
+  | "complete"
+  | "reschedule_approve"
+  | "verify_dl"
+  | "start_drive"
+  | "view_password"
+  | "tag_demo"
+  | "approve"
+  | "schedule_charge"
+  | "log_maintenance";
+
 export type AdminModule = {
   key: AdminModuleKey;
   label: string;
   path: string;
   group: "Core" | "Staff portal" | "Feedback" | "TD Management";
+  actions: AdminModuleAction[];
+};
+
+export const ACTION_LABELS: Record<AdminModuleAction, string> = {
+  view: "View",
+  create: "Create",
+  update: "Edit",
+  delete: "Delete",
+  assign: "Assign",
+  export: "Export",
+  reschedule: "Reschedule",
+  cancel: "Cancel",
+  complete: "Complete",
+  reschedule_approve: "Approve reschedule",
+  verify_dl: "Verify DL",
+  start_drive: "Start drive",
+  view_password: "View password",
+  tag_demo: "Tag as demo",
+  approve: "Approve",
+  schedule_charge: "Schedule charge",
+  log_maintenance: "Log maintenance",
 };
 
 export const ADMIN_MODULES: AdminModule[] = [
-  { key: "dashboard", label: "Dashboard", path: "/admin/dashboard", group: "Core" },
-  { key: "calendar", label: "Calendar", path: "/admin/calendar", group: "Core" },
-  { key: "homepage", label: "Homepage", path: "/admin/homepage", group: "Core" },
-  { key: "crm_leads", label: "Lead CRM", path: "/admin/crm/leads", group: "Core" },
-  { key: "products", label: "Products", path: "/admin/products", group: "Core" },
-  { key: "offers", label: "Offers", path: "/admin/offers", group: "Core" },
-  { key: "content", label: "Content", path: "/admin/content", group: "Core" },
-  { key: "media", label: "Media", path: "/admin/media", group: "Core" },
-  { key: "settings", label: "Settings", path: "/admin/settings", group: "Core" },
-  { key: "my_dashboard", label: "My Dashboard", path: "/admin/my-dashboard", group: "Staff portal" },
-  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Staff portal" },
-  { key: "feedback_test_drive", label: "TD Feedback Forms", path: "/admin/feedback/test-drive", group: "Feedback" },
-  { key: "feedback_post_delivery", label: "Delivery Feedback Forms", path: "/admin/feedback/post-delivery", group: "Feedback" },
-  { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "TD Management" },
-  { key: "td_bookings", label: "TD Bookings", path: "/admin/td/bookings", group: "TD Management" },
-  { key: "td_reschedule_history", label: "Reschedule History", path: "/admin/td/reschedule-history", group: "TD Management" },
-  { key: "td_fleet_health", label: "Fleet Charging & Health", path: "/admin/td/fleet-health", group: "TD Management" },
-  { key: "td_users", label: "User Master", path: "/admin/td/users", group: "TD Management" },
-  { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management" },
-  { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management" },
-  { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "TD Management" },
-  { key: "td_reports", label: "TD Reports", path: "/admin/td/reports", group: "TD Management" },
-  { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management" },
+  { key: "dashboard", label: "Dashboard", path: "/admin/dashboard", group: "Core", actions: ["view"] },
+  { key: "calendar", label: "Calendar", path: "/admin/calendar", group: "Core", actions: ["view"] },
+  { key: "homepage", label: "Homepage", path: "/admin/homepage", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "crm_leads", label: "Lead CRM", path: "/admin/crm/leads", group: "Core", actions: ["view", "create", "update", "delete", "assign", "export"] },
+  { key: "products", label: "Products", path: "/admin/products", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "offers", label: "Offers", path: "/admin/offers", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "content", label: "Content", path: "/admin/content", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "media", label: "Media", path: "/admin/media", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "settings", label: "Settings", path: "/admin/settings", group: "Core", actions: ["view", "update"] },
+  { key: "my_dashboard", label: "My Dashboard", path: "/admin/my-dashboard", group: "Staff portal", actions: ["view"] },
+  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Staff portal", actions: ["view", "update", "reschedule", "cancel", "complete"] },
+  { key: "feedback_test_drive", label: "TD Feedback Forms", path: "/admin/feedback/test-drive", group: "Feedback", actions: ["view", "delete"] },
+  { key: "feedback_post_delivery", label: "Delivery Feedback Forms", path: "/admin/feedback/post-delivery", group: "Feedback", actions: ["view", "delete"] },
+  { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "TD Management", actions: ["view", "export"] },
+  { key: "td_bookings", label: "TD Bookings", path: "/admin/td/bookings", group: "TD Management", actions: ["view", "create", "update", "assign", "reschedule_approve", "verify_dl", "start_drive", "cancel"] },
+  { key: "td_reschedule_history", label: "Reschedule History", path: "/admin/td/reschedule-history", group: "TD Management", actions: ["view", "approve"] },
+  { key: "td_fleet_health", label: "Fleet Charging & Health", path: "/admin/td/fleet-health", group: "TD Management", actions: ["view", "schedule_charge", "log_maintenance"] },
+  { key: "td_users", label: "User Master", path: "/admin/td/users", group: "TD Management", actions: ["view", "create", "update", "delete", "view_password"] },
+  { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management", actions: ["view", "create", "update", "delete"] },
+  { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management", actions: ["view", "create", "update", "delete"] },
+  { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "TD Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
+  { key: "td_reports", label: "TD Reports", path: "/admin/td/reports", group: "TD Management", actions: ["view", "export"] },
+  { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
 export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries(
@@ -69,6 +111,34 @@ export const MODULE_GROUPS = ["Core", "Staff portal", "Feedback", "TD Management
 
 export function modulesForGroup(group: AdminModule["group"]) {
   return ADMIN_MODULES.filter((m) => m.group === group);
+}
+
+export function moduleByKey(key: AdminModuleKey): AdminModule | undefined {
+  return ADMIN_MODULES.find((m) => m.key === key);
+}
+
+export function actionToken(moduleKey: AdminModuleKey, action: AdminModuleAction): string {
+  return `${moduleKey}:${action}`;
+}
+
+export function parseActionToken(token: string): { module: AdminModuleKey; action: AdminModuleAction } | null {
+  const i = token.indexOf(":");
+  if (i <= 0) return null;
+  return {
+    module: token.slice(0, i) as AdminModuleKey,
+    action: token.slice(i + 1) as AdminModuleAction,
+  };
+}
+
+/** All action tokens for the given modules (used when enabling a module). */
+export function allActionTokensForModules(moduleKeys: AdminModuleKey[]): string[] {
+  const out: string[] = [];
+  for (const key of moduleKeys) {
+    const mod = moduleByKey(key);
+    if (!mod) continue;
+    for (const action of mod.actions) out.push(actionToken(key, action));
+  }
+  return out;
 }
 
 /** Default module sets per role, used when a user has no explicit allowedModules. */

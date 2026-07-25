@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const validate = require('../../middleware/validate');
-const { protect, authorize } = require('../../middleware/auth');
+const { protect, authorize, requireModuleAction } = require('../../middleware/auth');
+const { requireModuleActionOrRoles } = require('../../utils/modulePermissions');
 const authController = require('../../controllers/authController');
 const dashboardController = require('../../controllers/dashboardController');
 const ctrl = require('../../controllers/adminResourceController');
@@ -85,20 +86,28 @@ router.use('/crm/customers', crmCustomersRoutes);
 router.use('/stock/vehicles', vehicleStockRoutes);
 
 // Customer feedback form submissions (QR pages) — admin viewer
-router.get('/feedback/post-delivery', postDeliveryFeedbackController.listPostDeliveryFeedback);
+router.get(
+  '/feedback/post-delivery',
+  requireModuleAction('feedback_post_delivery', 'view'),
+  postDeliveryFeedbackController.listPostDeliveryFeedback,
+);
 router.delete(
   '/feedback/post-delivery/:id',
   mongoIdParam,
   validate,
-  authorize('superadmin', 'manager'),
+  requireModuleActionOrRoles('feedback_post_delivery', 'delete', 'superadmin', 'manager'),
   postDeliveryFeedbackController.deletePostDeliveryFeedback,
 );
-router.get('/feedback/test-drive', testDriveFeedbackController.listTestDriveFeedback);
+router.get(
+  '/feedback/test-drive',
+  requireModuleAction('feedback_test_drive', 'view'),
+  testDriveFeedbackController.listTestDriveFeedback,
+);
 router.delete(
   '/feedback/test-drive/:id',
   mongoIdParam,
   validate,
-  authorize('superadmin', 'manager'),
+  requireModuleActionOrRoles('feedback_test_drive', 'delete', 'superadmin', 'manager'),
   testDriveFeedbackController.deleteTestDriveFeedback,
 );
 

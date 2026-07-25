@@ -8,7 +8,7 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
-const { ADMIN_MODULE_KEYS } = require('../constants/adminModules');
+const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 
 const STAFF_ROLES = ['executive', 'manager'];
 
@@ -65,17 +65,6 @@ function resolveRole(designation, requestedRole) {
   return 'executive';
 }
 
-/** Keeps only recognised module keys (deduped). Returns undefined when not provided. */
-function sanitizeModules(allowedModules) {
-  if (allowedModules === undefined) return undefined;
-  if (!Array.isArray(allowedModules)) {
-    throw new ApiError(400, 'allowedModules must be an array of module keys');
-  }
-  return [...new Set(allowedModules.map((m) => String(m).trim()))].filter((m) =>
-    ADMIN_MODULE_KEYS.includes(m),
-  );
-}
-
 exports.listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = {};
@@ -121,6 +110,7 @@ exports.createUser = asyncHandler(async (req, res) => {
 
   const resolvedDesignation = resolveDesignation(designation || 'sales_executive');
   const modules = sanitizeModules(allowedModules);
+  const actions = sanitizeActions(allowedActions, modules || []);
 
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
@@ -140,9 +130,7 @@ exports.createUser = asyncHandler(async (req, res) => {
     role: resolveRole(resolvedDesignation, role),
     active: active !== false,
     allowedModules: modules || [],
-    allowedActions: Array.isArray(allowedActions)
-      ? allowedActions.map((a) => String(a).trim()).filter(Boolean)
-      : [],
+    allowedActions: actions || [],
     reportsTo: reportsToId,
   });
 
@@ -166,9 +154,11 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (active !== undefined) doc.active = Boolean(active);
   const modules = sanitizeModules(allowedModules);
   if (modules !== undefined) doc.allowedModules = modules;
-  if (Array.isArray(allowedActions)) {
-    doc.allowedActions = allowedActions.map((a) => String(a).trim()).filter(Boolean);
-  }
+  const actions = sanitizeActions(
+    allowedActions,
+    modules !== undefined ? modules : doc.allowedModules,
+  );
+  if (actions !== undefined) doc.allowedActions = actions;
   if (reportsTo !== undefined) {
     if (!reportsTo) {
       doc.reportsTo = null;
@@ -192,10 +182,6 @@ exports.updateUser = asyncHandler(async (req, res) => {
  * have no stored copy until a new password is set via Edit.
  */
 exports.getUserPassword = asyncHandler(async (req, res) => {
-  if (!['manager', 'superadmin'].includes(req.admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can view passwords');
-  }
-
   const doc = await TDStaff.findById(req.params.id).select('+passwordPlain name email');
   if (!doc) throw new ApiError(404, 'User not found');
 
@@ -221,10 +207,6 @@ exports.patchUser = asyncHandler(async (req, res) => {
  * unassigned so managers can reassign that work from the CRM.
  */
 exports.deleteUser = asyncHandler(async (req, res) => {
-  if (!['manager', 'superadmin'].includes(req.admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can delete users');
-  }
-
   const doc = await TDStaff.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'User not found');
 

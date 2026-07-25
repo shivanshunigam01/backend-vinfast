@@ -60,14 +60,116 @@ function preferencesAreDistinct(prefs: PrefDraft[]): boolean {
   return completed.length === 3 && new Set(completed.map((pref) => `${pref.date}|${pref.time}`)).size === 3;
 }
 
+type RescheduleOptionProps = {
+  index: number;
+  booking: CustomerBooking;
+  pref: PrefDraft;
+  minDate: string;
+  onChange: (pref: PrefDraft) => void;
+};
+
+/** One preferred-slot option: its own date picker + time slots (loaded independently). */
+function RescheduleOption({ index, booking, pref, minDate, onChange }: RescheduleOptionProps) {
+  const [slots, setSlots] = useState<PublicTdSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!booking.branchId?._id || !pref.date) {
+      setSlots([]);
+      return;
+    }
+    let cancelled = false;
+    setSlotsLoading(true);
+    const model = booking.preferredModel || booking.testDriveId?.model || "";
+    const variant =
+      booking.testDriveId?.variant ||
+      (booking as CustomerBooking & { preferredVariant?: string }).preferredVariant ||
+      "";
+    fetchPublicTdSlots({
+      branchId: booking.branchId._id,
+      date: pref.date,
+      model,
+      variant: variant || undefined,
+    })
+      .then((res) => {
+        if (!cancelled) setSlots(res.slots);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSlots([]);
+          toast.error(`Could not load time slots for option ${index + 1}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [booking, pref.date, index]);
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border/60 p-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+          {index + 1}
+        </span>
+        <span className="text-sm font-medium text-foreground">Option {index + 1}</span>
+        {pref.date && pref.time ? <span className="text-xs text-emerald-600">✓ selected</span> : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`reschedule-date-${index}`}>Preferred date</Label>
+        <Input
+          id={`reschedule-date-${index}`}
+          type="date"
+          min={minDate}
+          value={pref.date}
+          onChange={(e) => onChange({ date: e.target.value, time: "" })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Preferred time</Label>
+        {!pref.date ? (
+          <p className="py-2 text-sm text-muted-foreground">Pick a date to see available times.</p>
+        ) : slotsLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        ) : slots.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">No slots available for this date.</p>
+        ) : (
+          <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+            {slots.map((slot) => (
+              <button
+                key={slot.time}
+                type="button"
+                disabled={!slot.available}
+                onClick={() => onChange({ date: pref.date, time: slot.time })}
+                className={cn(
+                  "rounded-xl border px-3 py-2 text-sm transition-colors",
+                  !slot.available && "cursor-not-allowed border-border bg-muted/30 opacity-50",
+                  slot.available && pref.time === slot.time
+                    ? "border-primary bg-primary/10 font-medium text-primary"
+                    : slot.available && "border-border hover:border-primary/50",
+                )}
+              >
+                {formatSlotLabel(slot)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CustomerBookings() {
   const [bookings, setBookings] = useState<CustomerBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescheduleTarget, setRescheduleTarget] = useState<CustomerBooking | null>(null);
   const [prefs, setPrefs] = useState<PrefDraft[]>(EMPTY_PREFS);
-  const [activePrefIndex, setActivePrefIndex] = useState(0);
-  const [rescheduleSlots, setRescheduleSlots] = useState<PublicTdSlot[]>([]);
-  const [slotsLoading, setSlotsLoading] = useState(false);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const minDate = format(new Date(), "yyyy-MM-dd");
@@ -91,41 +193,8 @@ export default function CustomerBookings() {
   const openReschedule = (booking: CustomerBooking) => {
     setRescheduleTarget(booking);
     setPrefs(EMPTY_PREFS.map((pref) => ({ ...pref })));
-    setActivePrefIndex(0);
     setReason("");
-    setRescheduleSlots([]);
   };
-
-  const activeDate = prefs[activePrefIndex]?.date || "";
-
-  const loadRescheduleSlots = useCallback(async () => {
-    if (!rescheduleTarget?.branchId?._id || !activeDate) return;
-    setSlotsLoading(true);
-    try {
-      const model = rescheduleTarget.preferredModel || rescheduleTarget.testDriveId?.model || "";
-      const variant =
-        rescheduleTarget.testDriveId?.variant ||
-        (rescheduleTarget as CustomerBooking & { preferredVariant?: string }).preferredVariant ||
-        "";
-      const res = await fetchPublicTdSlots({
-        branchId: rescheduleTarget.branchId._id,
-        date: activeDate,
-        model,
-        variant: variant || undefined,
-      });
-      setRescheduleSlots(res.slots);
-    } catch {
-      toast.error("Could not load available time slots");
-    } finally {
-      setSlotsLoading(false);
-    }
-  }, [activeDate, rescheduleTarget]);
-
-  useEffect(() => {
-    if (rescheduleTarget && activeDate) {
-      void loadRescheduleSlots();
-    }
-  }, [rescheduleTarget, activeDate, loadRescheduleSlots]);
 
   const handleReschedule = async () => {
     if (!rescheduleTarget) return;
@@ -248,73 +317,24 @@ export default function CustomerBookings() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="flex gap-2">
-              {[0, 1, 2].map((i) => (
-                <Button
-                  key={i}
-                  type="button"
-                  size="sm"
-                  variant={activePrefIndex === i ? "default" : "outline"}
-                  onClick={() => setActivePrefIndex(i)}
-                >
-                  Option {i + 1}
-                  {prefs[i]?.time ? " ✓" : ""}
-                </Button>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reschedule-date">Preferred date (option {activePrefIndex + 1})</Label>
-              <Input
-                id="reschedule-date"
-                type="date"
-                min={minDate}
-                value={prefs[activePrefIndex]?.date || ""}
-                onChange={(e) => {
-                  const next = [...prefs];
-                  next[activePrefIndex] = { date: e.target.value, time: "" };
-                  setPrefs(next);
-                }}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Preferred time</Label>
-              {slotsLoading ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                </div>
-              ) : rescheduleSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">No slots available for this date.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                  {rescheduleSlots.map((slot) => (
-                    <button
-                      key={slot.time}
-                      type="button"
-                      disabled={!slot.available}
-                      onClick={() => {
-                        const next = [...prefs];
-                        next[activePrefIndex] = {
-                          date: prefs[activePrefIndex].date,
-                          time: slot.time,
-                        };
-                        setPrefs(next);
-                      }}
-                      className={cn(
-                        "rounded-xl border px-3 py-2 text-sm transition-colors",
-                        !slot.available && "opacity-50 cursor-not-allowed border-border bg-muted/30",
-                        slot.available && prefs[activePrefIndex]?.time === slot.time
-                          ? "border-primary bg-primary/10 text-primary font-medium"
-                          : slot.available && "border-border hover:border-primary/50",
-                      )}
-                    >
-                      {formatSlotLabel(slot)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {rescheduleTarget
+              ? prefs.map((pref, i) => (
+                  <RescheduleOption
+                    key={i}
+                    index={i}
+                    booking={rescheduleTarget}
+                    pref={pref}
+                    minDate={minDate}
+                    onChange={(next) => {
+                      setPrefs((current) => {
+                        const updated = [...current];
+                        updated[i] = next;
+                        return updated;
+                      });
+                    }}
+                  />
+                ))
+              : null}
 
             <div className="space-y-2">
               <Label htmlFor="reschedule-reason">Reason (optional)</Label>

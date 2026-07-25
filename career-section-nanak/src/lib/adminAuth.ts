@@ -1,4 +1,9 @@
-import { ADMIN_MODULES, type AdminModuleKey } from "./adminModules";
+import {
+  ADMIN_MODULES,
+  actionToken,
+  type AdminModuleAction,
+  type AdminModuleKey,
+} from "./adminModules";
 
 export type AdminUser = {
   _id?: string;
@@ -9,6 +14,8 @@ export type AdminUser = {
   designationLabel?: string | null;
   /** Module keys this user may access. Empty/missing = default access for their role. */
   allowedModules?: string[];
+  /** Action tokens `module:action`. Empty with custom modules = all actions on those modules. */
+  allowedActions?: string[];
   /** Portal account type — set at login (`admin` or `tdstaff`). */
   userType?: "admin" | "tdstaff";
 };
@@ -71,6 +78,48 @@ export function getRestrictedModules(user: AdminUser | null | undefined): AdminM
 export function isModuleAllowed(user: AdminUser | null | undefined, key: AdminModuleKey): boolean {
   const restricted = getRestrictedModules(user);
   return !restricted || restricted.includes(key);
+}
+
+/**
+ * Action-level check for User Master ACL.
+ * - Admin portal → allowed.
+ * - No custom modules → allowed here (pages/routes keep their own role gates).
+ * - Custom modules + empty actions → all actions on granted modules.
+ * - Custom modules + actions → must include `module:action`.
+ */
+export function canPerformAction(
+  user: AdminUser | null | undefined,
+  moduleKey: AdminModuleKey,
+  action: AdminModuleAction,
+): boolean {
+  if (!user) return false;
+  if (user.userType === "admin") return true;
+
+  const mod = ADMIN_MODULES.find((m) => m.key === moduleKey);
+  if (!mod || !mod.actions.includes(action)) return false;
+
+  const restricted = getRestrictedModules(user);
+  if (!restricted) return true;
+  if (!restricted.includes(moduleKey)) return false;
+
+  const actions = user.allowedActions ?? [];
+  if (!actions.length) return true;
+  return actions.includes(actionToken(moduleKey, action));
+}
+
+/**
+ * For destructive/manager-gated UI: custom ACL users follow action tokens;
+ * unrestricted users need manager/superadmin (or admin portal).
+ */
+export function canPerformManagerAction(
+  user: AdminUser | null | undefined,
+  moduleKey: AdminModuleKey,
+  action: AdminModuleAction,
+): boolean {
+  if (!user) return false;
+  if (user.userType === "admin") return true;
+  if (getRestrictedModules(user)) return canPerformAction(user, moduleKey, action);
+  return user.role === "manager" || user.role === "superadmin";
 }
 
 /** True when a restricted user may open this path (unrestricted users always may). */

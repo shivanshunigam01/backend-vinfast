@@ -15,6 +15,7 @@ function staffLoginPayload(staff) {
     designation: staff.designation,
     designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
     allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
+    allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
     userType: 'tdstaff',
   };
 }

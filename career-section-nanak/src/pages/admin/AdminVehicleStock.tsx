@@ -5,7 +5,7 @@ import {
   BatteryCharging, MapPin, Car, Gauge, CheckCircle2, CalendarDays,
 } from "lucide-react";
 import { adminGet, adminPostJson, adminPatchJson, adminRequest, formatApiErrors } from "@/lib/api";
-import { getAdminUser } from "@/lib/adminAuth";
+import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import {
   exteriorColoursForModel,
@@ -82,7 +82,10 @@ function dateInputValue(value: string | null | undefined): string {
 
 export default function AdminVehicleStock() {
   const adminUser = getAdminUser();
-  const canManage = adminUser?.role === "manager" || adminUser?.role === "superadmin";
+  const canCreate = canPerformManagerAction(adminUser, "vehicle_stock", "create");
+  const canUpdate = canPerformManagerAction(adminUser, "vehicle_stock", "update");
+  const canDelete = canPerformManagerAction(adminUser, "vehicle_stock", "delete");
+  const canTagDemo = canPerformManagerAction(adminUser, "vehicle_stock", "tag_demo");
   const { models: catalogModels, trimsFor } = useVehicleCatalog();
 
   const [items, setItems] = useState<StockItem[]>([]);
@@ -284,7 +287,7 @@ export default function AdminVehicleStock() {
           <Button onClick={() => void fetchStock()} variant="outline" size="sm">
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
-          {canManage ? (
+          {canCreate ? (
             <Button onClick={openCreate} size="sm">
               <Plus className="w-4 h-4 mr-2" /> Add vehicle
             </Button>
@@ -341,7 +344,7 @@ export default function AdminVehicleStock() {
         <Card className="p-12 text-center text-muted-foreground border-dashed">
           <Warehouse className="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p>No stock entries found.</p>
-          {canManage ? (
+          {canCreate ? (
             <Button size="sm" className="mt-4" onClick={openCreate}>
               <Plus className="w-4 h-4 mr-2" /> Add vehicle
             </Button>
@@ -411,35 +414,39 @@ export default function AdminVehicleStock() {
                 </div>
               </div>
 
-              {canManage ? (
+              {canTagDemo || canUpdate || canDelete ? (
                 <div className="flex gap-2 border-t border-border/30 pt-3">
-                  {item.isDemo ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 text-xs h-8"
-                      disabled={demoBusyId === item._id}
-                      onClick={() => void handleTagDemo(item, false)}
-                    >
-                      {demoBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Gauge className="w-3.5 h-3.5 mr-1" />}
-                      Untag demo
+                  {canTagDemo ? (
+                    item.isDemo ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs h-8"
+                        disabled={demoBusyId === item._id}
+                        onClick={() => void handleTagDemo(item, false)}
+                      >
+                        {demoBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Gauge className="w-3.5 h-3.5 mr-1" />}
+                        Untag demo
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs h-8"
+                        disabled={demoBusyId === item._id || item.status === "SOLD"}
+                        onClick={() => void handleTagDemo(item, true)}
+                      >
+                        {demoBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Gauge className="w-3.5 h-3.5 mr-1" />}
+                        Tag as demo
+                      </Button>
+                    )
+                  ) : null}
+                  {canUpdate ? (
+                    <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => openEdit(item)}>
+                      <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 text-xs h-8"
-                      disabled={demoBusyId === item._id || item.status === "SOLD"}
-                      onClick={() => void handleTagDemo(item, true)}
-                    >
-                      {demoBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Gauge className="w-3.5 h-3.5 mr-1" />}
-                      Tag as demo
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => openEdit(item)}>
-                    <Pencil className="w-3.5 h-3.5" />
-                  </Button>
-                  {adminUser?.role === "superadmin" && !item.isDemo ? (
+                  ) : null}
+                  {canDelete && !item.isDemo ? (
                     <Button
                       size="sm"
                       variant="outline"

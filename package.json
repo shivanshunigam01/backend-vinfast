@@ -16,6 +16,7 @@
     "import:td-vehicles": "node src/scripts/importLegacyTdVehicles.js",
     "import:legacy-crm": "node src/scripts/importLegacyCrmData.js",
     "dedupe:leads": "node src/scripts/dedupeLeadsByMobile.js",
+    "test:permissions": "node src/scripts/testModulePermissions.js",
     "lint": "node -e \"console.log('No linter configured')\""
   },
   "dependencies": {
