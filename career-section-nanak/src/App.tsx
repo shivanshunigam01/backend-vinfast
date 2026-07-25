@@ -104,7 +104,7 @@ const App = () => {
           <Route path="/post-delivery-feedback" element={<PostDeliveryFeedback />} />
           <Route path="/test-drive-feedback" element={<TestDriveFeedback />} />
 
-          {/* Login portals — chooser lives in Navbar hover menu */}
+          {/* Auth portals — chooser lives in the navbar Login hover menu */}
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route path="/customer" element={<CustomerLayout />}>
