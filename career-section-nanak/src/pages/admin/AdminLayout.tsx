@@ -305,9 +305,9 @@ const AdminLayout = () => {
         />
       )}
 
-      {/* Sidebar — fixed height, no scroll; compact so all links fit the viewport */}
+      {/* Sidebar stays fixed to the viewport; Sign Out never follows page scrolling. */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-50 flex h-screen max-h-[100dvh] w-[min(18rem,calc(100vw-2.5rem))] sm:w-64 lg:w-64 xl:w-72 flex-col overflow-hidden border-r border-border bg-card shadow-xl transition-transform duration-300 ease-out lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-[min(18rem,calc(100vw-2.5rem))] sm:w-64 lg:w-64 xl:w-72 flex-col overflow-hidden border-r border-border bg-card shadow-xl transition-transform duration-300 ease-out lg:shadow-none ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -492,7 +492,7 @@ const AdminLayout = () => {
       </aside>
 
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col lg:ml-64 xl:ml-72">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border bg-card/95 px-3 py-2 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80 sm:min-h-16 sm:gap-4 sm:px-4 sm:py-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
           <button
             type="button"

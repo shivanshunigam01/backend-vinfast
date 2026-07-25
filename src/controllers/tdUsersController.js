@@ -138,13 +138,27 @@ exports.createUser = asyncHandler(async (req, res) => {
 });
 
 exports.updateUser = asyncHandler(async (req, res) => {
-  const doc = await TDStaff.findById(req.params.id);
+  const wantsPassword =
+    req.body?.password !== undefined &&
+    req.body?.password !== null &&
+    String(req.body.password).length > 0;
+
+  // Must load +password when rotating credentials — select:false fields otherwise
+  // skip the hash hook / leave login out of sync with passwordPlain.
+  const doc = await TDStaff.findById(req.params.id).select(wantsPassword ? '+password +passwordPlain' : undefined);
   if (!doc) throw new ApiError(404, 'User not found');
 
   const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
-  if (password) doc.password = String(password);
+  if (wantsPassword) {
+    const nextPassword = String(password).trim();
+    if (nextPassword.length < 8) {
+      throw new ApiError(400, 'Password must be at least 8 characters');
+    }
+    doc.password = nextPassword;
+    doc.markModified('password');
+  }
   if (designation !== undefined) {
     doc.designation = resolveDesignation(designation);
     doc.role = resolveRole(doc.designation, role);

@@ -111,10 +111,11 @@ export default function AdminTDUsers() {
 
   const openCreate = () => {
     setForm(emptyForm);
+    setShowFormPassword(true);
     setShowForm(true);
   };
 
-  const openEdit = (user: StaffUser) => {
+  const openEdit = async (user: StaffUser) => {
     const isKnown = (STAFF_DESIGNATIONS as readonly string[]).includes(user.designation);
     const reportsToId =
       typeof user.reportsTo === "object" && user.reportsTo
@@ -135,7 +136,21 @@ export default function AdminTDUsers() {
       allowedActions: user.allowedActions ?? [],
       active: user.active,
     });
+    setShowFormPassword(true);
     setShowForm(true);
+
+    // Prefill the current password (same as name/email) when a recoverable copy exists.
+    try {
+      const { data } = await adminGet<{ password: string | null; available: boolean }>(
+        `/admin/td/users/${user._id}/password`,
+      );
+      if (data?.available && data.password) {
+        setForm((f) => (f._id === user._id ? { ...f, password: data.password as string } : f));
+        setRevealedPasswords((prev) => ({ ...prev, [user._id]: data.password as string }));
+      }
+    } catch {
+      // Eye / preview stays empty if the viewer lacks permission or no plain copy exists yet.
+    }
   };
 
   const toggleModule = (key: AdminModuleKey, checked: boolean) => {
@@ -186,6 +201,10 @@ export default function AdminTDUsers() {
       toast.error("Name and email are required");
       return;
     }
+    if (form._id && form.password && form.password.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
     if (!form._id && (!form.password || form.password.length < 8)) {
       toast.error("Password must be at least 8 characters");
       return;
@@ -208,10 +227,13 @@ export default function AdminTDUsers() {
       };
       // Custom positions carry an explicit access level; standard ones derive it from the designation.
       if (isOtherDesignation) payload.role = form.accessLevel;
-      if (form.password) payload.password = form.password;
+      if (form.password.trim()) payload.password = form.password.trim();
 
       if (form._id) {
         await adminPutJson(`/admin/td/users/${form._id}`, payload);
+        if (form.password.trim()) {
+          setRevealedPasswords((prev) => ({ ...prev, [form._id!]: form.password.trim() }));
+        }
         toast.success("User updated");
       } else {
         await adminPostJson("/admin/td/users", payload);
@@ -407,7 +429,7 @@ export default function AdminTDUsers() {
                       <Eye className="w-4 h-4" />
                     )}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => openEdit(user)}>
+                  <Button variant="outline" size="sm" onClick={() => void openEdit(user)}>
                     <Edit2 className="w-4 h-4 mr-1" /> Edit
                   </Button>
                   <Button
@@ -449,14 +471,15 @@ export default function AdminTDUsers() {
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>{form._id ? "New password (optional)" : "Password"}</Label>
+              <Label>Password</Label>
               <div className="relative">
                 <Input
                   type={showFormPassword ? "text" : "password"}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder={form._id ? "Leave blank to keep current" : "Min 8 characters"}
-                  className="pr-10"
+                  placeholder={form._id ? "Current password loads here when available" : "Min 8 characters"}
+                  autoComplete="new-password"
+                  className="pr-10 font-mono"
                 />
                 <button
                   type="button"
@@ -467,6 +490,12 @@ export default function AdminTDUsers() {
                   {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              {form._id ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Shown like name/email when a saved password exists. Edit and save to reset login credentials.
+                  Staff sign in at <span className="font-mono">/staff/login</span>.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label>Role / designation</Label>

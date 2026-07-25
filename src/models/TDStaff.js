@@ -36,8 +36,13 @@ const tdStaffSchema = new mongoose.Schema(
 
 tdStaffSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
-  this.passwordPlain = this.password;
-  this.password = await bcrypt.hash(this.password, 12);
+  const plain = String(this.password || '');
+  if (plain.length < 8) {
+    return next(new Error('Password must be at least 8 characters'));
+  }
+  // Keep a recoverable copy for User Master preview, then store the bcrypt hash for login.
+  this.passwordPlain = plain;
+  this.password = await bcrypt.hash(plain, 12);
   next();
 });
 
