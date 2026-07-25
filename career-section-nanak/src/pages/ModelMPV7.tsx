@@ -149,8 +149,8 @@ const ModelMPV7 = () => {
           modelDisplay,
           source: "Website",
           email: interestForm.email.trim(),
-          remarks: "VF MPV 7 pre-booking interest — form gate on model page",
-          interest: "Pre-book interest",
+          remarks: "VF MPV 7 Book Now interest — form gate on model page",
+          interest: "Book Now",
           financeNeeded: false,
           exchangeNeeded: false,
           pageSource: "VF MPV 7 Model Page",
@@ -181,7 +181,7 @@ const ModelMPV7 = () => {
           assignedTo: "",
           createdAt: todayStr,
           nextFollowUp: "",
-          remarks: "VF MPV 7 pre-booking interest — form gate on model page",
+          remarks: "VF MPV 7 Book Now interest — form gate on model page",
           financeNeeded: false,
           exchangeNeeded: false,
         };
@@ -196,7 +196,7 @@ const ModelMPV7 = () => {
     window.dispatchEvent(new Event(MPV7_PREBOOK_UNLOCK_EVENT));
     setPrebookUnlocked(true);
     toast.success(
-      apiSuccessMessage ?? "Thank you! You can now continue to complete your VF MPV 7 pre-booking.",
+      apiSuccessMessage ?? "Thank you! You can now continue to complete your VF MPV 7 Book Now.",
     );
     setInterestForm({ name: "", mobile: "", email: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "" });
     setMobileError("");
@@ -246,7 +246,7 @@ const ModelMPV7 = () => {
           <div className="mx-auto flex max-w-lg flex-col items-center gap-5 text-center">
             <div className="h-1 w-12 rounded-full bg-primary/80" aria-hidden />
             <Button variant="hero" size="lg" className="h-12 min-w-[min(100%,17rem)] rounded-full px-8 text-sm font-semibold shadow-md shadow-primary/25 sm:h-14 sm:px-10" asChild>
-              <Link to="#mpv7-prebook">Register for pre-booking</Link>
+              <Link to="#mpv7-prebook">Register for Book Now</Link>
             </Button>
           </div>
         </div>
@@ -271,11 +271,11 @@ const ModelMPV7 = () => {
           <p className="text-xs text-muted-foreground max-w-3xl mb-8">{VINFAST_MPV7_DISCLAIMER}</p>
           <div className="flex flex-wrap gap-3">
             <Button asChild variant="default" size="default">
-              <Link to="#mpv7-prebook">Register for pre-booking</Link>
+              <Link to="#mpv7-prebook">Register for Book Now</Link>
             </Button>
             {prebookUnlocked ? (
               <Button asChild variant="default" size="default" className="bg-primary">
-                <Link to="/book-now?model=VF%20MPV%207">Pre-Booking — VF MPV 7</Link>
+                <Link to="/book-now?model=VF%20MPV%207">Book Now — VF MPV 7</Link>
               </Button>
             ) : null}
           </div>
@@ -337,18 +337,18 @@ const ModelMPV7 = () => {
         </div>
       </section>
 
-      {/* Pre-booking — Patliputra VinFast */}
+      {/* Book Now — Patliputra VinFast */}
       <section
         id="mpv7-prebook"
         className="scroll-mt-20 sm:scroll-mt-24 border-t border-border/60 bg-gradient-to-b from-primary/[0.07] via-muted/40 to-muted/30 py-14 sm:py-16 lg:py-20"
       >
         <div className="container mx-auto px-4 lg:px-8 max-w-5xl">
           <div className="text-center mb-8 sm:mb-10">
-            <p className="text-primary font-display font-semibold text-sm uppercase tracking-[0.2em] mb-2">VF MPV 7 · Pre-booking</p>
+            <p className="text-primary font-display font-semibold text-sm uppercase tracking-[0.2em] mb-2">VF MPV 7 · Book Now</p>
             <h2 className="font-display font-bold text-3xl sm:text-4xl mb-3">Ready to take the next step?</h2>
             <p className="text-muted-foreground text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
               Share your details — we’ll call you back from Patna. After you submit, the{" "}
-              <strong className="text-foreground font-medium">Pre-Booking — VF MPV 7</strong> action unlocks on this page.
+              <strong className="text-foreground font-medium">Book Now — VF MPV 7</strong> action unlocks on this page.
             </p>
           </div>
 
@@ -447,10 +447,10 @@ const ModelMPV7 = () => {
             ) : (
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-center sm:text-left">
                 <p className="text-sm text-muted-foreground">
-                  You&apos;re set — continue on Pre-Booking with VF MPV 7 pre-selected.
+                  You&apos;re set — continue on Book Now with VF MPV 7 pre-selected.
                 </p>
                 <Button variant="hero" size="lg" asChild>
-                  <Link to="/book-now?model=VF%20MPV%207">Pre-Booking — VF MPV 7</Link>
+                  <Link to="/book-now?model=VF%20MPV%207">Book Now — VF MPV 7</Link>
                 </Button>
               </div>
             )}

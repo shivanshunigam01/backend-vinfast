@@ -20,7 +20,7 @@ type Props = {
   fullWidthOtherRow?: boolean;
   /** Label above the free-text field when `fullWidthOtherRow` is on (and Other is selected). */
   otherFieldLabel?: string;
-  /** Extra classes on the select’s grid cell when `fullWidthOtherRow` (e.g. MPV7 pre-book grid spans). */
+  /** Extra classes on the select’s grid cell when `fullWidthOtherRow` (e.g. MPV7 Book Now grid spans). */
   selectWrapperClassName?: string;
   /** Classes on the full-width row wrapper for the free-text field; default spans 2 cols on `sm+`. */
   otherRowClassName?: string;

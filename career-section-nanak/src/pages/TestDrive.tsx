@@ -508,7 +508,7 @@ const TestDrivePage = () => {
               <p className="hidden lg:flex shrink-0 text-xs text-muted-foreground items-center gap-2">
                 <Car className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span>
-                  Ready to buy? Use <strong>Book Now</strong> in the top menu to start Pre-Booking.
+                  Ready to buy? Use <strong>Book Now</strong> in the top menu.
                 </span>
               </p>
             </motion.aside>
@@ -888,7 +888,7 @@ const TestDrivePage = () => {
                 ) : null}
                 <p className="text-center text-muted-foreground text-[11px]">By submitting, you agree to our privacy policy.</p>
                 <p className="text-center text-muted-foreground text-[11px] lg:hidden">
-                  Ready to buy? Use Book Now in the menu for Pre-Booking.
+                  Ready to buy? Use Book Now in the menu.
                 </p>
               </div>
             </motion.form>

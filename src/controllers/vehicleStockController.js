@@ -45,6 +45,19 @@ async function assertCatalogModelVariant(model, variant) {
   }
 }
 
+function toDateOnly(value) {
+  if (value == null || value === '') return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function parseOptionalDate(value) {
+  if (value == null || value === '') return undefined;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d;
+}
+
 function formatStock(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   const branch = plain.branchId && typeof plain.branchId === 'object' ? plain.branchId : null;
@@ -55,8 +68,13 @@ function formatStock(doc) {
     model: plain.model,
     variant: plain.variant || null,
     colour: plain.colour || null,
+    interiorColour: plain.interiorColour || null,
     vinNo: plain.vinNo,
     registrationNo: plain.registrationNo || null,
+    motorNo: plain.motorNo || null,
+    motorNo2: plain.motorNo2 || null,
+    grnDate: toDateOnly(plain.grnDate),
+    billingDate: toDateOnly(plain.billingDate),
     batteryPercent: plain.batteryPercent ?? null,
     batteryStatus: plain.batteryStatus || 'OK',
     location: plain.location || null,
@@ -96,6 +114,9 @@ exports.listStock = asyncHandler(async (req, res) => {
       { model: regex },
       { variant: regex },
       { colour: regex },
+      { interiorColour: regex },
+      { motorNo: regex },
+      { motorNo2: regex },
       { location: regex },
     ];
   }
@@ -134,13 +155,20 @@ exports.createStock = asyncHandler(async (req, res) => {
   const existing = await VehicleStock.findOne({ vinNo });
   if (existing) throw new ApiError(409, `A stock entry with VIN ${vinNo} already exists (${existing.stockId})`);
 
+  const isSkyInfinity = model === 'VF 7' && String(body.variant || '').trim() === 'Sky Infinity';
+
   const doc = await VehicleStock.create({
     stockId: await nextStockId(),
     model,
     variant: body.variant ? String(body.variant).trim() : undefined,
     colour: body.colour ? String(body.colour).trim() : undefined,
+    interiorColour: body.interiorColour ? String(body.interiorColour).trim() : undefined,
     vinNo,
     registrationNo: body.registrationNo ? String(body.registrationNo).trim().toUpperCase() : undefined,
+    motorNo: body.motorNo ? String(body.motorNo).trim().toUpperCase() : undefined,
+    motorNo2: isSkyInfinity && body.motorNo2 ? String(body.motorNo2).trim().toUpperCase() : undefined,
+    grnDate: parseOptionalDate(body.grnDate),
+    billingDate: parseOptionalDate(body.billingDate),
     batteryPercent: body.batteryPercent != null ? Number(body.batteryPercent) : 100,
     batteryStatus: body.batteryStatus || 'OK',
     location: body.location ? String(body.location).trim() : undefined,
@@ -178,8 +206,24 @@ exports.updateStock = asyncHandler(async (req, res) => {
   }
 
   if (body.colour !== undefined) doc.colour = String(body.colour).trim() || undefined;
+  if (body.interiorColour !== undefined) doc.interiorColour = String(body.interiorColour).trim() || undefined;
   if (body.registrationNo !== undefined) {
     doc.registrationNo = String(body.registrationNo).trim().toUpperCase() || undefined;
+  }
+  if (body.motorNo !== undefined) doc.motorNo = String(body.motorNo).trim().toUpperCase() || undefined;
+  if (body.motorNo2 !== undefined || body.model !== undefined || body.variant !== undefined) {
+    const isSkyInfinity = doc.model === 'VF 7' && String(doc.variant || '').trim() === 'Sky Infinity';
+    if (!isSkyInfinity) {
+      doc.motorNo2 = undefined;
+    } else if (body.motorNo2 !== undefined) {
+      doc.motorNo2 = String(body.motorNo2).trim().toUpperCase() || undefined;
+    }
+  }
+  if (body.grnDate !== undefined) {
+    doc.grnDate = body.grnDate === '' || body.grnDate == null ? undefined : parseOptionalDate(body.grnDate);
+  }
+  if (body.billingDate !== undefined) {
+    doc.billingDate = body.billingDate === '' || body.billingDate == null ? undefined : parseOptionalDate(body.billingDate);
   }
   if (body.batteryPercent !== undefined) doc.batteryPercent = Number(body.batteryPercent);
   if (body.batteryStatus !== undefined) doc.batteryStatus = body.batteryStatus;

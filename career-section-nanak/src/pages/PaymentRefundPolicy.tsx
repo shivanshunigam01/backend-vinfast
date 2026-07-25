@@ -17,7 +17,7 @@ const PaymentRefundPolicyPage = () => {
           <h1 className="font-display font-bold text-3xl md:text-4xl mb-6">Payment &amp; Refund Policy</h1>
           <div className="text-muted-foreground text-sm leading-relaxed space-y-4">
             <p>
-              Payments made through this website (including pre-booking enquiries or related requests)
+              Payments made through this website (including Book Now enquiries or related requests)
               are processed for {dealer.dealerName}. Exact payable amounts, methods, and confirmation
               details are finalized by the dealership team.
             </p>

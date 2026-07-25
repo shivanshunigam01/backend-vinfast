@@ -20,7 +20,7 @@ exports.publicLeadValidation = [
   mobileBody(),
   emailRule(),
   body('model').isIn(['VF 6', 'VF 7', 'Both']).withMessage('Model must be VF 6, VF 7, or Both'),
-  body('interest').optional().isIn(['Test Drive', 'Price Enquiry', 'Finance', 'General', 'Pre-Booking']).withMessage('Invalid interest'),
+  body('interest').optional().isIn(['Test Drive', 'Price Enquiry', 'Finance', 'General', 'Book Now', 'Pre-Booking']).withMessage('Invalid interest'),
   body('source').optional().isIn(['Website', 'Google Ads', 'Meta Ads', 'WhatsApp', 'Walk-in', 'Referral']).withMessage('Invalid source')
 ];
 

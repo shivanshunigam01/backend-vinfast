@@ -86,7 +86,7 @@ const Footer = () => {
                 { label: "VF MPV 7", href: "/models/mpv7" },
                 { label: "Limo Green", href: "/models/limo-green" },
                 { label: "Compare Models", href: "/compare" },
-                { label: "Pre-Booking", href: "/book-now" },
+                { label: "Book Now", href: "/book-now" },
                 { label: "Book Test Drive", href: "/test-drive" },
                 { label: "EMI Calculator", href: "/emi-calculator" },
               ].map((link) => (

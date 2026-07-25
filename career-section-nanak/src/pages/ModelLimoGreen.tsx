@@ -151,8 +151,8 @@ const ModelLimoGreen = () => {
           modelDisplay,
           source: "Website",
           email: interestForm.email.trim(),
-          remarks: "Limo Green pre-booking interest — form gate on model page",
-          interest: "Pre-book interest",
+          remarks: "Limo Green Book Now interest — form gate on model page",
+          interest: "Book Now",
           financeNeeded: false,
           exchangeNeeded: false,
           pageSource: "Limo Green Model Page",
@@ -183,7 +183,7 @@ const ModelLimoGreen = () => {
           assignedTo: "",
           createdAt: todayStr,
           nextFollowUp: "",
-          remarks: "Limo Green pre-booking interest — form gate on model page",
+          remarks: "Limo Green Book Now interest — form gate on model page",
           financeNeeded: false,
           exchangeNeeded: false,
         };
@@ -198,7 +198,7 @@ const ModelLimoGreen = () => {
     window.dispatchEvent(new Event(LIMO_GREEN_PREBOOK_UNLOCK_EVENT));
     setPrebookUnlocked(true);
     toast.success(
-      apiSuccessMessage ?? "Thank you! You can now continue to complete your Limo Green pre-booking.",
+      apiSuccessMessage ?? "Thank you! You can now continue to complete your Limo Green Book Now.",
     );
     setInterestForm({ name: "", mobile: "", email: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "" });
     setMobileError("");
@@ -242,7 +242,7 @@ const ModelLimoGreen = () => {
         <h1 className="sr-only">VinFast Limo Green</h1>
       </section>
 
-      {/* Price + pre-booking CTA */}
+      {/* Price + Book Now CTA */}
       <section className="relative border-b border-border/50 bg-gradient-to-b from-background via-background to-muted/30">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" aria-hidden />
         <div className="container mx-auto px-4 lg:px-8 py-8 sm:py-10 lg:py-12">
@@ -257,7 +257,7 @@ const ModelLimoGreen = () => {
               </p>
             </div>
             <Button variant="hero" size="lg" className="h-12 min-w-[min(100%,17rem)] rounded-full px-8 text-sm font-semibold shadow-md shadow-primary/25 sm:h-14 sm:px-10" asChild>
-              <Link to="#limo-green-prebook">Register for pre-booking</Link>
+              <Link to="#limo-green-prebook">Register for Book Now</Link>
             </Button>
           </div>
         </div>
@@ -293,11 +293,11 @@ const ModelLimoGreen = () => {
           <p className="text-xs text-muted-foreground max-w-3xl mb-8">{VINFAST_LIMO_GREEN_DISCLAIMER}</p>
           <div className="flex flex-wrap gap-3">
             <Button asChild variant="default" size="default">
-              <Link to="#limo-green-prebook">Register for pre-booking</Link>
+              <Link to="#limo-green-prebook">Register for Book Now</Link>
             </Button>
             {prebookUnlocked ? (
               <Button asChild variant="default" size="default" className="bg-primary">
-                <Link to="/book-now?model=Limo%20Green">Pre-Booking — Limo Green</Link>
+                <Link to="/book-now?model=Limo%20Green">Book Now — Limo Green</Link>
               </Button>
             ) : null}
           </div>
@@ -395,18 +395,18 @@ const ModelLimoGreen = () => {
         </div>
       </section>
 
-      {/* Pre-booking — Patliputra VinFast */}
+      {/* Book Now — Patliputra VinFast */}
       <section
         id="limo-green-prebook"
         className="scroll-mt-20 sm:scroll-mt-24 border-t border-border/60 bg-gradient-to-b from-primary/[0.07] via-muted/40 to-muted/30 py-14 sm:py-16 lg:py-20"
       >
         <div className="container mx-auto px-4 lg:px-8 max-w-5xl">
           <div className="text-center mb-8 sm:mb-10">
-            <p className="text-primary font-display font-semibold text-sm uppercase tracking-[0.2em] mb-2">Limo Green · Pre-booking</p>
+            <p className="text-primary font-display font-semibold text-sm uppercase tracking-[0.2em] mb-2">Limo Green · Book Now</p>
             <h2 className="font-display font-bold text-3xl sm:text-4xl mb-3">Ready to take the next step?</h2>
             <p className="text-muted-foreground text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
               Share your details — we’ll call you back from Patna. After you submit, the{" "}
-              <strong className="text-foreground font-medium">Pre-Booking — Limo Green</strong> action unlocks on this page.
+              <strong className="text-foreground font-medium">Book Now — Limo Green</strong> action unlocks on this page.
             </p>
           </div>
 
@@ -505,10 +505,10 @@ const ModelLimoGreen = () => {
             ) : (
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-center sm:text-left">
                 <p className="text-sm text-muted-foreground">
-                  You&apos;re set — continue on Pre-Booking with Limo Green pre-selected.
+                  You&apos;re set — continue on Book Now with Limo Green pre-selected.
                 </p>
                 <Button variant="hero" size="lg" asChild>
-                  <Link to="/book-now?model=Limo%20Green">Pre-Booking — Limo Green</Link>
+                  <Link to="/book-now?model=Limo%20Green">Book Now — Limo Green</Link>
                 </Button>
               </div>
             )}
