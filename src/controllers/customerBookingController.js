@@ -3,6 +3,7 @@ require('../models/tdModels');
 const TDBooking = require('../models/TDBooking');
 const TestDrive = require('../models/TestDrive');
 const TDRescheduleRequest = require('../models/TDRescheduleRequest');
+const TDSlotConfig = require('../models/TDSlotConfig');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
@@ -10,6 +11,7 @@ const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { formatTime12h, isoDateOnly } = require('../utils/tdSlotUtils');
 const { notifyReschedule } = require('../utils/notifications');
 const { reverseGeocode } = require('../utils/reverseGeocode');
+const { computeSlotsForBranchDate } = require('../utils/tdSlotAvailability');
 
 const CUSTOMER_RESCHEDULABLE = new Set(['PENDING', 'CONFIRMED', 'RESCHEDULED']);
 
@@ -72,8 +74,38 @@ async function assertPreferredSlotsAvailable(booking, preferredSlots) {
   }
 
   const keys = new Set(normalized.map((s) => `${isoDateOnly(s.slotDate)}|${s.slotTime}`));
-  if (keys.size < 2) {
-    throw new ApiError(400, 'Provide at least 2 different preferred slot options');
+  if (keys.size !== 3) {
+    throw new ApiError(400, 'Provide 3 different preferred date/time options');
+  }
+
+  if (!booking.branchId) {
+    throw new ApiError(409, 'This booking has no branch assigned. Please contact the dealership.');
+  }
+  const config = await TDSlotConfig.findOne({ branchId: booking.branchId });
+  if (!config) {
+    throw new ApiError(409, 'No test-drive slots are configured for this booking branch.');
+  }
+
+  const model = booking.preferredModel || booking.testDriveId?.model || null;
+  const variant = booking.preferredVariant || booking.testDriveId?.variant || null;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const preferred = normalized[index];
+    const { slots } = await computeSlotsForBranchDate(
+      booking.branchId,
+      isoDateOnly(preferred.slotDate),
+      {
+        model,
+        variant,
+        config: config.toObject(),
+      },
+    );
+    const slot = slots.find((candidate) => candidate.time === preferred.slotTime);
+    if (!slot?.available) {
+      throw new ApiError(
+        409,
+        `Preferred option ${index + 1} is no longer available. Please choose another slot.`,
+      );
+    }
   }
 
   return normalized;
@@ -104,7 +136,7 @@ exports.rescheduleBooking = asyncHandler(async (req, res) => {
 
   const booking = await TDBooking.findOne({ _id: req.params.id, customerId: req.customer._id }).populate(
     'testDriveId',
-    'variant',
+    'model variant',
   );
   if (!booking) throw new ApiError(404, 'Booking not found');
 

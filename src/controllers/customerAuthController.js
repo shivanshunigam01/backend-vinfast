@@ -77,20 +77,12 @@ exports.checkMobile = asyncHandler(async (req, res) => {
   );
 });
 
-const CUSTOMER_LOGIN_FALLBACK_OTP = String(process.env.CUSTOMER_LOGIN_FALLBACK_OTP || '1234').trim();
-
 exports.login = asyncHandler(async (req, res) => {
-  const { mobile, whatsappVerificationToken, otp } = req.body || {};
+  const { mobile, whatsappVerificationToken } = req.body || {};
   const customer = await resolveCustomerByMobile(mobile);
   const mobile10 = normalizeMobile(customer.mobile);
 
-  const enteredOtp = String(otp || '').trim();
-  const usedFallbackOtp = enteredOtp.length > 0 && enteredOtp === CUSTOMER_LOGIN_FALLBACK_OTP;
-
-  // Accept either the WhatsApp verification JWT (same as test-drive) OR the fallback OTP.
-  if (!usedFallbackOtp) {
-    assertWhatsappVerificationToken(whatsappVerificationToken, mobile10);
-  }
+  assertWhatsappVerificationToken(whatsappVerificationToken, mobile10);
 
   const token = signCustomerToken(customer);
 

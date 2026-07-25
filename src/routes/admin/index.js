@@ -28,8 +28,9 @@ const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
 const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slideReorderValidator } = require('../../validators/adminValidators');
 
-// Auth
-router.post('/auth/login', loginValidator, validate, authController.login);
+// Auth — isolated portals (Admin vs Staff)
+router.post('/auth/login', loginValidator, validate, authController.adminLogin);
+router.post('/auth/staff-login', loginValidator, validate, authController.staffLogin);
 router.get('/auth/me', protect, authController.me);
 
 /** Meta leads — no JWT (proxies META_LEADS_UPSTREAM_URL). Same as GET /api/v1/public/All_leads */

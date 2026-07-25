@@ -32,9 +32,17 @@ const tdRescheduleRequestSchema = new mongoose.Schema(
       type: [PREFERRED_SLOT_SCHEMA],
       validate: {
         validator(v) {
-          return Array.isArray(v) && v.length === 3;
+          if (!Array.isArray(v) || v.length !== 3) return false;
+          const keys = new Set(
+            v.map((slot) => {
+              const date = new Date(slot.slotDate);
+              const dateKey = Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+              return `${dateKey}|${String(slot.slotTime || '').trim()}`;
+            }),
+          );
+          return keys.size === 3;
         },
-        message: 'Exactly 3 preferred time-slot options are required',
+        message: 'Exactly 3 different preferred date/time options are required',
       },
     },
     approvedSlot: {

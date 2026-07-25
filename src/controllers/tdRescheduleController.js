@@ -2,6 +2,7 @@ require('../models/tdModels');
 
 const TDRescheduleRequest = require('../models/TDRescheduleRequest');
 const TDBooking = require('../models/TDBooking');
+const TDSlotConfig = require('../models/TDSlotConfig');
 const TestDrive = require('../models/TestDrive');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
@@ -9,6 +10,7 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { isoDateOnly } = require('../utils/tdSlotUtils');
+const { computeSlotsForBranchDate } = require('../utils/tdSlotAvailability');
 const { notifyReschedule } = require('../utils/notifications');
 
 function formatRescheduleRow(doc) {
@@ -29,6 +31,33 @@ function formatRescheduleRow(doc) {
     createdAt: plain.createdAt,
     updatedAt: plain.updatedAt,
   };
+}
+
+async function assertSlotStillAvailable(booking, chosen) {
+  if (!booking.branchId) {
+    throw new ApiError(409, 'This booking has no branch assigned. Assign a branch before approving.');
+  }
+
+  const config = await TDSlotConfig.findOne({ branchId: booking.branchId });
+  if (!config) {
+    throw new ApiError(409, 'No slot configuration exists for this booking branch.');
+  }
+
+  const model = booking.preferredModel || booking.testDriveId?.model || null;
+  const variant = booking.preferredVariant || booking.testDriveId?.variant || null;
+  const { slots } = await computeSlotsForBranchDate(booking.branchId, isoDateOnly(chosen.slotDate), {
+    model,
+    variant,
+    config: config.toObject(),
+  });
+  const slot = slots.find((candidate) => candidate.time === chosen.slotTime);
+
+  if (!slot?.available) {
+    throw new ApiError(
+      409,
+      'The selected slot is no longer available. Review the other preferred options.',
+    );
+  }
 }
 
 exports.listRescheduleHistory = asyncHandler(async (req, res) => {
@@ -76,7 +105,9 @@ exports.decideReschedule = asyncHandler(async (req, res) => {
     throw new ApiError(400, `Request already ${request.status}`);
   }
 
-  const booking = await TDBooking.findById(request.bookingId).populate('customerId');
+  const booking = await TDBooking.findById(request.bookingId)
+    .populate('customerId')
+    .populate('testDriveId', 'model variant');
   if (!booking) throw new ApiError(404, 'Linked booking not found');
 
   const actorName = req.admin?.name || req.tdStaff?.name || req.admin?.email || 'Admin';
@@ -114,6 +145,8 @@ exports.decideReschedule = asyncHandler(async (req, res) => {
   } else {
     throw new ApiError(400, 'Provide preferredIndex (0-2) or approvedSlot { slotDate, slotTime }');
   }
+
+  await assertSlotStillAvailable(booking, chosen);
 
   booking.slotDate = chosen.slotDate;
   booking.slotTime = chosen.slotTime;

@@ -49,15 +49,6 @@ function normalizeMobile10(raw) {
   return d;
 }
 
-function bypassOtpCode() {
-  return String(process.env.WHATSAPP_OTP_BYPASS_CODE || '0000').replace(/\D/g, '');
-}
-
-function isBypassOtp(code) {
-  const digits = String(code || '').replace(/\D/g, '');
-  return digits.length > 0 && digits === bypassOtpCode();
-}
-
 function issueVerificationToken(mobile) {
   return jwt.sign({ purpose: 'wa_otp', mobile }, process.env.JWT_SECRET, {
     expiresIn: TOKEN_EXPIRES,
@@ -145,11 +136,6 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
   const rawCode = String(req.body.code || '').replace(/\D/g, '');
   if (!mobile) {
     return errorResponse(res, 'Valid mobile number is required.', 400);
-  }
-
-  if (isBypassOtp(rawCode)) {
-    const verificationToken = issueVerificationToken(mobile);
-    return successResponse(res, { verificationToken }, undefined, 200);
   }
 
   if (rawCode.length !== 4) {
