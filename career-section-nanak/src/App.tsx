@@ -56,7 +56,6 @@ import AdminTDLeadReports from "./pages/admin/AdminTDLeadReports";
 import CustomerLogin from "./pages/customer/CustomerLogin";
 import CustomerLayout from "./pages/customer/CustomerLayout";
 import CustomerBookings from "./pages/customer/CustomerBookings";
-import LoginPage from "./pages/LoginPage";
 import AdminCalendar from "./pages/admin/AdminCalendar";
 import AdminRescheduleHistory from "./pages/admin/AdminRescheduleHistory";
 import AdminFleetHealth from "./pages/admin/AdminFleetHealth";
@@ -105,8 +104,8 @@ const App = () => {
           <Route path="/post-delivery-feedback" element={<PostDeliveryFeedback />} />
           <Route path="/test-drive-feedback" element={<TestDriveFeedback />} />
 
-          {/* Login chooser + portals */}
-          <Route path="/login" element={<LoginPage />} />
+          {/* Login portals — chooser lives in Navbar hover menu */}
+          <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route path="/customer" element={<CustomerLayout />}>
             <Route index element={<Navigate to="bookings" replace />} />

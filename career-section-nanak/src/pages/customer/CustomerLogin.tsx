@@ -254,10 +254,6 @@ export default function CustomerLogin() {
               <Link to="/admin/login" className="text-primary hover:underline">
                 Login as Admin
               </Link>
-              {" · "}
-              <Link to="/login" className="text-primary hover:underline">
-                All login options
-              </Link>
             </p>
           </div>
         </motion.div>
