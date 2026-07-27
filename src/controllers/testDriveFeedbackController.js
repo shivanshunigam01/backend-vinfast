@@ -19,6 +19,11 @@ exports.createTestDriveFeedback = asyncHandler(async (req, res) => {
     leadSource: body.leadSource,
     purchaseIntent: body.purchaseIntent,
     mainConcern: body.mainConcern,
+    likedFeatures: Array.isArray(body.likedFeatures)
+      ? body.likedFeatures.map((v) => String(v).trim()).filter(Boolean)
+      : [],
+    dislikedAboutProduct: body.dislikedAboutProduct,
+    dealerSuggestions: body.dealerSuggestions,
     comment: body.comment,
     ratings: body.ratings,
   });

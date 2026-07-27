@@ -12,6 +12,18 @@ exports.testDriveFeedbackValidator = [
     .withMessage('Invalid test-drive date'),
   body('leadSource').trim().notEmpty().withMessage('Lead source is required'),
   body('purchaseIntent').trim().notEmpty().withMessage('Purchase intent is required'),
+  body('likedFeatures')
+    .optional({ values: 'falsy' })
+    .isArray()
+    .withMessage('likedFeatures must be an array'),
+  body('likedFeatures.*')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 120 })
+    .withMessage('Each liked feature must be a short string'),
+  body('dislikedAboutProduct').optional({ values: 'falsy' }).isString().trim().isLength({ max: 1000 }),
+  body('dealerSuggestions').optional({ values: 'falsy' }).isString().trim().isLength({ max: 1000 }),
   body('ratings').isObject().withMessage('Ratings are required'),
   ...RATING_FIELDS.map((field) =>
     body(`ratings.${field}`)

@@ -60,6 +60,15 @@ exports.startTestDrive = asyncHandler(async (req, res) => {
   if (booking.approvalStatus === 'REJECTED') {
     throw new ApiError(403, 'This repeat test drive request was rejected by admin');
   }
+  if (!booking.dlVerified || !booking.dlImageUrl) {
+    throw new ApiError(
+      400,
+      'Driving licence must be uploaded and verified before starting the test drive',
+    );
+  }
+  if (booking.assignmentStatus === 'PENDING_ACCEPTANCE') {
+    throw new ApiError(400, 'Accept the assignment before starting the test drive');
+  }
 
   const existing = await TDLog.findOne({ bookingId, status: 'STARTED' });
   if (existing) throw new ApiError(409, 'Test drive already started for this booking');

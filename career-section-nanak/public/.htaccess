@@ -1,0 +1,20 @@
+# SPA fallback for Apache (Hostinger shared hosting, etc.)
+# Vite copies this file to dist/ on build — upload dist including .htaccess
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Don't rewrite real files or directories
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+
+  # Serve index.html for client-side routes (React Router)
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Optional: single-page caching — HTML always revalidated
+<FilesMatch "index\.html$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+  </IfModule>
+</FilesMatch>

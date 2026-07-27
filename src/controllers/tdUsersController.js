@@ -8,12 +8,21 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
-const { ADMIN_MODULE_KEYS } = require('../constants/adminModules');
+const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 
 const STAFF_ROLES = ['executive', 'manager'];
 
 function formatStaff(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  let reportsTo = plain.reportsTo || null;
+  if (reportsTo && typeof reportsTo === 'object') {
+    reportsTo = {
+      _id: reportsTo._id,
+      name: reportsTo.name,
+      email: reportsTo.email,
+      designation: reportsTo.designation,
+    };
+  }
   return {
     _id: plain._id,
     name: plain.name,
@@ -22,9 +31,10 @@ function formatStaff(doc) {
     designation: plain.designation,
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
     isCustomDesignation: !STAFF_DESIGNATIONS.includes(plain.designation),
-    reportsTo: plain.reportsTo || null,
+    reportsTo,
     active: Boolean(plain.active),
     allowedModules: Array.isArray(plain.allowedModules) ? plain.allowedModules : [],
+    allowedActions: Array.isArray(plain.allowedActions) ? plain.allowedActions : [],
     createdAt: plain.createdAt,
   };
 }
@@ -55,17 +65,6 @@ function resolveRole(designation, requestedRole) {
   return 'executive';
 }
 
-/** Keeps only recognised module keys (deduped). Returns undefined when not provided. */
-function sanitizeModules(allowedModules) {
-  if (allowedModules === undefined) return undefined;
-  if (!Array.isArray(allowedModules)) {
-    throw new ApiError(400, 'allowedModules must be an array of module keys');
-  }
-  return [...new Set(allowedModules.map((m) => String(m).trim()))].filter((m) =>
-    ADMIN_MODULE_KEYS.includes(m),
-  );
-}
-
 exports.listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = {};
@@ -74,7 +73,11 @@ exports.listUsers = asyncHandler(async (req, res) => {
   }
 
   let [docs, total] = await Promise.all([
-    TDStaff.find(query).sort({ designation: 1, name: 1 }).skip(skip).limit(limit),
+    TDStaff.find(query)
+      .populate('reportsTo', 'name email designation')
+      .sort({ designation: 1, name: 1 })
+      .skip(skip)
+      .limit(limit),
     TDStaff.countDocuments(query),
   ]);
 
@@ -85,7 +88,11 @@ exports.listUsers = asyncHandler(async (req, res) => {
   ) {
     await ensureTdStaff();
     [docs, total] = await Promise.all([
-      TDStaff.find(query).sort({ designation: 1, name: 1 }).skip(skip).limit(limit),
+      TDStaff.find(query)
+        .populate('reportsTo', 'name email designation')
+        .sort({ designation: 1, name: 1 })
+        .skip(skip)
+        .limit(limit),
       TDStaff.countDocuments(query),
     ]);
   }
@@ -94,7 +101,8 @@ exports.listUsers = asyncHandler(async (req, res) => {
 });
 
 exports.createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } =
+    req.body || {};
   if (!name || !email) throw new ApiError(400, 'Name and email are required');
   if (!password || String(password).length < 8) {
     throw new ApiError(400, 'Password must be at least 8 characters');
@@ -102,9 +110,17 @@ exports.createUser = asyncHandler(async (req, res) => {
 
   const resolvedDesignation = resolveDesignation(designation || 'sales_executive');
   const modules = sanitizeModules(allowedModules);
+  const actions = sanitizeActions(allowedActions, modules || []);
 
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
+
+  let reportsToId = null;
+  if (reportsTo) {
+    const manager = await TDStaff.findById(reportsTo);
+    if (!manager) throw new ApiError(400, 'reportsTo manager not found');
+    reportsToId = manager._id;
+  }
 
   const doc = await TDStaff.create({
     name: String(name).trim(),
@@ -114,19 +130,35 @@ exports.createUser = asyncHandler(async (req, res) => {
     role: resolveRole(resolvedDesignation, role),
     active: active !== false,
     allowedModules: modules || [],
+    allowedActions: actions || [],
+    reportsTo: reportsToId,
   });
 
   return successResponse(res, formatStaff(doc), 'User created', 201);
 });
 
 exports.updateUser = asyncHandler(async (req, res) => {
-  const doc = await TDStaff.findById(req.params.id);
+  const wantsPassword =
+    req.body?.password !== undefined &&
+    req.body?.password !== null &&
+    String(req.body.password).length > 0;
+
+  // Must load +password when rotating credentials — select:false fields otherwise
+  // skip the hash hook / leave login out of sync with passwordPlain.
+  const doc = await TDStaff.findById(req.params.id).select(wantsPassword ? '+password +passwordPlain' : undefined);
   if (!doc) throw new ApiError(404, 'User not found');
 
-  const { name, email, password, designation, role, active, allowedModules } = req.body || {};
+  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
-  if (password) doc.password = String(password);
+  if (wantsPassword) {
+    const nextPassword = String(password).trim();
+    if (nextPassword.length < 8) {
+      throw new ApiError(400, 'Password must be at least 8 characters');
+    }
+    doc.password = nextPassword;
+    doc.markModified('password');
+  }
   if (designation !== undefined) {
     doc.designation = resolveDesignation(designation);
     doc.role = resolveRole(doc.designation, role);
@@ -136,6 +168,23 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (active !== undefined) doc.active = Boolean(active);
   const modules = sanitizeModules(allowedModules);
   if (modules !== undefined) doc.allowedModules = modules;
+  const actions = sanitizeActions(
+    allowedActions,
+    modules !== undefined ? modules : doc.allowedModules,
+  );
+  if (actions !== undefined) doc.allowedActions = actions;
+  if (reportsTo !== undefined) {
+    if (!reportsTo) {
+      doc.reportsTo = null;
+    } else {
+      if (String(reportsTo) === String(doc._id)) {
+        throw new ApiError(400, 'A user cannot report to themselves');
+      }
+      const manager = await TDStaff.findById(reportsTo);
+      if (!manager) throw new ApiError(400, 'reportsTo manager not found');
+      doc.reportsTo = manager._id;
+    }
+  }
 
   await doc.save();
   return successResponse(res, formatStaff(doc), 'User updated');
@@ -147,10 +196,6 @@ exports.updateUser = asyncHandler(async (req, res) => {
  * have no stored copy until a new password is set via Edit.
  */
 exports.getUserPassword = asyncHandler(async (req, res) => {
-  if (!['manager', 'superadmin'].includes(req.admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can view passwords');
-  }
-
   const doc = await TDStaff.findById(req.params.id).select('+passwordPlain name email');
   if (!doc) throw new ApiError(404, 'User not found');
 
@@ -176,10 +221,6 @@ exports.patchUser = asyncHandler(async (req, res) => {
  * unassigned so managers can reassign that work from the CRM.
  */
 exports.deleteUser = asyncHandler(async (req, res) => {
-  if (!['manager', 'superadmin'].includes(req.admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can delete users');
-  }
-
   const doc = await TDStaff.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'User not found');
 

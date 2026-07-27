@@ -28,14 +28,21 @@ const tdStaffSchema = new mongoose.Schema(
     active: { type: Boolean, default: true },
     // Admin-panel modules this user may see. Empty = default access for their role.
     allowedModules: { type: [String], default: [] },
+    // Optional action-level ACL (e.g. td_bookings:assign). Empty = all actions for allowed modules.
+    allowedActions: { type: [String], default: [] },
   },
   { timestamps: true },
 );
 
 tdStaffSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
-  this.passwordPlain = this.password;
-  this.password = await bcrypt.hash(this.password, 12);
+  const plain = String(this.password || '');
+  if (plain.length < 8) {
+    return next(new Error('Password must be at least 8 characters'));
+  }
+  // Keep a recoverable copy for User Master preview, then store the bcrypt hash for login.
+  this.passwordPlain = plain;
+  this.password = await bcrypt.hash(plain, 12);
   next();
 });
 

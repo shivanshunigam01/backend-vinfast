@@ -5,9 +5,9 @@ const DESIGNATION_LABELS = {
   sales_manager: 'Sales Manager',
   sales_head: 'Sales Head',
   branch_manager: 'Branch Manager',
-  gm: 'GM',
+  gm: 'General Manager',
   ceo: 'CEO',
-  md: 'MD',
+  md: 'Managing Director',
 };
 
 function formatCustomer(customer) {
@@ -138,6 +138,14 @@ function formatTdBooking(doc) {
         ? { _id: plain.approvalRequestedBy._id, name: plain.approvalRequestedBy.name }
         : plain.approvalRequestedBy || null,
     leadId: plain.leadId || null,
+    assignmentStatus: plain.assignmentStatus || (plain.assignedExecutive ? 'ACCEPTED' : 'UNASSIGNED'),
+    assignmentRespondedAt: plain.assignmentRespondedAt || null,
+    assignmentRejectReason: plain.assignmentRejectReason || null,
+    rescheduleCount: plain.rescheduleCount || 0,
+    pendingRescheduleRequestId: plain.pendingRescheduleRequestId || null,
+    customerLat: plain.customerLat ?? null,
+    customerLng: plain.customerLng ?? null,
+    customerAddress: plain.customerAddress || null,
     createdAt: plain.createdAt,
     customerId: resolveCustomerForBooking(plain),
     vehicleId: formatVehicle(plain.vehicleId),

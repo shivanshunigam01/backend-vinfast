@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 /**
  * One document per 10-digit mobile.
- * - After send: `codeHash` + `otpSentAt` (OTP never stored in plain text).
- * - After correct code: `codeHash` cleared, `verifiedAt` set; row kept until `expiresAt` (JWT window) for audit; TTL then removes it.
+ * - Wrong OTP attempts NEVER mint a new code — only explicit /send does.
+ * - After max attempts, lockedUntil is set; customer must explicitly request a new OTP.
  */
 const whatsappOtpChallengeSchema = new mongoose.Schema(
   {
@@ -13,6 +13,8 @@ const whatsappOtpChallengeSchema = new mongoose.Schema(
     otpSentAt: { type: Date, default: null },
     verifiedAt: { type: Date, default: null },
     verifyAttempts: { type: Number, default: 0 },
+    /** When set and in the future, verify is blocked until customer requests a new OTP. */
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

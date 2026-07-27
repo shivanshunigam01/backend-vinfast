@@ -29,6 +29,8 @@ exports.protect = asyncHandler(async (req, res, next) => {
       designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
       active: staff.active,
       allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
+      allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
+      userType: 'tdstaff',
     };
     return next();
   }
@@ -38,7 +40,10 @@ exports.protect = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Admin not found or inactive');
   }
 
-  req.admin = admin;
+  req.admin = {
+    ...(typeof admin.toObject === 'function' ? admin.toObject() : admin),
+    userType: 'admin',
+  };
   next();
 });
 
@@ -48,3 +53,8 @@ exports.authorize = (...roles) => (req, res, next) => {
   }
   next();
 };
+
+const { requireModuleAction } = require('../utils/modulePermissions');
+exports.requireModuleAction = requireModuleAction;
+exports.requireModuleActionOrRoles = require('../utils/modulePermissions').requireModuleActionOrRoles;
+exports.requireAnyModuleAction = require('../utils/modulePermissions').requireAnyModuleAction;

@@ -35,6 +35,11 @@ exports.vehicleStockValidator = [
   body('vinNo').trim().notEmpty().withMessage('VIN/chassis number is required'),
   body('variant').optional({ values: 'falsy' }).trim(),
   body('colour').optional({ values: 'falsy' }).trim(),
+  body('interiorColour').optional({ values: 'falsy' }).trim(),
+  body('motorNo').optional({ values: 'falsy' }).trim(),
+  body('motorNo2').optional({ values: 'falsy' }).trim(),
+  body('grnDate').optional({ values: 'falsy' }).isISO8601().withMessage('GRN date must be a valid date'),
+  body('billingDate').optional({ values: 'falsy' }).isISO8601().withMessage('Billing date must be a valid date'),
   body('registrationNo').optional({ values: 'falsy' }).trim(),
   body('batteryPercent')
     .optional({ values: 'falsy' })

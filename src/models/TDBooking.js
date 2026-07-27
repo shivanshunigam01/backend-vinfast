@@ -13,6 +13,9 @@ const TD_BOOKING_STATUSES = [
 /** Approval workflow for repeat test drives requested by executives. */
 const TD_APPROVAL_STATUSES = ['NOT_REQUIRED', 'PENDING', 'APPROVED', 'REJECTED'];
 
+/** Assigned executive must Accept or Reject; rejected → requeue for reassignment. */
+const TD_ASSIGNMENT_STATUSES = ['UNASSIGNED', 'PENDING_ACCEPTANCE', 'ACCEPTED', 'REJECTED'];
+
 const tdBookingSchema = new mongoose.Schema(
   {
     bookingId: { type: String, required: true, unique: true, trim: true, index: true },
@@ -45,6 +48,19 @@ const tdBookingSchema = new mongoose.Schema(
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
     assignedExecutive: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     assignedExecutiveEmail: { type: String, trim: true, lowercase: true, index: true },
+    assignmentStatus: {
+      type: String,
+      enum: TD_ASSIGNMENT_STATUSES,
+      default: 'UNASSIGNED',
+      index: true,
+    },
+    assignmentRespondedAt: { type: Date },
+    assignmentRejectReason: { type: String, trim: true },
+    rescheduleCount: { type: Number, default: 0 },
+    pendingRescheduleRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TDRescheduleRequest',
+    },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
     testDriveId: { type: mongoose.Schema.Types.ObjectId, ref: 'TestDrive' },
     // Legacy / denormalized customer fields from website sync
@@ -52,6 +68,9 @@ const tdBookingSchema = new mongoose.Schema(
     customerMobile: { type: String, trim: true },
     customerEmail: { type: String, trim: true },
     customerCity: { type: String, trim: true },
+    customerLat: { type: Number },
+    customerLng: { type: Number },
+    customerAddress: { type: String, trim: true },
   },
   { timestamps: true, strict: false },
 );
@@ -59,3 +78,4 @@ const tdBookingSchema = new mongoose.Schema(
 module.exports = mongoose.model('TDBooking', tdBookingSchema);
 module.exports.TD_BOOKING_STATUSES = TD_BOOKING_STATUSES;
 module.exports.TD_APPROVAL_STATUSES = TD_APPROVAL_STATUSES;
+module.exports.TD_ASSIGNMENT_STATUSES = TD_ASSIGNMENT_STATUSES;

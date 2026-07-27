@@ -6,7 +6,20 @@ const ApiError = require('../utils/ApiError');
 const { normalizeMobile, mobileVariants, isValidIndianMobile } = require('../utils/mobile');
 const { syncTestDriveToTDBooking, syncUnlinkedTestDrives } = require('../utils/syncTestDriveBooking');
 
-const DEFAULT_OTP = process.env.CUSTOMER_LOGIN_DEFAULT_OTP || '4M0';
+/** Customer login is WhatsApp-OTP only — verified via the wa_otp token issued after code verify. */
+function assertWhatsappVerificationToken(token, mobile10) {
+  if (!token || typeof token !== 'string') {
+    throw new ApiError(400, 'Please verify your mobile number with the WhatsApp code first.');
+  }
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.purpose !== 'wa_otp' || payload.mobile !== mobile10) {
+      throw new Error('bad');
+    }
+  } catch {
+    throw new ApiError(400, 'WhatsApp verification expired or invalid. Please request a new code.');
+  }
+}
 
 const signCustomerToken = (customer) => jwt.sign(
   { id: customer._id, type: 'customer' },
@@ -70,15 +83,10 @@ exports.checkMobile = asyncHandler(async (req, res) => {
 
 /** POST /api/v1/customer/auth/login */
 exports.login = asyncHandler(async (req, res) => {
-  const { mobile, otp } = req.body;
-  if (!otp) throw new ApiError(400, 'OTP is required');
+  const { mobile, whatsappVerificationToken } = req.body;
 
   const customer = await resolveCustomerByMobile(mobile);
-  const enteredOtp = String(otp).trim();
-
-  if (enteredOtp !== DEFAULT_OTP) {
-    throw new ApiError(400, 'Invalid OTP. Please try again.');
-  }
+  assertWhatsappVerificationToken(whatsappVerificationToken, normalizeMobile(customer.mobile));
 
   const token = signCustomerToken(customer);
 

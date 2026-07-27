@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const TDStaff = require('../models/TDStaff');
 const Lead = require('../models/Lead');
 
+/** Designations that see the full dealership (not limited to reporting tree). */
+const UNRESTRICTED_DESIGNATIONS = new Set(['md', 'ceo', 'gm']);
+
 function toObjectId(id) {
   if (id == null) return null;
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -24,15 +27,77 @@ function touchLeadActivity(lead, at = new Date()) {
 /** CRM list sort — recently assigned/edited leads first. */
 const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
 
-/** Field executives (not managers/superadmins) only see their own assigned leads. */
+/**
+ * MD / CEO / GM / superadmin see all records.
+ * Sales Head, Sales Managers, Branch Managers, Executives are limited to their
+ * org subtree (self + everyone who reports up to them via reportsTo).
+ */
+function isUnrestrictedViewer(admin) {
+  if (!admin) return false;
+  if (admin.role === 'superadmin') return true;
+  const designation = String(admin.designation || '').toLowerCase();
+  return UNRESTRICTED_DESIGNATIONS.has(designation);
+}
+
+/** Field executives (leaf) — only their own assignments (subset of team scope). */
 function isExecutiveScopedUser(admin) {
   if (!admin) return false;
+  if (isUnrestrictedViewer(admin)) return false;
   if (['manager', 'superadmin'].includes(admin.role) && admin.designation !== 'sales_executive') {
     return false;
   }
   return admin.role === 'executive' || admin.designation === 'sales_executive';
 }
 
+/**
+ * Anyone who is not unrestricted must filter by assignment to self + subordinates.
+ * Covers SE (own only), SM (team), SH/BM (their tree).
+ */
+function isTeamScopedUser(admin) {
+  if (!admin) return false;
+  return !isUnrestrictedViewer(admin);
+}
+
+/**
+ * Collect staff ids in the reporting subtree rooted at `rootId`
+ * (everyone whose reportsTo chain leads to rootId, plus rootId).
+ */
+async function collectSubtreeStaffIds(rootId) {
+  const root = String(rootId);
+  const ids = new Set([root]);
+  const all = await TDStaff.find({ active: { $ne: false } })
+    .select('_id reportsTo')
+    .lean();
+
+  // Build children map: managerId → [direct reports]
+  const children = new Map();
+  for (const row of all) {
+    if (!row.reportsTo) continue;
+    const parent = String(row.reportsTo);
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(String(row._id));
+  }
+
+  const stack = [root];
+  while (stack.length) {
+    const cur = stack.pop();
+    const kids = children.get(cur) || [];
+    for (const kid of kids) {
+      if (ids.has(kid)) continue;
+      ids.add(kid);
+      stack.push(kid);
+    }
+  }
+
+  return [...ids];
+}
+
+/**
+ * Resolve which staff IDs this user may view assignments for.
+ * - Unrestricted: caller should not use this filter (sees all)
+ * - Team-scoped: self + all descendants via reportsTo
+ * - Also merges duplicate TDStaff rows sharing the same email
+ */
 async function resolveStaffIdsForUser(admin) {
   const ids = new Set();
   if (admin?._id) ids.add(String(admin._id));
@@ -41,6 +106,17 @@ async function resolveStaffIdsForUser(admin) {
   if (email) {
     const rows = await TDStaff.find({ email }).select('_id').lean();
     for (const row of rows) ids.add(String(row._id));
+  }
+
+  // Expand to reporting subtree for managers / heads (SE has no children → unchanged).
+  if (isTeamScopedUser(admin) && !isExecutiveScopedUser(admin)) {
+    const roots = [...ids];
+    for (const rootId of roots) {
+      const subtree = await collectSubtreeStaffIds(rootId);
+      for (const id of subtree) ids.add(id);
+    }
+  } else if (isExecutiveScopedUser(admin)) {
+    // Leaf executives: own ids only (already in set).
   }
 
   return [...ids];
@@ -58,7 +134,8 @@ function assignedToIdsFilter(staffIds, staffEmail) {
     }
   }
   const email = normalizeEmail(staffEmail);
-  if (email) or.push({ assignedToEmail: email });
+  // Only match email for single-person scope (executive). Team scope uses ids.
+  if (email && staffIds.length <= 2) or.push({ assignedToEmail: email });
   if (!or.length) return { assignedTo: null };
   return { $or: or };
 }
@@ -78,6 +155,16 @@ function leadAssignedToStaff(lead, staffId, staffEmail) {
   if (email && normalizeEmail(lead?.assignedToEmail) === email) return true;
   if (assigned && staffId && String(assigned) === String(staffId)) return true;
   if (email && lead?.assignedTo?.email && normalizeEmail(lead.assignedTo.email) === email) return true;
+  return false;
+}
+
+async function leadReadableByAdmin(lead, admin) {
+  if (!isTeamScopedUser(admin)) return true;
+  const staffIds = await resolveStaffIdsForUser(admin);
+  const assigned = lead?.assignedTo?._id || lead?.assignedTo;
+  if (assigned && staffIds.includes(String(assigned))) return true;
+  const email = normalizeEmail(admin?.email);
+  if (email && normalizeEmail(lead?.assignedToEmail) === email) return true;
   return false;
 }
 
@@ -136,7 +223,7 @@ function assignedExecutiveIdsFilter(staffIds, staffEmail) {
     }
   }
   const email = normalizeEmail(staffEmail);
-  if (email) or.push({ assignedExecutiveEmail: email });
+  if (email && staffIds.length <= 2) or.push({ assignedExecutiveEmail: email });
   if (!or.length) return { assignedExecutive: null };
   return { $or: or };
 }
@@ -207,12 +294,17 @@ module.exports = {
   normalizeEmail,
   touchLeadActivity,
   CRM_LEAD_LIST_SORT,
+  UNRESTRICTED_DESIGNATIONS,
+  isUnrestrictedViewer,
   isExecutiveScopedUser,
+  isTeamScopedUser,
+  collectSubtreeStaffIds,
   resolveStaffIdsForUser,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
   assignedToIdsFilter,
   leadAssignedToStaff,
+  leadReadableByAdmin,
   applyLeadAssignment,
   repairExecutiveLeadAssignments,
   assignedExecutiveFilterAsync,
