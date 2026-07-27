@@ -66,7 +66,7 @@ const DEACTIVATE_OR_UNLINK = [
 ];
 
 function roleForDesignation(designation) {
-  if (designation === 'sales_executive') return 'executive';
+  if (designation === 'sales_executive' || designation === 'cre') return 'executive';
   if (['md', 'ceo'].includes(designation)) return 'superadmin';
   return 'manager';
 }

@@ -123,7 +123,10 @@ exports.login = asyncHandler(async (req, res) => {
   }
 
   const isFieldExecutive =
-    staffOk && (staff.role === 'executive' || staff.designation === 'sales_executive');
+    staffOk &&
+    (staff.role === 'executive' ||
+      staff.designation === 'sales_executive' ||
+      staff.designation === 'cre');
 
   if (isFieldExecutive) {
     const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });

@@ -143,6 +143,10 @@ async function intakePvLead(input = {}) {
     referredByMobile,
     changedBy,
     historyReason,
+    createdBy,
+    leadType,
+    area,
+    address,
   } = input;
 
   const parent = await ensureParentCustomer({ name, mobile, email, city, otherCity });
@@ -171,6 +175,10 @@ async function intakePvLead(input = {}) {
     exchangeNeeded: Boolean(exchangeNeeded),
     assignedTo: assignedTo || undefined,
     assignedToEmail: assignedToEmail || undefined,
+    createdBy: createdBy || changedBy || undefined,
+    leadType: pickStr(leadType) || undefined,
+    area: pickStr(area, city) || undefined,
+    address: pickStr(address) || undefined,
     utmSource,
     utmMedium,
     utmCampaign,

@@ -3,7 +3,7 @@ const TDStaff = require('../models/TDStaff');
 const Lead = require('../models/Lead');
 
 /** Designations that see the full dealership (not limited to reporting tree). */
-const UNRESTRICTED_DESIGNATIONS = new Set(['md', 'ceo', 'gm']);
+const UNRESTRICTED_DESIGNATIONS = new Set(['md', 'ceo', 'gm', 'cre']);
 
 function toObjectId(id) {
   if (id == null) return null;
@@ -19,6 +19,10 @@ function normalizeEmail(email) {
   return email ? String(email).trim().toLowerCase() : '';
 }
 
+function isCreUser(admin) {
+  return String(admin?.designation || '').toLowerCase() === 'cre';
+}
+
 function touchLeadActivity(lead, at = new Date()) {
   if (!lead) return;
   lead.lastActivityAt = at;
@@ -28,13 +32,14 @@ function touchLeadActivity(lead, at = new Date()) {
 const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
 
 /**
- * MD / CEO / GM / superadmin see all records.
+ * MD / CEO / GM / CRE / superadmin see all records.
  * Sales Head, Sales Managers, Branch Managers, Executives are limited to their
  * org subtree (self + everyone who reports up to them via reportsTo).
  */
 function isUnrestrictedViewer(admin) {
   if (!admin) return false;
   if (admin.role === 'superadmin') return true;
+  if (isCreUser(admin)) return true;
   const designation = String(admin.designation || '').toLowerCase();
   return UNRESTRICTED_DESIGNATIONS.has(designation);
 }
@@ -43,6 +48,7 @@ function isUnrestrictedViewer(admin) {
 function isExecutiveScopedUser(admin) {
   if (!admin) return false;
   if (isUnrestrictedViewer(admin)) return false;
+  if (isCreUser(admin)) return false;
   if (['manager', 'superadmin'].includes(admin.role) && admin.designation !== 'sales_executive') {
     return false;
   }
@@ -296,6 +302,7 @@ module.exports = {
   CRM_LEAD_LIST_SORT,
   UNRESTRICTED_DESIGNATIONS,
   isUnrestrictedViewer,
+  isCreUser,
   isExecutiveScopedUser,
   isTeamScopedUser,
   collectSubtreeStaffIds,
