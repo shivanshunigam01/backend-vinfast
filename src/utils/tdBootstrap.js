@@ -210,7 +210,7 @@ const DEFAULT_SLOT_TIMES = [
 ];
 
 function staffRole(designation) {
-  return designation === 'sales_executive' ? 'executive' : 'manager';
+  return designation === 'sales_executive' || designation === 'cre' ? 'executive' : 'manager';
 }
 
 async function importLegacyStaffIfEmpty() {

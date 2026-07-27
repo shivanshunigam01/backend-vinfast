@@ -11,6 +11,7 @@ router.get('/meta/sources', ctrl.getCrmSources);
 router.get('/meta/executives', ctrl.listCrmExecutives);
 router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getAdminReport);
 router.get('/reports/me', reportCtrl.getExecutiveDashboard);
+router.get('/reports/cre', reportCtrl.getCreReport);
 router.get('/duplicates/opportunities', authorize('superadmin', 'manager'), ctrl.checkOpportunityDuplicates);
 router.get('/', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeads);
 router.post(
@@ -20,6 +21,7 @@ router.post(
   validate,
   ctrl.createCrmLead,
 );
+router.post('/bulk', requireModuleAction('crm_leads', 'create'), ctrl.bulkCreateCrmLeads);
 router.get('/:id', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeadDetail);
 router.get('/:id/test-drives', requireModuleAction('crm_leads', 'view'), ctrl.getLeadTestDrives);
 router.post('/:id/test-drive', requireModuleAction('crm_leads', 'update'), ctrl.bookTestDriveForLead);

@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 
 const STAFF_DESIGNATIONS = [
   'sales_executive',
+  'cre',
   'sales_manager',
   'sales_head',
   'branch_manager',
@@ -10,6 +11,9 @@ const STAFF_DESIGNATIONS = [
   'ceo',
   'md',
 ];
+
+/** Designations that use the field-staff (executive) portal access level. */
+const FIELD_STAFF_DESIGNATIONS = ['sales_executive', 'cre'];
 
 const tdStaffSchema = new mongoose.Schema(
   {
@@ -52,3 +56,4 @@ tdStaffSchema.methods.comparePassword = function comparePassword(candidatePasswo
 
 module.exports = mongoose.model('TDStaff', tdStaffSchema);
 module.exports.STAFF_DESIGNATIONS = STAFF_DESIGNATIONS;
+module.exports.FIELD_STAFF_DESIGNATIONS = FIELD_STAFF_DESIGNATIONS;

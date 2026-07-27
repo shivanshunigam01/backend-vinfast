@@ -60,7 +60,7 @@ function resolveRole(designation, requestedRole) {
     return requestedRole;
   }
   if (STAFF_DESIGNATIONS.includes(designation)) {
-    return designation === 'sales_executive' ? 'executive' : 'manager';
+    return designation === 'sales_executive' || designation === 'cre' ? 'executive' : 'manager';
   }
   return 'executive';
 }

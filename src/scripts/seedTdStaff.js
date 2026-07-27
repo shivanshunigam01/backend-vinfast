@@ -27,7 +27,7 @@ const STAFF_SEED = [
 ];
 
 function roleForDesignation(designation) {
-  return designation === 'sales_executive' ? 'executive' : 'manager';
+  return designation === 'sales_executive' || designation === 'cre' ? 'executive' : 'manager';
 }
 
 async function importLegacyStaffIfEmpty() {

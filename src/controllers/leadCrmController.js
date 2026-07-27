@@ -19,6 +19,7 @@ const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../con
 const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
+  isCreUser,
   isExecutiveScopedUser,
   isTeamScopedUser,
   assignedToStaffFilter,
@@ -44,26 +45,259 @@ const {
 
 const LEAD_POPULATE = [
   { path: 'assignedTo', select: 'name email role designation' },
+  { path: 'createdBy', select: 'name email role designation' },
   { path: 'pvCustomerId', select: 'customerId name mobile email city isSubCustomer parentCustomer vehicleRegistration' },
   { path: 'subCustomerId', select: 'customerId name mobile vehicleRegistration isSubCustomer' },
 ];
 
 function assertCrmAccess(admin) {
-  if (!isCrmStaffRole(admin.role)) {
-    throw new ApiError(403, 'Lead CRM access is for executives and managers only');
+  if (!isCrmStaffRole(admin.role) && !isCreUser(admin)) {
+    throw new ApiError(403, 'Lead CRM access is for executives, managers, and CRE only');
   }
 }
 
 function assertCanAssignLeads(admin) {
-  if (!['manager', 'superadmin'].includes(admin.role)) {
-    throw new ApiError(403, 'Only managers can assign leads to executives');
+  if (!['manager', 'superadmin'].includes(admin.role) && !isCreUser(admin)) {
+    throw new ApiError(403, 'Only managers and CRE can assign leads to executives');
   }
 }
 
 function assertAdminEditRights(admin) {
-  if (!['manager', 'superadmin'].includes(admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can edit lead details');
+  if (!['manager', 'superadmin'].includes(admin.role) && !isCreUser(admin)) {
+    throw new ApiError(403, 'Only managers, admins, and CRE can edit lead details');
   }
+}
+
+function isCrmManagerLike(admin) {
+  return ['manager', 'superadmin'].includes(admin?.role) || isCreUser(admin);
+}
+
+/** Strip designation suffixes like "(SE)" / "(SM)" for name matching. */
+function normalizeConsultantName(raw) {
+  return String(raw || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+async function resolveSalesConsultant(executiveId, salesConsultant) {
+  if (executiveId) {
+    const assignee = await TDStaff.findOne({
+      _id: executiveId,
+      active: true,
+      designation: { $in: STAFF_DESIGNATIONS },
+    }).select('_id name email');
+    if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
+    return assignee;
+  }
+
+  const needle = normalizeConsultantName(salesConsultant);
+  if (!needle || needle === 'un-assigned' || needle === 'unassigned') return null;
+
+  const staff = await TDStaff.find({ active: true, designation: { $in: STAFF_DESIGNATIONS } })
+    .select('_id name email designation')
+    .lean();
+
+  const exact = staff.find((s) => normalizeConsultantName(s.name) === needle);
+  if (exact) return exact;
+
+  const partial = staff.find((s) => {
+    const n = normalizeConsultantName(s.name);
+    return n.includes(needle) || needle.includes(n);
+  });
+  return partial || null;
+}
+
+function normalizeImportModel(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return 'VF 7';
+  const upper = s.toUpperCase().replace(/\s+/g, ' ');
+  if (upper.includes(',') || upper.includes('/')) return 'Both';
+  if (upper.includes('LIMO')) return 'Limo Green';
+  if (upper.includes('MPV')) return 'VF MPV 7';
+  if (upper.includes('VF 6') || upper === 'VF6') return 'VF 6';
+  if (upper.includes('VF 7') || upper === 'VF7') return 'VF 7';
+  if (upper.includes('VF 3') || upper === 'VF3') return 'VF 7';
+  if (isValidLeadModel(s)) return normalizeLeadModelForStorage(s);
+  return 'VF 7';
+}
+
+function mapLeadTypeToStatus(leadType, status) {
+  if (status && CRM_LEAD_STAGES.includes(status)) return status;
+  const t = String(leadType || '').trim().toUpperCase();
+  if (!t) return 'Enquiry';
+  if (t.includes('LOST') || t.includes('NOT INTEREST')) return 'Lost';
+  if (t.includes('HOT') || t.includes('WARM')) return 'Interested';
+  if (t.includes('COLD') || t.includes('FOLLOW') || t.includes('NOT CONNECT')) return 'Enquiry';
+  if (CRM_LEAD_STAGES.includes(leadType)) return leadType;
+  return 'Enquiry';
+}
+
+async function createOneCrmLeadFromBody(admin, body = {}) {
+  const {
+    name,
+    mobile,
+    email,
+    city,
+    otherCity,
+    model,
+    interest,
+    source,
+    remarks,
+    financeNeeded,
+    exchangeNeeded,
+    executiveId,
+    salesConsultant,
+    status,
+    leadType,
+    enquiryDate,
+    callDate,
+    existingVariant,
+    area,
+    address,
+    subCustomerName,
+    subCustomerMobile,
+    vehicleRegistration,
+    referredByMobile,
+    followUps,
+  } = body;
+
+  if (!name || String(name).trim().length < 2) {
+    throw new ApiError(400, 'Name is required');
+  }
+  const mobileNorm = String(mobile || '').replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(mobileNorm)) {
+    throw new ApiError(400, 'Valid 10-digit mobile is required');
+  }
+  if (!city || !String(city).trim()) {
+    throw new ApiError(400, 'City is required');
+  }
+
+  let assignedTo = null;
+  let assignedToEmail;
+  let assignLabel = '';
+
+  if (admin.role === 'executive' && !isCreUser(admin)) {
+    assignedTo = toObjectId(admin._id) || admin._id;
+    assignedToEmail = admin.email;
+    assignLabel = admin.name;
+  } else {
+    const assignee = await resolveSalesConsultant(executiveId, salesConsultant);
+    if (assignee) {
+      assignedTo = assignee._id;
+      assignedToEmail = assignee.email;
+      assignLabel = assignee.name;
+    }
+  }
+
+  const leadSource =
+    source?.trim() ||
+    (admin.role === 'executive' && !isCreUser(admin) ? 'Executive' : 'Walk-in');
+
+  let referrer = null;
+  if (referredByMobile) {
+    referrer = await findCustomerByMobile(referredByMobile);
+  }
+
+  const existingCustomer = await findCustomerByMobile(mobileNorm);
+  const duplicateLead = await findOpenLeadForCustomer({ mobile: mobileNorm });
+  if (duplicateLead) {
+    const ref = duplicateLead.leadId || duplicateLead.opportunityId || duplicateLead._id;
+    throw new ApiError(
+      409,
+      `A lead already exists for mobile ${mobileNorm} — ${ref} (stage: ${duplicateLead.status}${
+        duplicateLead.assignedToEmail ? `, assigned to ${duplicateLead.assignedToEmail}` : ''
+      }).`,
+    );
+  }
+
+  const modelNorm = normalizeImportModel(model);
+  const stage = mapLeadTypeToStatus(leadType, status);
+  const leadTypeValue = leadType ? String(leadType).trim() : undefined;
+  const areaValue = String(area || city || '').trim() || undefined;
+  const addressValue = String(address || '').trim() || undefined;
+
+  const remarkParts = [];
+  if (remarks) remarkParts.push(String(remarks).trim());
+  if (existingVariant && String(existingVariant).trim().toUpperCase() !== 'NO') {
+    remarkParts.push(`Existing variant: ${String(existingVariant).trim()}`);
+  }
+  if (enquiryDate) remarkParts.push(`Enquiry date: ${String(enquiryDate).trim()}`);
+  if (callDate) remarkParts.push(`Call date: ${String(callDate).trim()}`);
+  if (model && normalizeImportModel(model) !== String(model).trim()) {
+    remarkParts.push(`Excel model: ${String(model).trim()}`);
+  }
+
+  const { lead } = await intakePvLead({
+    name: String(name).trim(),
+    mobile: mobileNorm,
+    email: email && String(email).trim().toLowerCase() !== 'no' ? email : undefined,
+    city: String(city).trim(),
+    otherCity: otherCity?.trim() || undefined,
+    model: modelNorm,
+    interest: interest?.trim() || undefined,
+    source: leadSource,
+    status: stage,
+    assignedTo: assignedTo || undefined,
+    assignedToEmail: assignedToEmail || undefined,
+    remarks: remarkParts.filter(Boolean).join('\n') || undefined,
+    financeNeeded,
+    exchangeNeeded,
+    vehicleRegistration: vehicleRegistration?.trim() || undefined,
+    createdBy: admin._id,
+    leadType: leadTypeValue,
+    area: areaValue,
+    address: addressValue,
+    subCustomer: subCustomerName
+      ? {
+          name: String(subCustomerName).trim(),
+          mobile: subCustomerMobile?.trim() || mobileNorm,
+          vehicleRegistration: vehicleRegistration?.trim() || undefined,
+        }
+      : undefined,
+    referredByCustomerId: referrer?._id,
+    referredByMobile: referredByMobile ? String(referredByMobile).trim() : undefined,
+    changedBy: admin._id,
+    historyReason: `Lead created by ${admin.name}${assignedTo ? ` and assigned to ${assignLabel}` : ''}${
+      referrer ? ` · referred by ${referrer.name} (${referrer.customerId})` : ''
+    }`,
+  });
+
+  if (Array.isArray(followUps) && followUps.length) {
+    for (const fu of followUps.slice(0, 12)) {
+      const note = String(fu?.note || '').trim();
+      if (!note) continue;
+      let scheduled = null;
+      if (fu.scheduledAt) {
+        const d = new Date(fu.scheduledAt);
+        if (!Number.isNaN(d.getTime())) scheduled = d;
+      }
+      const isCompleted = !scheduled || scheduled <= new Date();
+      await LeadFollowUp.create({
+        leadId: lead._id,
+        createdBy: admin._id,
+        note,
+        scheduledAt: scheduled || undefined,
+        completedAt: isCompleted ? new Date() : undefined,
+        status: isCompleted ? 'completed' : 'pending',
+      });
+      if (scheduled && !isCompleted) {
+        lead.nextFollowUp = scheduled;
+      }
+    }
+    touchLeadActivity(lead);
+    await lead.save();
+  }
+
+  await lead.populate(LEAD_POPULATE);
+  return {
+    lead,
+    existingCustomer: Boolean(existingCustomer),
+    existingCustomerId: existingCustomer?.customerId || null,
+    referredBy: referrer ? { customerId: referrer.customerId, name: referrer.name } : null,
+    assignLabel,
+  };
 }
 
 async function assertLeadReadable(lead, admin) {
@@ -124,6 +358,15 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (queryParams.status) query.status = queryParams.status;
   if (queryParams.model) query.model = queryParams.model;
   if (queryParams.source) query.source = queryParams.source;
+  if (queryParams.city) query.city = new RegExp(`^${String(queryParams.city).trim()}$`, 'i');
+  if (queryParams.area) {
+    const areaRx = new RegExp(String(queryParams.area).trim(), 'i');
+    query.$and = query.$and || [];
+    query.$and.push({ $or: [{ area: areaRx }, { city: areaRx }] });
+  }
+  if (queryParams.leadType) query.leadType = new RegExp(String(queryParams.leadType).trim(), 'i');
+  if (queryParams.address) query.address = new RegExp(String(queryParams.address).trim(), 'i');
+  if (queryParams.createdBy) query.createdBy = queryParams.createdBy;
   if (queryParams.from || queryParams.to) {
     const range = {};
     if (queryParams.from) range.$gte = new Date(queryParams.from);
@@ -151,6 +394,9 @@ async function buildLeadQuery(admin, queryParams = {}) {
         { mobile: regex },
         { email: regex },
         { city: regex },
+        { area: regex },
+        { address: regex },
+        { leadType: regex },
         { remarks: regex },
         { leadId: regex },
         { opportunityId: regex },
@@ -214,7 +460,7 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
     getCustomerTestDriveState(lead.mobile),
   ]);
 
-  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  const isAdmin = isCrmManagerLike(req.admin);
   return successResponse(res, {
     lead: formatCrmLead(lead),
     history,
@@ -290,6 +536,9 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
     email,
     city,
     otherCity,
+    area,
+    address,
+    leadType,
     model,
     source,
     interest,
@@ -334,6 +583,9 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
   applyString('email', 'Email', email);
   applyString('city', 'City', city, { required: true });
   applyString('otherCity', 'Other city', otherCity);
+  applyString('area', 'Area', area);
+  applyString('address', 'Address', address);
+  applyString('leadType', 'Lead type', leadType);
   applyString('source', 'Source', source);
   applyString('interest', 'Interest', interest);
   applyString('vehicleRegistration', 'Registration', vehicleRegistration);
@@ -522,103 +774,55 @@ exports.getCrmSources = asyncHandler(async (req, res) => {
 exports.createCrmLead = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
 
-  const {
-    name,
-    mobile,
-    email,
-    city,
-    otherCity,
-    model,
-    interest,
-    source,
-    remarks,
-    financeNeeded,
-    exchangeNeeded,
-    executiveId,
-    subCustomerName,
-    subCustomerMobile,
-    vehicleRegistration,
-    referredByMobile,
-  } = req.body;
-
-  let assignedTo = null;
-  let assignedToEmail;
-
-  if (req.admin.role === 'executive') {
-    assignedTo = toObjectId(req.admin._id) || req.admin._id;
-    assignedToEmail = req.admin.email;
-  } else if (executiveId) {
-    const assignee = await TDStaff.findOne({
-      _id: executiveId,
-      active: true,
-      designation: { $in: STAFF_DESIGNATIONS },
-    }).select('_id name email');
-    if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
-    assignedTo = assignee._id;
-    assignedToEmail = assignee.email;
-  }
-
-  const leadSource =
-    source?.trim() ||
-    (req.admin.role === 'executive' ? 'Executive' : 'Walk-in');
-
-  // Referral: link the lead back to the referring customer's profile.
-  let referrer = null;
-  if (referredByMobile) {
-    referrer = await findCustomerByMobile(referredByMobile);
-  }
-
-  // Existing-customer detection — the UI shows the full-history popup when true.
-  const existingCustomer = await findCustomerByMobile(mobile);
-
-  // Duplicate guard: one open lead per mobile. Staff must work the existing
-  // lead (test drives can still be booked on it) instead of creating a copy.
-  const duplicateLead = await findOpenLeadForCustomer({ mobile: String(mobile).trim() });
-  if (duplicateLead) {
-    const ref = duplicateLead.leadId || duplicateLead.opportunityId || duplicateLead._id;
-    throw new ApiError(
-      409,
-      `A lead already exists for mobile ${String(mobile).trim()} — ${ref} (stage: ${duplicateLead.status}${
-        duplicateLead.assignedToEmail ? `, assigned to ${duplicateLead.assignedToEmail}` : ''
-      }). Open that lead to follow up or book a test drive instead of creating a duplicate.`,
-    );
-  }
-
-  const { lead } = await intakePvLead({
-    name: String(name).trim(),
-    mobile: String(mobile).trim(),
-    email: email || undefined,
-    city: String(city).trim(),
-    otherCity: otherCity?.trim() || undefined,
-    model: normalizeLeadModelForStorage(model),
-    interest: interest?.trim() || undefined,
-    source: leadSource,
-    status: 'Enquiry',
-    assignedTo: assignedTo || undefined,
-    assignedToEmail: assignedToEmail || undefined,
-    remarks: remarks?.trim() || undefined,
-    financeNeeded,
-    exchangeNeeded,
-    vehicleRegistration: vehicleRegistration?.trim() || undefined,
-    subCustomer: subCustomerName
-      ? {
-          name: String(subCustomerName).trim(),
-          mobile: subCustomerMobile?.trim() || String(mobile).trim(),
-          vehicleRegistration: vehicleRegistration?.trim() || undefined,
-        }
-      : undefined,
-    referredByCustomerId: referrer?._id,
-    referredByMobile: referredByMobile ? String(referredByMobile).trim() : undefined,
-    changedBy: req.admin._id,
-    historyReason: `Lead created by ${req.admin.name}${assignedTo ? ' and assigned' : ''}${referrer ? ` · referred by ${referrer.name} (${referrer.customerId})` : ''}`,
+  const result = await createOneCrmLeadFromBody(req.admin, req.body);
+  return successResponse(res, formatCrmLead(result.lead), 'Lead created successfully', 201, {
+    existingCustomer: result.existingCustomer,
+    existingCustomerId: result.existingCustomerId,
+    referredBy: result.referredBy,
   });
+});
 
-  await lead.populate(LEAD_POPULATE);
-  return successResponse(res, formatCrmLead(lead), 'Lead created successfully', 201, {
-    existingCustomer: Boolean(existingCustomer),
-    existingCustomerId: existingCustomer?.customerId || null,
-    referredBy: referrer ? { customerId: referrer.customerId, name: referrer.name } : null,
-  });
+/**
+ * Bulk import CRE "Current Format" Excel rows into Lead CRM.
+ * POST /admin/crm/leads/bulk  { leads: [...] }
+ */
+exports.bulkCreateCrmLeads = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  if (!isCrmManagerLike(req.admin) && req.admin.role !== 'executive') {
+    throw new ApiError(403, 'Not allowed to bulk import leads');
+  }
+
+  const leads = req.body?.leads;
+  if (!Array.isArray(leads) || leads.length === 0) {
+    throw new ApiError(400, 'Provide a non-empty "leads" array.');
+  }
+  if (leads.length > 500) {
+    throw new ApiError(400, 'Maximum 500 leads per import.');
+  }
+
+  const results = { created: 0, failed: [] };
+  for (let i = 0; i < leads.length; i += 1) {
+    const row = leads[i];
+    try {
+      await createOneCrmLeadFromBody(req.admin, row);
+      results.created += 1;
+    } catch (err) {
+      results.failed.push({
+        row: i + 1,
+        name: row?.name,
+        mobile: row?.mobile,
+        message: err?.message || 'Failed to import row',
+      });
+    }
+  }
+
+  return successResponse(
+    res,
+    results,
+    `Imported ${results.created} of ${leads.length} lead(s)`,
+    200,
+    { total: leads.length, failed: results.failed.length },
+  );
 });
 
 /**
@@ -632,7 +836,7 @@ exports.getLeadTestDrives = asyncHandler(async (req, res) => {
   await assertLeadReadable(lead, req.admin);
 
   const state = await getCustomerTestDriveState(lead.mobile);
-  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  const isAdmin = isCrmManagerLike(req.admin);
 
   return successResponse(res, {
     bookings: state.bookings,
@@ -677,7 +881,7 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'This customer already has an active test drive booking');
   }
 
-  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  const isAdmin = isCrmManagerLike(req.admin);
   const isRepeat = state.hasCompletedTestDrive;
   const approvalStatus = isRepeat ? (isAdmin ? 'APPROVED' : 'PENDING') : 'NOT_REQUIRED';
 

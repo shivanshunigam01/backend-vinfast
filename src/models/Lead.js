@@ -35,6 +35,17 @@ const leadSchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true },
     city: { type: String, required: true, trim: true },
     otherCity: { type: String, trim: true },
+    /** Area / locality used by CRE when routing leads to executives. */
+    area: { type: String, trim: true, index: true },
+    /** Free-text address / landmark for executive follow-up. */
+    address: { type: String, trim: true },
+    /**
+     * CRE lead classification (HOT / WARM / COLD / FOLLOW-UP / NOT CONNECTED / LOST).
+     * Separate from CRM pipeline `status`.
+     */
+    leadType: { type: String, trim: true, index: true },
+    /** Staff who created / imported the lead (typically CRE). */
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff', index: true },
     model: {
       type: String,
       required: true,
@@ -78,6 +89,8 @@ const leadSchema = new mongoose.Schema(
 
 leadSchema.index({ pvCustomerId: 1, model: 1, status: 1 });
 leadSchema.index({ tdBookingId: 1 }, { sparse: true });
+leadSchema.index({ createdBy: 1, createdAt: -1 });
+leadSchema.index({ area: 1, leadType: 1, assignedTo: 1 });
 
 module.exports = mongoose.model('Lead', leadSchema);
 module.exports.LEAD_SOURCES = LEAD_SOURCES;
