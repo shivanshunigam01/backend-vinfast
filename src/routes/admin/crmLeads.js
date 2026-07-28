@@ -5,6 +5,7 @@ const { authorize } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
 const { crmCreateLeadValidator } = require('../../validators/adminValidators');
 const { requireModuleAction, requireModuleActionOrRoles } = require('../../utils/modulePermissions');
+const uploadCrmLeadImport = require('../../middleware/uploadCrmLeadImport');
 
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
@@ -13,6 +14,26 @@ router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getA
 router.get('/reports/me', reportCtrl.getExecutiveDashboard);
 router.get('/reports/cre', reportCtrl.getCreReport);
 router.get('/duplicates/opportunities', authorize('superadmin', 'manager'), ctrl.checkOpportunityDuplicates);
+
+router.get('/export', requireModuleAction('crm_leads', 'export'), ctrl.exportCrmLeads);
+router.post(
+  '/import',
+  requireModuleAction('crm_leads', 'create'),
+  (req, res, next) => {
+    // Multipart file optional — JSON body { leads, followUps } also supported.
+    if (req.is('multipart/form-data')) {
+      return uploadCrmLeadImport(req, res, next);
+    }
+    return next();
+  },
+  ctrl.importCrmLeads,
+);
+router.post(
+  '/bulk-delete',
+  requireModuleActionOrRoles('crm_leads', 'delete', 'superadmin', 'manager'),
+  ctrl.bulkDeleteCrmLeads,
+);
+
 router.get('/', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeads);
 router.post(
   '/',

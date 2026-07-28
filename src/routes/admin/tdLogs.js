@@ -44,6 +44,15 @@ router.patch(
   tdLogsController.endTestDrive,
 );
 router.patch(
+  '/:logId/completion-media',
+  requireAnyModuleAction([
+    ['td_bookings', 'start_drive'],
+    ['td_my_bookings', 'complete'],
+  ]),
+  uploadTdCompletionPhotos,
+  tdLogsController.updateCompletionMedia,
+);
+router.patch(
   '/:logId/gps',
   requireAnyModuleAction([
     ['td_bookings', 'start_drive'],

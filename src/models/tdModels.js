@@ -6,6 +6,7 @@ require('./TDBranch');
 require('./TDCustomer');
 require('./TDVehicle');
 require('./TDStaff');
+require('./StaffRole');
 require('./TDBooking');
 require('./TDSlotConfig');
 require('./TDFeedback');

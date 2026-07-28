@@ -11,6 +11,7 @@ const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 
 const STAFF_ROLES = ['executive', 'manager'];
+const StaffRole = require('../models/StaffRole');
 
 function formatStaff(doc) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -23,6 +24,14 @@ function formatStaff(doc) {
       designation: reportsTo.designation,
     };
   }
+  let staffRole = null;
+  if (plain.staffRoleId && typeof plain.staffRoleId === 'object') {
+    staffRole = {
+      _id: plain.staffRoleId._id,
+      name: plain.staffRoleId.name,
+      authRole: plain.staffRoleId.authRole,
+    };
+  }
   return {
     _id: plain._id,
     name: plain.name,
@@ -32,10 +41,33 @@ function formatStaff(doc) {
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
     isCustomDesignation: !STAFF_DESIGNATIONS.includes(plain.designation),
     reportsTo,
+    staffRoleId: plain.staffRoleId?._id || plain.staffRoleId || null,
+    staffRole,
     active: Boolean(plain.active),
     allowedModules: Array.isArray(plain.allowedModules) ? plain.allowedModules : [],
     allowedActions: Array.isArray(plain.allowedActions) ? plain.allowedActions : [],
     createdAt: plain.createdAt,
+  };
+}
+
+/**
+ * When staffRoleId is provided, load the role and return ACL + authRole to apply.
+ * If staffRoleId is null/empty string, clears the role link (caller sets staffRoleId null).
+ */
+async function resolveStaffRoleAssignment(staffRoleId) {
+  if (staffRoleId === undefined) return undefined;
+  if (!staffRoleId) {
+    return { staffRoleId: null, applyAcl: false };
+  }
+  const role = await StaffRole.findById(staffRoleId);
+  if (!role) throw new ApiError(400, 'Staff role not found');
+  if (!role.active) throw new ApiError(400, 'This role is inactive');
+  return {
+    staffRoleId: role._id,
+    applyAcl: true,
+    authRole: role.authRole || 'executive',
+    allowedModules: Array.isArray(role.allowedModules) ? role.allowedModules : [],
+    allowedActions: Array.isArray(role.allowedActions) ? role.allowedActions : [],
   };
 }
 
@@ -75,6 +107,7 @@ exports.listUsers = asyncHandler(async (req, res) => {
   let [docs, total] = await Promise.all([
     TDStaff.find(query)
       .populate('reportsTo', 'name email designation')
+      .populate('staffRoleId', 'name authRole')
       .sort({ designation: 1, name: 1 })
       .skip(skip)
       .limit(limit),
@@ -90,6 +123,7 @@ exports.listUsers = asyncHandler(async (req, res) => {
     [docs, total] = await Promise.all([
       TDStaff.find(query)
         .populate('reportsTo', 'name email designation')
+        .populate('staffRoleId', 'name authRole')
         .sort({ designation: 1, name: 1 })
         .skip(skip)
         .limit(limit),
@@ -101,16 +135,44 @@ exports.listUsers = asyncHandler(async (req, res) => {
 });
 
 exports.createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } =
-    req.body || {};
+  const {
+    name,
+    email,
+    password,
+    designation,
+    role,
+    active,
+    allowedModules,
+    allowedActions,
+    reportsTo,
+    staffRoleId,
+  } = req.body || {};
   if (!name || !email) throw new ApiError(400, 'Name and email are required');
   if (!password || String(password).length < 8) {
     throw new ApiError(400, 'Password must be at least 8 characters');
   }
 
   const resolvedDesignation = resolveDesignation(designation || 'sales_executive');
-  const modules = sanitizeModules(allowedModules);
-  const actions = sanitizeActions(allowedActions, modules || []);
+  let resolvedRole = resolveRole(resolvedDesignation, role);
+  let linkedRoleId = null;
+  let modules;
+  let actions;
+
+  const roleAssign = await resolveStaffRoleAssignment(staffRoleId);
+  if (roleAssign?.applyAcl) {
+    linkedRoleId = roleAssign.staffRoleId;
+    resolvedRole = roleAssign.authRole;
+    modules = Array.isArray(allowedModules)
+      ? sanitizeModules(allowedModules) || []
+      : roleAssign.allowedModules;
+    actions = Array.isArray(allowedActions)
+      ? sanitizeActions(allowedActions, modules) || []
+      : sanitizeActions(roleAssign.allowedActions, modules) || [];
+  } else {
+    if (roleAssign && staffRoleId !== undefined) linkedRoleId = null;
+    modules = sanitizeModules(allowedModules) || [];
+    actions = sanitizeActions(allowedActions, modules) || [];
+  }
 
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
@@ -127,13 +189,15 @@ exports.createUser = asyncHandler(async (req, res) => {
     email: String(email).trim().toLowerCase(),
     password: String(password),
     designation: resolvedDesignation,
-    role: resolveRole(resolvedDesignation, role),
+    role: resolvedRole,
     active: active !== false,
-    allowedModules: modules || [],
-    allowedActions: actions || [],
+    allowedModules: modules,
+    allowedActions: actions,
     reportsTo: reportsToId,
+    staffRoleId: linkedRoleId,
   });
 
+  await doc.populate('staffRoleId', 'name authRole');
   return successResponse(res, formatStaff(doc), 'User created', 201);
 });
 
@@ -148,7 +212,18 @@ exports.updateUser = asyncHandler(async (req, res) => {
   const doc = await TDStaff.findById(req.params.id).select(wantsPassword ? '+password +passwordPlain' : undefined);
   if (!doc) throw new ApiError(404, 'User not found');
 
-  const { name, email, password, designation, role, active, allowedModules, allowedActions, reportsTo } = req.body || {};
+  const {
+    name,
+    email,
+    password,
+    designation,
+    role,
+    active,
+    allowedModules,
+    allowedActions,
+    reportsTo,
+    staffRoleId,
+  } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
   if (wantsPassword) {
@@ -166,13 +241,46 @@ exports.updateUser = asyncHandler(async (req, res) => {
     doc.role = resolveRole(doc.designation, role);
   }
   if (active !== undefined) doc.active = Boolean(active);
-  const modules = sanitizeModules(allowedModules);
-  if (modules !== undefined) doc.allowedModules = modules;
-  const actions = sanitizeActions(
-    allowedActions,
-    modules !== undefined ? modules : doc.allowedModules,
-  );
-  if (actions !== undefined) doc.allowedActions = actions;
+
+  // Role template assignment: copy permissions when staffRoleId changes (or is set).
+  if (staffRoleId !== undefined) {
+    const roleAssign = await resolveStaffRoleAssignment(staffRoleId);
+    if (roleAssign?.applyAcl) {
+      doc.staffRoleId = roleAssign.staffRoleId;
+      doc.role = roleAssign.authRole;
+      // If client also sent ACL, use that; otherwise apply role template.
+      if (Array.isArray(allowedModules) || Array.isArray(allowedActions)) {
+        const modules = Array.isArray(allowedModules)
+          ? sanitizeModules(allowedModules) || []
+          : doc.allowedModules;
+        doc.allowedModules = modules;
+        doc.allowedActions = Array.isArray(allowedActions)
+          ? sanitizeActions(allowedActions, modules) || []
+          : sanitizeActions(roleAssign.allowedActions, modules) || [];
+      } else {
+        doc.allowedModules = roleAssign.allowedModules;
+        doc.allowedActions = roleAssign.allowedActions;
+      }
+    } else {
+      doc.staffRoleId = null;
+      const modules = sanitizeModules(allowedModules);
+      if (modules !== undefined) doc.allowedModules = modules;
+      const actions = sanitizeActions(
+        allowedActions,
+        modules !== undefined ? modules : doc.allowedModules,
+      );
+      if (actions !== undefined) doc.allowedActions = actions;
+    }
+  } else {
+    const modules = sanitizeModules(allowedModules);
+    if (modules !== undefined) doc.allowedModules = modules;
+    const actions = sanitizeActions(
+      allowedActions,
+      modules !== undefined ? modules : doc.allowedModules,
+    );
+    if (actions !== undefined) doc.allowedActions = actions;
+  }
+
   if (reportsTo !== undefined) {
     if (!reportsTo) {
       doc.reportsTo = null;
@@ -187,6 +295,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   }
 
   await doc.save();
+  await doc.populate('staffRoleId', 'name authRole');
   return successResponse(res, formatStaff(doc), 'User updated');
 });
 

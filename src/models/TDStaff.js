@@ -30,6 +30,8 @@ const tdStaffSchema = new mongoose.Schema(
     // Manager this staff member reports to (SE → SM → SH). Null for the top of the chain.
     reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff', default: null },
     active: { type: Boolean, default: true },
+    // Optional named permission template from User Master Roles.
+    staffRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffRole', default: null },
     // Admin-panel modules this user may see. Empty = default access for their role.
     allowedModules: { type: [String], default: [] },
     // Optional action-level ACL (e.g. td_bookings:assign). Empty = all actions for allowed modules.

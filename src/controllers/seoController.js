@@ -28,6 +28,41 @@ exports.getRobots = asyncHandler(async (req, res) => {
   res.set('Content-Type', 'text/plain').set('Cache-Control', 'public, max-age=3600').send(buildRobotsTxt());
 });
 
+/** GET /llms.txt — AI agent (AEO) discovery file, mirrors the frontend static copy. */
+exports.getLlmsTxt = asyncHandler(async (req, res) => {
+  const dealer = (await DealerSettings.findOne().lean()) || {};
+  const lines = [
+    '# Patliputra VinFast',
+    '',
+    "> Bihar's first authorised VinFast electric vehicle dealership, located in Patna,",
+    '> Bihar, India. We sell, service and support the full VinFast EV lineup for',
+    '> customers across all 38 districts of Bihar.',
+    '',
+    `Company: ${dealer.dealerName || 'Patliputra VinFast'}`,
+    `Location: ${dealer.address || 'Plot No. 2421, NH 30, Bypass Road, Paijawa, Patna, Bihar 800009, India'}`,
+    `Phone: ${dealer.phone || '+91 92314 45060'}`,
+    `Website: ${absoluteUrl('/')}`,
+    '',
+    '## Products',
+    '',
+    ...SEO_MODELS.map(
+      (m) => `- ${m.name} — ${m.bodyType}, ${m.seats} seats. Variants: ${m.variants.join(', ')}.`,
+    ),
+    '',
+    '## Key pages',
+    '',
+    `- Home: ${absoluteUrl('/')}`,
+    ...SEO_MODELS.map((m) => `- ${m.name}: ${absoluteUrl(`/models/${m.key}`)}`),
+    `- Compare models: ${absoluteUrl('/compare')}`,
+    `- EV Buying Guide: ${absoluteUrl('/ev-buying-guide')}`,
+    `- FAQs: ${absoluteUrl('/faq')}`,
+    `- Book a test drive: ${absoluteUrl('/test-drive')}`,
+    `- District pages: ${absoluteUrl('/{district}/{model}')} (e.g. ${absoluteUrl('/patna/vinfast-vf6')})`,
+    '',
+  ];
+  res.set('Content-Type', 'text/plain').set('Cache-Control', 'public, max-age=3600').send(lines.join('\n'));
+});
+
 /**
  * GET /public/seo/global — site-wide SEO payload for every page:
  * default meta, Google verification token, Organization / AutoDealer /

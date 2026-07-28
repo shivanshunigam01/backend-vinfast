@@ -162,18 +162,22 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
     log.vehiclePhotoPublicId = uploaded.public_id;
   }
 
-  // Completion geolocation (sent by the executive's device).
+  // Completion geolocation (Google-pinned location from the executive's device / map).
   const lat = Number(endLat);
   const lng = Number(endLng);
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    log.endLocation = {
-      lat,
-      lng,
-      accuracy: Number.isFinite(Number(endAccuracy)) ? Number(endAccuracy) : undefined,
-      capturedAt: new Date(),
-    };
-    log.gpsRoute.push({ lat, lng, timestamp: new Date() });
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new ApiError(400, 'Completion location (lat/lng) is required — pin the test drive location on the map');
   }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    throw new ApiError(400, 'Invalid completion location coordinates');
+  }
+  log.endLocation = {
+    lat,
+    lng,
+    accuracy: Number.isFinite(Number(endAccuracy)) ? Number(endAccuracy) : undefined,
+    capturedAt: new Date(),
+  };
+  log.gpsRoute.push({ lat, lng, timestamp: new Date() });
 
   // Snapshot the driving licence data onto the completion record.
   log.dlNumber = booking.dlNumber || undefined;
@@ -238,4 +242,75 @@ exports.updateGpsRoute = asyncHandler(async (req, res) => {
   );
   if (!log) throw new ApiError(404, 'Log not found');
   return successResponse(res, log, 'GPS route updated');
+});
+
+/**
+ * Update customer photo and/or Google-pinned location on a completed (or started) TD log.
+ * PATCH /admin/td/logs/:logId/completion-media
+ */
+exports.updateCompletionMedia = asyncHandler(async (req, res) => {
+  const { logId } = req.params;
+  const { endLat, endLng, endAccuracy } = req.body || {};
+
+  const log = await TDLog.findById(logId);
+  if (!log) throw new ApiError(404, 'Test drive log not found');
+  if (!['STARTED', 'COMPLETED'].includes(log.status)) {
+    throw new ApiError(400, 'Can only update photo/location on an active or completed test drive');
+  }
+
+  const customerPhotoFile = req.files?.customerPhoto?.[0];
+  const vehiclePhotoFile = req.files?.vehiclePhoto?.[0];
+  if ((customerPhotoFile || vehiclePhotoFile) && !cloudinaryConfigured()) {
+    throw new ApiError(503, 'Image storage is not configured on the server');
+  }
+
+  if (customerPhotoFile) {
+    const uploaded = await uploadBufferToCloudinary(customerPhotoFile.buffer, {
+      folder: 'patliputra-vinfast/td-completion',
+      public_id: `td-customer-${log._id}-${Date.now()}`,
+    });
+    log.customerPhotoUrl = uploaded.secure_url;
+    log.customerPhotoPublicId = uploaded.public_id;
+  }
+  if (vehiclePhotoFile) {
+    const uploaded = await uploadBufferToCloudinary(vehiclePhotoFile.buffer, {
+      folder: 'patliputra-vinfast/td-completion',
+      public_id: `td-vehicle-${log._id}-${Date.now()}`,
+    });
+    log.vehiclePhotoUrl = uploaded.secure_url;
+    log.vehiclePhotoPublicId = uploaded.public_id;
+  }
+
+  const hasLat = endLat !== undefined && endLat !== '';
+  const hasLng = endLng !== undefined && endLng !== '';
+  if (hasLat || hasLng) {
+    const lat = Number(endLat);
+    const lng = Number(endLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new ApiError(400, 'Both endLat and endLng are required to update location');
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      throw new ApiError(400, 'Invalid location coordinates');
+    }
+    log.endLocation = {
+      lat,
+      lng,
+      accuracy: Number.isFinite(Number(endAccuracy)) ? Number(endAccuracy) : undefined,
+      capturedAt: new Date(),
+    };
+    log.gpsRoute.push({ lat, lng, timestamp: new Date() });
+  }
+
+  if (!customerPhotoFile && !vehiclePhotoFile && !hasLat && !hasLng) {
+    throw new ApiError(400, 'Provide a photo and/or location to update');
+  }
+
+  await log.save();
+  await log.populate([
+    { path: 'bookingId', select: 'bookingId slotDate slotTime' },
+    { path: 'vehicleId', select: 'vehicleId model registrationNo' },
+    { path: 'customerId', select: 'name mobile' },
+  ]);
+
+  return successResponse(res, log, 'Completion photo/location updated');
 });

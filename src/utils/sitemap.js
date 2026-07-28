@@ -43,6 +43,8 @@ function buildRobotsTxt() {
     'User-agent: *',
     'Allow: /',
     'Disallow: /admin',
+    'Disallow: /staff',
+    'Disallow: /customer',
     'Disallow: /api/',
     '',
     `Sitemap: ${absoluteUrl('/sitemap.xml')}`,

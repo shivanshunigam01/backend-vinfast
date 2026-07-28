@@ -122,6 +122,24 @@ async function persistManualMetaLeadInput(input, options = {}) {
     throw new ApiError(400, 'Name is required.');
   }
 
+  // Excel/bulk import: reject duplicate open leads instead of silently upserting.
+  if (options.namespace === 'ExcelImport') {
+    const { normalizeMobile, mobileVariants } = require('../utils/mobile');
+    const Lead = require('../models/Lead');
+    const mobile = normalizeMobile(input.mobile) || String(input.mobile).trim();
+    const variants = mobileVariants(mobile);
+    const open = await Lead.findOne({
+      mobile: { $in: variants.length ? variants : [mobile] },
+      status: { $nin: ['Lost', 'Delivered', 'Not Interested'] },
+    }).sort({ createdAt: -1 });
+    if (open) {
+      throw new ApiError(
+        409,
+        `Duplicate mobile — open lead already exists (${open.leadId || open.opportunityId || open._id}, stage: ${open.status})`,
+      );
+    }
+  }
+
   const payload = buildManualPayload(input, options);
   const leadDoc = await upsertLeadFromWebhook(payload);
   await applyCrmFieldsToLead(leadDoc._id, input);

@@ -1128,5 +1128,345 @@ exports.deleteCrmLead = asyncHandler(async (req, res) => {
   return successResponse(res, { _id: lead._id, leadId: lead.leadId }, `Lead ${ref} deleted`);
 });
 
+const XLSX = require('xlsx');
+const { normalizeMobile } = require('../utils/mobile');
+
+const CLOSED_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
+
+function cellStr(v) {
+  if (v == null) return '';
+  if (v instanceof Date) return v.toISOString();
+  return String(v).trim();
+}
+
+function parseSheetRows(workbook, sheetName) {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return [];
+  return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+}
+
+function headerKey(row, aliases) {
+  const map = {};
+  for (const [k, v] of Object.entries(row)) {
+    map[String(k).trim().toLowerCase().replace(/\s+/g, ' ')] = v;
+  }
+  for (const alias of aliases) {
+    const key = alias.toLowerCase();
+    if (map[key] != null && cellStr(map[key]) !== '') return cellStr(map[key]);
+    for (const [hk, hv] of Object.entries(map)) {
+      if (hk === key || hk.includes(key)) return cellStr(hv);
+    }
+  }
+  return '';
+}
+
+/**
+ * GET /admin/crm/leads/export — Excel with Leads + FollowUps sheets.
+ */
+exports.exportCrmLeads = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+
+  const query = await buildLeadQuery(req.admin, req.query);
+  const leads = await Lead.find(query)
+    .populate(LEAD_POPULATE)
+    .sort(CRM_LEAD_LIST_SORT)
+    .limit(5000)
+    .lean();
+
+  const leadIds = leads.map((l) => l._id);
+  const followUps = await LeadFollowUp.find({ leadId: { $in: leadIds } })
+    .sort({ createdAt: 1 })
+    .lean();
+
+  const leadById = new Map(leads.map((l) => [String(l._id), l]));
+
+  const leadRows = leads.map((l) => ({
+    LeadId: l.leadId || '',
+    OpportunityId: l.opportunityId || '',
+    Name: l.name || '',
+    Mobile: l.mobile || '',
+    Email: l.email || '',
+    City: l.city || '',
+    Model: l.model || '',
+    Source: l.source || '',
+    Status: l.status || '',
+    Remarks: l.remarks || '',
+    AssignedToEmail: l.assignedToEmail || l.assignedTo?.email || '',
+    AssignedToName: l.assignedTo?.name || '',
+    NextFollowUp: l.nextFollowUp ? new Date(l.nextFollowUp).toISOString() : '',
+    FinanceNeeded: l.financeNeeded ? 'Yes' : 'No',
+    ExchangeNeeded: l.exchangeNeeded ? 'Yes' : 'No',
+    CreatedAt: l.createdAt ? new Date(l.createdAt).toISOString() : '',
+  }));
+
+  const followUpRows = followUps.map((f) => {
+    const lead = leadById.get(String(f.leadId));
+    return {
+      LeadId: lead?.leadId || '',
+      Mobile: lead?.mobile || '',
+      Note: f.note || '',
+      ScheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : '',
+      CompletedAt: f.completedAt ? new Date(f.completedAt).toISOString() : '',
+      Outcome: f.outcome || '',
+      Status: f.status || '',
+      CreatedAt: f.createdAt ? new Date(f.createdAt).toISOString() : '',
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(leadRows), 'Leads');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(followUpRows), 'FollowUps');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `crm-leads-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.status(200).send(buffer);
+});
+
+/**
+ * POST /admin/crm/leads/import
+ * Body JSON: { leads: [...], followUps: [...] } OR multipart file.
+ */
+exports.importCrmLeads = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+
+  let leadRows = [];
+  let followUpRows = [];
+
+  if (req.file?.buffer) {
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const sheetNames = workbook.SheetNames || [];
+    const leadsSheet =
+      sheetNames.find((n) => /^leads?$/i.test(n)) ||
+      sheetNames[0];
+    const followSheet = sheetNames.find((n) => /follow/i.test(n));
+    leadRows = parseSheetRows(workbook, leadsSheet);
+    if (followSheet) followUpRows = parseSheetRows(workbook, followSheet);
+  } else {
+    leadRows = Array.isArray(req.body?.leads) ? req.body.leads : [];
+    followUpRows = Array.isArray(req.body?.followUps) ? req.body.followUps : [];
+  }
+
+  if (!leadRows.length) {
+    throw new ApiError(400, 'No lead rows found to import. Provide a Leads sheet or leads array.');
+  }
+  if (leadRows.length > 500) {
+    throw new ApiError(400, 'Maximum 500 leads per import.');
+  }
+
+  const results = { created: 0, failed: [], followUpsCreated: 0 };
+  /** mobile (normalized) -> created lead _id for follow-up linking in this batch */
+  const createdByMobile = new Map();
+  const seenInBatch = new Set();
+
+  for (let i = 0; i < leadRows.length; i += 1) {
+    const raw = leadRows[i];
+    const rowNum = i + 2; // header + 1-based
+    try {
+      const name =
+        cellStr(raw.name ?? raw.Name) ||
+        headerKey(raw, ['name', 'customer name', 'full name', 'lead name']);
+      const mobileRaw =
+        cellStr(raw.mobile ?? raw.Mobile) ||
+        headerKey(raw, ['mobile', 'phone', 'contact', 'mobile number']);
+      const mobile = normalizeMobile(mobileRaw) || mobileRaw.replace(/\D/g, '').slice(-10);
+
+      if (!name || !mobile) {
+        throw new Error('Name and Mobile are required');
+      }
+      if (seenInBatch.has(mobile)) {
+        throw new Error('Duplicate mobile within this import file');
+      }
+      seenInBatch.add(mobile);
+
+      const { mobileVariants } = require('../utils/mobile');
+      const variants = mobileVariants(mobile);
+      const open = await Lead.findOne({
+        mobile: { $in: variants.length ? variants : [mobile] },
+        status: { $nin: CLOSED_STATUSES },
+      }).sort({ createdAt: -1 });
+      if (open) {
+        throw new Error(
+          `Duplicate mobile — open lead already exists (${open.leadId || open.opportunityId || open._id}, stage: ${open.status})`,
+        );
+      }
+
+      const email =
+        cellStr(raw.email ?? raw.Email) || headerKey(raw, ['email', 'email id']) || undefined;
+      const city =
+        cellStr(raw.city ?? raw.City) || headerKey(raw, ['city', 'state', 'location']) || 'Patna';
+      const model =
+        cellStr(raw.model ?? raw.Model) ||
+        headerKey(raw, ['model', 'interested model', 'vehicle']) ||
+        'VF 7';
+      const source =
+        cellStr(raw.source ?? raw.Source) || headerKey(raw, ['source', 'lead source']) || 'Excel Import';
+      const status =
+        cellStr(raw.status ?? raw.Status) || headerKey(raw, ['status', 'lead status']) || 'Enquiry';
+      const remarks =
+        cellStr(raw.remarks ?? raw.Remarks) || headerKey(raw, ['remarks', 'notes']) || undefined;
+      const assignedToEmail =
+        cellStr(raw.assignedToEmail ?? raw.AssignedToEmail) ||
+        headerKey(raw, ['assigned to email', 'assignee email']) ||
+        undefined;
+
+      let assignedTo = null;
+      let assignedEmail = assignedToEmail;
+      if (assignedToEmail) {
+        const staff = await TDStaff.findOne({
+          email: String(assignedToEmail).trim().toLowerCase(),
+          active: true,
+        }).select('_id email');
+        if (staff) {
+          assignedTo = staff._id;
+          assignedEmail = staff.email;
+        }
+      } else if (req.admin.role === 'executive') {
+        assignedTo = toObjectId(req.admin._id) || req.admin._id;
+        assignedEmail = req.admin.email;
+      }
+
+      const financeRaw =
+        cellStr(raw.financeNeeded ?? raw.FinanceNeeded) || headerKey(raw, ['finance', 'finance needed']);
+      const exchangeRaw =
+        cellStr(raw.exchangeNeeded ?? raw.ExchangeNeeded) ||
+        headerKey(raw, ['exchange', 'exchange needed']);
+
+      const { lead } = await intakePvLead({
+        name,
+        mobile,
+        email,
+        city,
+        model: normalizeLeadModelForStorage(model),
+        source,
+        status: normalizeStageLabel(status) || 'Enquiry',
+        remarks,
+        assignedTo: assignedTo || undefined,
+        assignedToEmail: assignedEmail || undefined,
+        financeNeeded: /^(yes|y|true|1)$/i.test(financeRaw),
+        exchangeNeeded: /^(yes|y|true|1)$/i.test(exchangeRaw),
+        changedBy: req.admin._id,
+        historyReason: `Lead imported from Excel by ${req.admin.name}`,
+      });
+
+      createdByMobile.set(mobile, lead._id);
+      results.created += 1;
+
+      // Optional next follow-up date on lead row
+      const nextFu =
+        cellStr(raw.nextFollowUp ?? raw.NextFollowUp) || headerKey(raw, ['next follow up', 'next followup']);
+      if (nextFu) {
+        const d = new Date(nextFu);
+        if (!Number.isNaN(d.getTime())) {
+          lead.nextFollowUp = d;
+          await lead.save();
+        }
+      }
+    } catch (err) {
+      results.failed.push({
+        row: rowNum,
+        name: cellStr(raw?.name ?? raw?.Name) || headerKey(raw || {}, ['name']),
+        mobile: cellStr(raw?.mobile ?? raw?.Mobile) || headerKey(raw || {}, ['mobile', 'phone']),
+        message: err?.message || 'Failed to import row',
+      });
+    }
+  }
+
+  // Import follow-ups linked by Mobile or LeadId
+  for (let i = 0; i < followUpRows.length; i += 1) {
+    const raw = followUpRows[i];
+    try {
+      const note =
+        cellStr(raw.note ?? raw.Note) || headerKey(raw, ['note', 'follow up note', 'remarks']);
+      if (!note) continue;
+      const mobileRaw =
+        cellStr(raw.mobile ?? raw.Mobile) || headerKey(raw, ['mobile', 'phone']);
+      const mobile = normalizeMobile(mobileRaw) || mobileRaw.replace(/\D/g, '').slice(-10);
+      const leadIdCode =
+        cellStr(raw.leadId ?? raw.LeadId) || headerKey(raw, ['lead id', 'leadid']);
+
+      let leadDoc = null;
+      if (mobile && createdByMobile.has(mobile)) {
+        leadDoc = await Lead.findById(createdByMobile.get(mobile));
+      }
+      if (!leadDoc && leadIdCode) {
+        leadDoc = await Lead.findOne({ leadId: leadIdCode });
+      }
+      if (!leadDoc && mobile) {
+        leadDoc = await Lead.findOne({ mobile, status: { $nin: CLOSED_STATUSES } }).sort({
+          createdAt: -1,
+        });
+      }
+      if (!leadDoc) {
+        throw new Error(`No lead found for follow-up (mobile: ${mobile || '—'}, leadId: ${leadIdCode || '—'})`);
+      }
+
+      const scheduledAtRaw =
+        cellStr(raw.scheduledAt ?? raw.ScheduledAt) || headerKey(raw, ['scheduled at', 'scheduled']);
+      const completedAtRaw =
+        cellStr(raw.completedAt ?? raw.CompletedAt) || headerKey(raw, ['completed at', 'completed']);
+      const outcome =
+        cellStr(raw.outcome ?? raw.Outcome) || headerKey(raw, ['outcome']) || undefined;
+      const fuStatus =
+        cellStr(raw.status ?? raw.Status) || headerKey(raw, ['status']) || 'pending';
+
+      await LeadFollowUp.create({
+        leadId: leadDoc._id,
+        createdBy: req.admin._id || req.tdStaff?._id,
+        note,
+        scheduledAt: scheduledAtRaw ? new Date(scheduledAtRaw) : undefined,
+        completedAt: completedAtRaw ? new Date(completedAtRaw) : undefined,
+        outcome,
+        status: ['pending', 'completed', 'cancelled'].includes(fuStatus.toLowerCase())
+          ? fuStatus.toLowerCase()
+          : 'pending',
+      });
+      results.followUpsCreated += 1;
+    } catch (err) {
+      results.failed.push({
+        row: `FollowUp:${i + 2}`,
+        name: '',
+        mobile: cellStr(raw?.mobile ?? raw?.Mobile) || '',
+        message: err?.message || 'Failed to import follow-up',
+      });
+    }
+  }
+
+  return successResponse(
+    res,
+    results,
+    `Imported ${results.created} lead(s), ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`,
+    200,
+    { total: leadRows.length, failed: results.failed.length },
+  );
+});
+
+/**
+ * POST /admin/crm/leads/bulk-delete — delete multiple junk leads at once.
+ */
+exports.bulkDeleteCrmLeads = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  assertAdminEditRights(req.admin);
+
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) throw new ApiError(400, 'Provide a non-empty "ids" array');
+  if (ids.length > 100) throw new ApiError(400, 'Maximum 100 leads per bulk delete');
+
+  const leads = await Lead.find({ _id: { $in: ids } });
+  const foundIds = leads.map((l) => l._id);
+  await Promise.all([
+    LeadFollowUp.deleteMany({ leadId: { $in: foundIds } }),
+    LeadStageHistory.deleteMany({ leadId: { $in: foundIds } }),
+    Lead.deleteMany({ _id: { $in: foundIds } }),
+  ]);
+
+  return successResponse(
+    res,
+    { deleted: foundIds.length, requested: ids.length },
+    `Deleted ${foundIds.length} lead(s)`,
+  );
+});
+
 module.exports.buildLeadQuery = buildLeadQuery;
 module.exports.formatCrmLead = formatCrmLead;

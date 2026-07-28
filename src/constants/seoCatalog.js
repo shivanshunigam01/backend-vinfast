@@ -148,7 +148,11 @@ const DISTRICT_KEYWORD_TEMPLATES = [
   'Electric Car Price {district}',
 ];
 
-/** Static site routes included in the sitemap (frontend URL architecture). */
+/**
+ * Static site routes included in the sitemap. Every path here MUST exist as a
+ * live route in career-section-nanak/src/App.tsx — a sitemap that lists 404s
+ * hurts crawl trust. Add new content pages here as they ship.
+ */
 const STATIC_ROUTES = [
   { path: '/', priority: 1.0, changefreq: 'daily' },
   { path: '/vinfast-vf6', priority: 0.9, changefreq: 'weekly' },
@@ -168,13 +172,9 @@ const STATIC_ROUTES = [
   { path: '/compare/vinfast-vf7-vs-hyundai-creta-electric', priority: 0.7, changefreq: 'monthly' },
   { path: '/compare/vinfast-vf7-vs-mahindra-xev-9e', priority: 0.7, changefreq: 'monthly' },
   { path: '/ev-buying-guide', priority: 0.7, changefreq: 'monthly' },
-  { path: '/finance', priority: 0.8, changefreq: 'monthly' },
   { path: '/emi-calculator', priority: 0.8, changefreq: 'monthly' },
   { path: '/charging-calculator', priority: 0.7, changefreq: 'monthly' },
   { path: '/running-cost-calculator', priority: 0.7, changefreq: 'monthly' },
-  { path: '/exchange', priority: 0.7, changefreq: 'monthly' },
-  { path: '/insurance', priority: 0.7, changefreq: 'monthly' },
-  { path: '/corporate-sales', priority: 0.7, changefreq: 'monthly' },
   { path: '/test-drive', priority: 0.9, changefreq: 'weekly' },
   { path: '/book-now', priority: 0.8, changefreq: 'weekly' },
   { path: '/charging-infrastructure', priority: 0.7, changefreq: 'monthly' },

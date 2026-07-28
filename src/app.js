@@ -82,8 +82,10 @@ app.get('/api/v1/health', (req, res) => {
 const seoController = require('./controllers/seoController');
 app.get('/sitemap.xml', seoController.getSitemap);
 app.get('/robots.txt', seoController.getRobots);
+app.get('/llms.txt', seoController.getLlmsTxt);
 app.get('/api/v1/sitemap.xml', seoController.getSitemap);
 app.get('/api/v1/robots.txt', seoController.getRobots);
+app.get('/api/v1/llms.txt', seoController.getLlmsTxt);
 
 app.use('/api/v1', metaLeadsRoutes);
 app.use('/api/v1', publicRoutes);
