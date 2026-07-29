@@ -544,11 +544,14 @@ export default function AdminCrmLeads() {
               <SelectValue placeholder="Staff" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All staff</SelectItem>
+              <SelectItem value="all">All (my team)</SelectItem>
               <SelectItem value="unassigned">Unassigned</SelectItem>
               {staffUsers.map((e) => (
                 <SelectItem key={e._id} value={e._id}>
                   {e.name}{e.designationLabel ? ` · ${e.designationLabel}` : ""}
+                  {adminUser && (e._id === adminUser._id || e.email?.toLowerCase() === adminUser.email?.toLowerCase())
+                    ? " · Me"
+                    : ""}
                 </SelectItem>
               ))}
             </SelectContent>

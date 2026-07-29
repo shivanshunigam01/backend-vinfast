@@ -9,6 +9,7 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
+const { isTeamScopedUser, resolveStaffIdsForUser } = require('../utils/leadAssignment');
 
 const STAFF_ROLES = ['executive', 'manager'];
 const StaffRole = require('../models/StaffRole');
@@ -371,21 +372,27 @@ exports.deleteUser = asyncHandler(async (req, res) => {
   );
 });
 
-async function listAssignableStaff() {
+async function listAssignableStaff(viewer) {
   // Include custom positions added via User Master, not just the fixed hierarchy.
   const docs = await TDStaff.find({ active: true })
     .select('name email role designation reportsTo active')
     .sort({ designation: 1, name: 1 })
     .lean();
 
-  return docs.map((row) => ({
+  let filtered = docs;
+  if (viewer && isTeamScopedUser(viewer)) {
+    const allowed = new Set(await resolveStaffIdsForUser(viewer));
+    filtered = docs.filter((row) => allowed.has(String(row._id)));
+  }
+
+  return filtered.map((row) => ({
     ...row,
     designationLabel: DESIGNATION_LABELS[row.designation] || row.designation,
   }));
 }
 
 exports.listAssignable = asyncHandler(async (req, res) => {
-  const data = await listAssignableStaff();
+  const data = await listAssignableStaff(req.admin);
   return successResponse(res, data);
 });
 

@@ -16,6 +16,7 @@ const {
   isExecutiveScopedUser,
   isTeamScopedUser,
   assignedExecutiveFilterAsync,
+  assignedExecutiveIdsFilter,
   bookingAssignedToStaff,
   applyBookingExecutiveAssignment,
   repairExecutiveBookingAssignments,
@@ -216,10 +217,37 @@ function assertAdminEditRights(admin) {
 exports.listBookings = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
+  const andClauses = [];
 
   // MoM #12: SM/SH/SE limited to reporting tree; MD/CEO/GM see all.
   if (isTeamScopedUser(req.admin)) {
-    Object.assign(query, await assignedExecutiveFilterAsync(req.admin));
+    andClauses.push(await assignedExecutiveFilterAsync(req.admin));
+  }
+
+  // Optional narrow: ?assignedExecutive= / ?assignedTo= (staff id | unassigned)
+  const assigneeParam = req.query.assignedExecutive || req.query.assignedTo;
+  if (assigneeParam) {
+    if (String(assigneeParam) === 'unassigned') {
+      andClauses.push({
+        $or: [{ assignedExecutive: { $exists: false } }, { assignedExecutive: null }],
+      });
+    } else {
+      let allowed = true;
+      if (isTeamScopedUser(req.admin)) {
+        const allowedIds = await resolveStaffIdsForUser(req.admin);
+        allowed = allowedIds.includes(String(assigneeParam));
+      }
+      if (!allowed) {
+        andClauses.push({ _id: null });
+      } else {
+        const staff = await TDStaff.findById(assigneeParam).select('email').lean();
+        andClauses.push(assignedExecutiveIdsFilter([assigneeParam], staff?.email));
+      }
+    }
+  }
+
+  if (andClauses.length) {
+    query.$and = [...(query.$and || []), ...andClauses];
   }
 
   let [docs, total] = await Promise.all([
@@ -227,7 +255,14 @@ exports.listBookings = asyncHandler(async (req, res) => {
     TDBooking.countDocuments(query),
   ]);
 
-  if (total === 0 && page === 1 && !req.query.status && !req.query.date && !isTeamScopedUser(req.admin)) {
+  if (
+    total === 0 &&
+    page === 1 &&
+    !req.query.status &&
+    !req.query.date &&
+    !assigneeParam &&
+    !isTeamScopedUser(req.admin)
+  ) {
     await syncAllLegacyTestDrives();
     [docs, total] = await Promise.all([
       TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
@@ -258,9 +293,8 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
 });
 
 exports.listExecutives = asyncHandler(async (req, res) => {
-  const staff = await TDStaff.find({ active: true })
-    .select('name email role designation')
-    .sort({ designation: 1, name: 1 });
+  const { listAssignableStaff } = require('./tdUsersController');
+  const staff = await listAssignableStaff(req.admin);
 
   const data = staff.map((s) => ({
     _id: s._id,
@@ -469,7 +503,20 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
  * Managers/superadmins only. Releases any BOOKED demo vehicle back to AVAILABLE.
  */
 exports.deleteBooking = asyncHandler(async (req, res) => {
-  if (!['manager', 'superadmin'].includes(req.admin.role)) {
+  const designation = String(req.admin.designation || '').toLowerCase();
+  const managerDesignations = new Set([
+    'sales_manager',
+    'sales_head',
+    'branch_manager',
+    'gm',
+    'ceo',
+    'md',
+  ]);
+  const canDelete =
+    ['manager', 'superadmin'].includes(req.admin.role) ||
+    managerDesignations.has(designation) ||
+    req.admin.userType === 'admin';
+  if (!canDelete) {
     throw new ApiError(403, 'Only managers and admins can delete bookings');
   }
 
@@ -528,7 +575,12 @@ exports.acceptAssignment = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   await assertBookingReadable(doc, req.admin);
 
-  if (!bookingAssignedToStaff(doc, req.admin) && !['manager', 'superadmin'].includes(req.admin.role)) {
+  const staffIds = await resolveStaffIdsForUser(req.admin);
+  const assignedId = doc?.assignedExecutive?._id || doc?.assignedExecutive;
+  const isAssignee =
+    bookingAssignedToStaff(doc, req.admin._id, req.admin.email) ||
+    (assignedId && staffIds.includes(String(assignedId)));
+  if (!isAssignee && !['manager', 'superadmin'].includes(req.admin.role)) {
     throw new ApiError(403, 'Only the assigned executive can accept this assignment');
   }
   if (doc.assignmentStatus !== 'PENDING_ACCEPTANCE') {
@@ -554,7 +606,12 @@ exports.rejectAssignment = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   await assertBookingReadable(doc, req.admin);
 
-  if (!bookingAssignedToStaff(doc, req.admin) && !['manager', 'superadmin'].includes(req.admin.role)) {
+  const staffIds = await resolveStaffIdsForUser(req.admin);
+  const assignedId = doc?.assignedExecutive?._id || doc?.assignedExecutive;
+  const isAssignee =
+    bookingAssignedToStaff(doc, req.admin._id, req.admin.email) ||
+    (assignedId && staffIds.includes(String(assignedId)));
+  if (!isAssignee && !['manager', 'superadmin'].includes(req.admin.role)) {
     throw new ApiError(403, 'Only the assigned executive can reject this assignment');
   }
   if (doc.assignmentStatus !== 'PENDING_ACCEPTANCE') {

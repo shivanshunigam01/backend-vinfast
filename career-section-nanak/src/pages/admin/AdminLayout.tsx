@@ -3,7 +3,7 @@ import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
   Tag, Bell, Home, Image,
-  CalendarCheck, Gauge, BarChart3, Building2, ChevronRight as ChevRight, User,
+  CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck
 } from "lucide-react";
 import vinLogo from "@/assets/patliputra-vinfast-logo.png";
@@ -99,7 +99,12 @@ const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [tdMenuOpen, setTdMenuOpen] = useState(false);
+  const [tdMenuOpen, setTdMenuOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (window.location.pathname.startsWith("/admin/td") ||
+        window.location.pathname.startsWith("/admin/stock")),
+  );
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -107,6 +112,15 @@ const AdminLayout = () => {
 
   const adminUser = getAdminUser();
   const fieldStaff = isFieldStaffUser(adminUser);
+
+  useEffect(() => {
+    if (
+      location.pathname.startsWith("/admin/td") ||
+      location.pathname.startsWith("/admin/stock")
+    ) {
+      setTdMenuOpen(true);
+    }
+  }, [location.pathname]);
   const fullAdmin = canAccessFullAdmin(adminUser);
   // Per-user module access configured in User Master (null = no restriction).
   const restrictedModules = getRestrictedModules(adminUser);
@@ -422,44 +436,34 @@ const AdminLayout = () => {
               )}
 
               {visibleTdItems.length > 0 && (
-              <div className="pt-0.5">
-                <div className="mx-1 my-1 border-t border-border/50" />
-                <Popover open={tdMenuOpen} onOpenChange={setTdMenuOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
-                        location.pathname.startsWith("/admin/td") || location.pathname.startsWith("/admin/stock")
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                      }`}
-                    >
-                      <CalendarCheck className="h-4 w-4 shrink-0 opacity-90" />
-                      <span className="truncate flex-1 text-left">TD Management</span>
-                      <ChevRight className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    side="right"
-                    align="start"
-                    sideOffset={8}
-                    className="w-56 p-1.5"
+                <div className="pt-0.5">
+                  <div className="mx-1 my-1 border-t border-border/50" />
+                  <button
+                    type="button"
+                    onClick={() => setTdMenuOpen((o) => !o)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                      location.pathname.startsWith("/admin/td") || location.pathname.startsWith("/admin/stock")
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                    }`}
+                    aria-expanded={tdMenuOpen}
                   >
-                    <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      TD Management
-                    </p>
-                    <div className="space-y-px">
+                    <CalendarCheck className="h-4 w-4 shrink-0 opacity-90" />
+                    <span className="truncate flex-1 text-left">TD Management</span>
+                    <ChevDown
+                      className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${tdMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {tdMenuOpen ? (
+                    <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
                       {visibleTdItems.map((item) => {
                         const isActive = location.pathname === item.path;
                         return (
                           <Link
                             key={item.path}
                             to={item.path}
-                            onClick={() => {
-                              setTdMenuOpen(false);
-                              setSidebarOpen(false);
-                            }}
-                            className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
                               isActive
                                 ? "bg-primary/10 text-primary"
                                 : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -471,9 +475,8 @@ const AdminLayout = () => {
                         );
                       })}
                     </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
+                  ) : null}
+                </div>
               )}
             </>
           )}

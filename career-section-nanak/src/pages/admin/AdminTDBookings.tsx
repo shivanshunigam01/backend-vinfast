@@ -132,11 +132,13 @@ export default function AdminTDBookings() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterDate, setFilterDate] = useState("");
+  const [filterExecutive, setFilterExecutive] = useState("all");
   const [selected, setSelected] = useState<Booking | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [executives, setExecutives] = useState<Executive[]>([]);
   const [assignExecutiveId, setAssignExecutiveId] = useState("");
   const [cancelDialog, setCancelDialog] = useState<Booking | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<Booking | null>(null);
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [rescheduleDialog, setRescheduleDialog] = useState<Booking | null>(null);
@@ -183,6 +185,12 @@ export default function AdminTDBookings() {
       const params = new URLSearchParams({ limit: "100" });
       if (filterStatus !== "all") params.set("status", filterStatus);
       if (filterDate) params.set("date", filterDate);
+      if (filterExecutive !== "all") {
+        params.set(
+          "assignedExecutive",
+          filterExecutive === "unassigned" ? "unassigned" : filterExecutive,
+        );
+      }
       const { data } = await adminGet<Booking[]>(`/admin/td/bookings?${params}`);
       setBookings(data ?? []);
     } catch (e) {
@@ -190,7 +198,7 @@ export default function AdminTDBookings() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterDate]);
+  }, [filterStatus, filterDate, filterExecutive]);
 
   useEffect(() => { void fetchBookings(); }, [fetchBookings]);
 
@@ -347,16 +355,14 @@ export default function AdminTDBookings() {
     }
   };
 
-  const handleDeleteBooking = async (booking: Booking) => {
-    if (!canEditDetails) return;
-    if (!window.confirm(`Permanently delete booking ${booking.bookingId}? This removes the record from the database and cannot be undone.`)) {
-      return;
-    }
+  const handleDeleteBooking = async () => {
+    if (!deleteDialog || !canDelete) return;
     setActionLoading(true);
     try {
-      await adminDeleteJson(`/admin/td/bookings/${booking._id}`);
-      toast.success("Booking deleted");
-      setSelected(null);
+      await adminDeleteJson(`/admin/td/bookings/${deleteDialog._id}`);
+      toast.success(`Booking ${deleteDialog.bookingId} deleted`);
+      if (selected?._id === deleteDialog._id) setSelected(null);
+      setDeleteDialog(null);
       void fetchBookings();
     } catch (e) {
       toast.error(formatApiErrors(e));
@@ -541,6 +547,7 @@ export default function AdminTDBookings() {
           </h1>
           <p className="text-muted-foreground text-sm">
             {filtered.length} booking(s) · website test drives sync here automatically
+            {canDelete ? " · open a booking to Cancel or permanently Delete" : ""}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -578,7 +585,7 @@ export default function AdminTDBookings() {
       />
 
       {/* Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search booking / customer..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 bg-secondary/50" />
@@ -590,6 +597,24 @@ export default function AdminTDBookings() {
             {ALL_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
+        {(canAssign || canEditDetails) ? (
+          <Select value={filterExecutive} onValueChange={setFilterExecutive}>
+            <SelectTrigger className="bg-secondary/50"><SelectValue placeholder="Executive" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All (my team)</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {executives.map((e) => (
+                <SelectItem key={e._id} value={e._id}>
+                  {e.name}
+                  {e.designationLabel ? ` · ${e.designationLabel}` : ""}
+                  {adminUser && (e._id === adminUser._id || e.email?.toLowerCase() === adminUser.email?.toLowerCase())
+                    ? " · Me"
+                    : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <Input
           type="date"
           value={filterDate}
@@ -1095,7 +1120,7 @@ export default function AdminTDBookings() {
                             variant="outline"
                             className="h-10 text-destructive hover:text-destructive hover:bg-destructive/10"
                             disabled={actionLoading || selected.bookingStatus === "IN_PROGRESS"}
-                            onClick={() => void handleDeleteBooking(selected)}
+                            onClick={() => setDeleteDialog(selected)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" /> Delete
                           </Button>
@@ -1158,13 +1183,13 @@ export default function AdminTDBookings() {
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
                           This booking is <span className="font-medium text-foreground">{selected.bookingStatus}</span> — no further actions available.
                         </div>
-                        {canEditDetails ? (
+                        {canDelete ? (
                           <Button
                             size="sm"
                             variant="outline"
                             className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            disabled={actionLoading}
-                            onClick={() => void handleDeleteBooking(selected)}
+                            disabled={actionLoading || selected.bookingStatus === "IN_PROGRESS"}
+                            onClick={() => setDeleteDialog(selected)}
                           >
                             <Trash2 className="w-4 h-4 mr-2" /> Delete record
                           </Button>
@@ -1264,6 +1289,37 @@ export default function AdminTDBookings() {
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />} Confirm Cancel
               </Button>
               <Button variant="outline" className="flex-1" onClick={() => setCancelDialog(null)}>Keep Booking</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Permanent delete — managers only; distinct from Cancel */}
+      <Dialog open={!!deleteDialog} onOpenChange={(o) => !o && setDeleteDialog(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader><DialogTitle>Delete booking permanently?</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This permanently removes{" "}
+              <span className="text-foreground font-mono">{deleteDialog?.bookingId}</span> from the database.
+              Prefer <strong>Cancel booking</strong> if you only need to mark it cancelled and keep the history.
+            </p>
+            {deleteDialog?.bookingStatus === "IN_PROGRESS" ? (
+              <p className="text-xs text-destructive">Cannot delete while a drive is in progress — complete or cancel it first.</p>
+            ) : null}
+            <div className="flex gap-3">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={() => void handleDeleteBooking()}
+                disabled={actionLoading || deleteDialog?.bookingStatus === "IN_PROGRESS"}
+              >
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Delete forever
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteDialog(null)}>
+                Keep record
+              </Button>
             </div>
           </div>
         </DialogContent>

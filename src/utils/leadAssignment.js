@@ -314,6 +314,7 @@ module.exports = {
   leadReadableByAdmin,
   applyLeadAssignment,
   repairExecutiveLeadAssignments,
+  assignedExecutiveIdsFilter,
   assignedExecutiveFilterAsync,
   bookingAssignedToStaff,
   applyBookingExecutiveAssignment,

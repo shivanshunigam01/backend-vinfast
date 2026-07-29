@@ -24,6 +24,7 @@ const {
   isTeamScopedUser,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
+  resolveStaffIdsForUser,
   leadAssignedToStaff,
   leadReadableByAdmin,
   applyLeadAssignment,
@@ -338,9 +339,24 @@ function formatCrmLead(doc) {
 async function buildLeadQuery(admin, queryParams = {}) {
   const query = {};
   // MoM #12: SE/SM/SH/BM see own + reporting subtree; MD/CEO/GM/superadmin see all.
+  // Team-scoped users may further narrow with ?assignedTo= (self / SE in subtree / unassigned).
   if (isTeamScopedUser(admin)) {
     query.$and = query.$and || [];
     query.$and.push(await assignedToStaffFilterAsync(admin));
+
+    if (queryParams.assignedTo) {
+      if (queryParams.assignedTo === 'unassigned') {
+        query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
+      } else {
+        const allowedIds = await resolveStaffIdsForUser(admin);
+        if (!allowedIds.includes(String(queryParams.assignedTo))) {
+          query.$and.push({ _id: null });
+        } else {
+          const assignee = await TDStaff.findById(queryParams.assignedTo).select('email').lean();
+          query.$and.push(assignedToStaffFilter(queryParams.assignedTo, assignee?.email));
+        }
+      }
+    }
   } else if (queryParams.assignedTo) {
     if (queryParams.assignedTo === 'unassigned') {
       query.$and = query.$and || [];
