@@ -12,9 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import {
   CalendarCheck, Search, RefreshCw, Car, Clock, Building2,
-  CheckCircle2, XCircle, AlertTriangle, Loader2, Eye, UserCheck, Ban, Play, CalendarClock, Lock, Pencil, Trash2
+  CheckCircle2, XCircle, AlertTriangle, Loader2, Eye, UserCheck, Ban, Play, CalendarClock, Lock, Pencil, Trash2,
+  CheckSquare, Square, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 
 import { formatTime12h } from "@/lib/tdSlotSchedule";
 import { designationLabel } from "@/lib/staffRoles";
@@ -139,6 +142,9 @@ export default function AdminTDBookings() {
   const [assignExecutiveId, setAssignExecutiveId] = useState("");
   const [cancelDialog, setCancelDialog] = useState<Booking | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<Booking | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [rescheduleDialog, setRescheduleDialog] = useState<Booking | null>(null);
@@ -371,6 +377,59 @@ export default function AdminTDBookings() {
     }
   };
 
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkDeleteOpen(false);
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = filtered.map((b) => b._id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteBookings = async () => {
+    if (!canDelete || selectedIds.size === 0) return;
+    setActionLoading(true);
+    try {
+      const result = await adminPostJson<{
+        deleted: number;
+        requested: number;
+        skippedInProgress?: string[];
+      }>("/admin/td/bookings/bulk-delete", { ids: [...selectedIds] });
+      const skipped = result.skippedInProgress?.length ?? 0;
+      toast.success(
+        skipped
+          ? `Deleted ${result.deleted} booking(s); skipped ${skipped} in progress`
+          : `Deleted ${result.deleted} booking(s)`,
+      );
+      exitSelectMode();
+      void fetchBookings();
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleStatusUpdate = async (id: string, status: string) => {
     setActionLoading(true);
     try {
@@ -573,6 +632,19 @@ export default function AdminTDBookings() {
             <CalendarClock className="w-4 h-4 mr-2" /> New booking
           </Button>
           ) : null}
+          {canDelete ? (
+            <Button
+              variant={selectMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                if (selectMode) exitSelectMode();
+                else setSelectMode(true);
+              }}
+            >
+              {selectMode ? <X className="w-4 h-4 mr-2" /> : <CheckSquare className="w-4 h-4 mr-2" />}
+              {selectMode ? "Cancel select" : "Select"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -635,15 +707,61 @@ export default function AdminTDBookings() {
           <p>No bookings found</p>
         </div>
       ) : (
+        <>
+        {selectMode && canDelete ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-secondary/30 px-3 py-2">
+            <Button type="button" variant="outline" size="sm" onClick={toggleSelectAllVisible}>
+              {filtered.length > 0 && filtered.every((b) => selectedIds.has(b._id)) ? (
+                <><Square className="w-4 h-4 mr-2" /> Deselect all</>
+              ) : (
+                <><CheckSquare className="w-4 h-4 mr-2" /> Select all</>
+              )}
+            </Button>
+            <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={selectedIds.size === 0 || actionLoading}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Delete selected
+            </Button>
+          </div>
+        ) : null}
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((b) => (
-            <Card key={b._id} className="bg-card border-border/50 p-4 space-y-3 hover:border-primary/30 transition-colors">
+            <Card
+              key={b._id}
+              className={cn(
+                "bg-card border-border/50 p-4 space-y-3 transition-colors",
+                !selectMode && "hover:border-primary/30",
+                selectMode && selectedIds.has(b._id) && "border-primary/50 bg-primary/5",
+              )}
+            >
               {/* Top row */}
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
+                <div className="flex items-start gap-2 min-w-0">
+                  {selectMode && canDelete ? (
+                    <Checkbox
+                      checked={selectedIds.has(b._id)}
+                      disabled={b.bookingStatus === "IN_PROGRESS"}
+                      onCheckedChange={() => {
+                        if (b.bookingStatus === "IN_PROGRESS") {
+                          toast.error("Cannot delete a booking that is in progress");
+                          return;
+                        }
+                        toggleSelectId(b._id);
+                      }}
+                      className="mt-1 shrink-0"
+                      aria-label={`Select ${b.bookingId}`}
+                    />
+                  ) : null}
+                  <div className="min-w-0">
                   <p className="text-xs text-muted-foreground font-mono">{b.bookingId}</p>
                   <p className="font-semibold text-foreground truncate">{b.customerId?.name ?? "Unknown"}</p>
                   <p className="text-xs text-muted-foreground">{b.customerId?.mobile}</p>
+                  </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <Badge className={`text-[10px] border ${STATUS_COLORS[b.bookingStatus] ?? "bg-secondary"}`}>
@@ -688,13 +806,22 @@ export default function AdminTDBookings() {
 
               {/* Actions — open verify panel only */}
               <div className="border-t border-border/30 pt-3">
+                {selectMode ? (
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    {b.bookingStatus === "IN_PROGRESS"
+                      ? "In progress — cannot select for delete"
+                      : "Tap the checkbox to select for bulk delete"}
+                  </p>
+                ) : (
                 <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={() => void openBookingDetail(b)}>
                   <Eye className="w-3.5 h-3.5 mr-1" /> Verify & manage
                 </Button>
+                )}
               </div>
             </Card>
           ))}
         </div>
+        </>
       )}
 
       {/* Detail Dialog */}
@@ -1319,6 +1446,34 @@ export default function AdminTDBookings() {
               </Button>
               <Button variant="outline" className="flex-1" onClick={() => setDeleteDialog(null)}>
                 Keep record
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete selected bookings?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Permanently delete <strong className="text-foreground">{selectedIds.size}</strong> booking(s)?
+              In-progress drives are skipped. Prefer Cancel if you only need to keep history.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={actionLoading || selectedIds.size === 0}
+                onClick={() => void handleBulkDeleteBookings()}
+              >
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Delete forever
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setBulkDeleteOpen(false)}>
+                Keep
               </Button>
             </div>
           </div>

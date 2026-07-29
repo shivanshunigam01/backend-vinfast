@@ -16,6 +16,11 @@ const {
 router.get('/executives/list', tdBookingsController.listExecutives);
 router.get('/eligibility', tdBookingsController.checkBookingEligibility);
 router.get('/approvals/pending', tdBookingsController.listPendingApprovals);
+router.post(
+  '/bulk-delete',
+  requireModuleActionOrRoles('td_bookings', 'update', 'superadmin', 'manager'),
+  tdBookingsController.bulkDeleteBookings,
+);
 router.get('/reschedule/pending', tdRescheduleController.listPendingReschedules);
 router.get(
   '/reschedule/history',

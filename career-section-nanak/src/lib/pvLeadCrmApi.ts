@@ -213,6 +213,13 @@ export async function deletePvCrmLead(id: string): Promise<void> {
   await adminDeleteJson(`${CRM_BASE}/${id}`);
 }
 
+/** Permanently delete multiple CRM leads (managers/superadmins). Max 100. */
+export async function bulkDeletePvCrmLeads(
+  ids: string[],
+): Promise<{ deleted: number; requested: number }> {
+  return adminPostJson<{ deleted: number; requested: number }>(`${CRM_BASE}/bulk-delete`, { ids });
+}
+
 export type ConvertLeadToSalePayload = {
   /** Fill only when the actual buyer differs from the lead's customer. */
   buyerName?: string;

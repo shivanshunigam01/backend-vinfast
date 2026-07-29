@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import {
   Users, Search, RefreshCw, Loader2, Phone, Clock,
   MessageSquare, ArrowRight, CheckCircle2, CalendarClock, UserCheck, Plus, ChevronLeft, ChevronRight, Pencil,
-  History, Trophy, ShieldAlert, Trash2,
+  History, Trophy, ShieldAlert, Trash2, CheckSquare, Square, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -30,6 +30,7 @@ import {
   updatePvCrmLeadStage,
   convertPvCrmLeadToSale,
   deletePvCrmLead,
+  bulkDeletePvCrmLeads,
   fetchOpportunityDuplicates,
   type AssignableStaffUser,
   type PvCrmLead,
@@ -45,6 +46,7 @@ import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { leadModelLabel, parseStoredModelLine } from "@/data/vinfastModels";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function stageBadgeClass(stage: string) {
   const normalized = normalizeCrmStage(stage);
@@ -122,6 +124,9 @@ export default function AdminCrmLeads() {
   const [editModel, setEditModel] = useState("VF 7");
   const [editVariant, setEditVariant] = useState("");
   const [editSource, setEditSource] = useState("");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
     setEditName(lead.name ?? "");
@@ -447,6 +452,50 @@ export default function AdminCrmLeads() {
     }
   };
 
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkDeleteOpen(false);
+  };
+
+  const toggleSelectId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = safeLeads.map((l) => l._id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteLeads = async () => {
+    if (!canDelete || selectedIds.size === 0) return;
+    setSaving(true);
+    try {
+      const result = await bulkDeletePvCrmLeads([...selectedIds]);
+      toast.success(`Deleted ${result.deleted} lead(s)`);
+      exitSelectMode();
+      void loadLeads();
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -464,6 +513,19 @@ export default function AdminCrmLeads() {
           {canCreate ? (
             <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
               <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
+          {canDelete ? (
+            <Button
+              variant={selectMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                if (selectMode) exitSelectMode();
+                else setSelectMode(true);
+              }}
+            >
+              {selectMode ? <X className="w-4 h-4 mr-2" /> : <CheckSquare className="w-4 h-4 mr-2" />}
+              {selectMode ? "Cancel select" : "Select"}
             </Button>
           ) : null}
           {canAssignLeads ? (
@@ -641,15 +703,59 @@ export default function AdminCrmLeads() {
           ) : null}
         </Card>
       ) : (
+        <>
+        {selectMode && canDelete ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-secondary/30 px-3 py-2">
+            <Button type="button" variant="outline" size="sm" onClick={toggleSelectAllVisible}>
+              {safeLeads.length > 0 && safeLeads.every((l) => selectedIds.has(l._id)) ? (
+                <><Square className="w-4 h-4 mr-2" /> Deselect page</>
+              ) : (
+                <><CheckSquare className="w-4 h-4 mr-2" /> Select page</>
+              )}
+            </Button>
+            <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={selectedIds.size === 0 || saving}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Delete selected
+            </Button>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {safeLeads.map((lead) => (
             <Card
               key={lead._id}
-              className="p-4 border-border/50 bg-card/50 cursor-pointer hover:border-primary/40 transition-colors"
-              onClick={() => void openLead(lead)}
+              className={cn(
+                "p-4 border-border/50 bg-card/50 transition-colors",
+                selectMode
+                  ? "cursor-default"
+                  : "cursor-pointer hover:border-primary/40",
+                selectMode && selectedIds.has(lead._id) && "border-primary/50 bg-primary/5",
+              )}
+              onClick={() => {
+                if (selectMode) {
+                  toggleSelectId(lead._id);
+                  return;
+                }
+                void openLead(lead);
+              }}
             >
               <div className="flex items-start justify-between gap-2 mb-2">
-                <div className="min-w-0">
+                <div className="flex items-start gap-2 min-w-0">
+                  {selectMode && canDelete ? (
+                    <Checkbox
+                      checked={selectedIds.has(lead._id)}
+                      onCheckedChange={() => toggleSelectId(lead._id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1 shrink-0"
+                      aria-label={`Select ${lead.name}`}
+                    />
+                  ) : null}
+                  <div className="min-w-0">
                   <p className="font-semibold text-foreground truncate">{lead.name}</p>
                   <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
                     {lead.leadId ?? "—"} · {lead.customerId ?? "—"} · {lead.opportunityId ?? "—"}
@@ -657,6 +763,7 @@ export default function AdminCrmLeads() {
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                     <Phone className="w-3 h-3 shrink-0" /> {lead.mobile}
                   </p>
+                  </div>
                 </div>
                 <Badge variant="outline" className={cn("text-[10px] shrink-0", stageBadgeClass(lead.status))}>
                   {normalizeCrmStage(lead.status)}
@@ -685,6 +792,7 @@ export default function AdminCrmLeads() {
             </Card>
           ))}
         </div>
+        </>
       )}
 
       {!loading && total > 0 ? (
@@ -1263,6 +1371,34 @@ export default function AdminCrmLeads() {
           onCreated={() => void loadLeads()}
         />
       ) : null}
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete selected leads?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Permanently delete <strong className="text-foreground">{selectedIds.size}</strong> lead(s)?
+              Follow-ups and stage history will also be removed. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={saving || selectedIds.size === 0}
+                onClick={() => void handleBulkDeleteLeads()}
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Delete forever
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setBulkDeleteOpen(false)}>
+                Keep
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -538,6 +538,68 @@ exports.deleteBooking = asyncHandler(async (req, res) => {
   return successResponse(res, { _id: doc._id, bookingId }, `Booking ${bookingId} deleted`);
 });
 
+/**
+ * POST /admin/td/bookings/bulk-delete — permanently delete multiple bookings.
+ * Skips IN_PROGRESS drives; managers/admins only.
+ */
+exports.bulkDeleteBookings = asyncHandler(async (req, res) => {
+  const designation = String(req.admin.designation || '').toLowerCase();
+  const managerDesignations = new Set([
+    'sales_manager',
+    'sales_head',
+    'branch_manager',
+    'gm',
+    'ceo',
+    'md',
+  ]);
+  const canDelete =
+    ['manager', 'superadmin'].includes(req.admin.role) ||
+    managerDesignations.has(designation) ||
+    req.admin.userType === 'admin';
+  if (!canDelete) {
+    throw new ApiError(403, 'Only managers and admins can delete bookings');
+  }
+
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) throw new ApiError(400, 'Provide a non-empty "ids" array');
+  if (ids.length > 100) throw new ApiError(400, 'Maximum 100 bookings per bulk delete');
+
+  const docs = await TDBooking.find({ _id: { $in: ids } });
+  const skipped = [];
+  const toDelete = [];
+
+  for (const doc of docs) {
+    if (doc.bookingStatus === 'IN_PROGRESS') {
+      skipped.push(doc.bookingId || String(doc._id));
+      continue;
+    }
+    toDelete.push(doc);
+  }
+
+  for (const doc of toDelete) {
+    if (doc.vehicleId) {
+      const vehicle = await TDVehicle.findById(doc.vehicleId);
+      if (vehicle && ['BOOKED', 'AVAILABLE'].includes(vehicle.status)) {
+        vehicle.status = 'AVAILABLE';
+        await vehicle.save();
+      }
+    }
+  }
+
+  const deleteIds = toDelete.map((d) => d._id);
+  if (deleteIds.length) {
+    await TDBooking.deleteMany({ _id: { $in: deleteIds } });
+  }
+
+  return successResponse(
+    res,
+    { deleted: deleteIds.length, requested: ids.length, skippedInProgress: skipped },
+    skipped.length
+      ? `Deleted ${deleteIds.length} booking(s); skipped ${skipped.length} in-progress`
+      : `Deleted ${deleteIds.length} booking(s)`,
+  );
+});
+
 exports.assignExecutive = asyncHandler(async (req, res) => {
   const { executiveId } = req.body || {};
   if (!executiveId) throw new ApiError(400, 'executiveId is required');
