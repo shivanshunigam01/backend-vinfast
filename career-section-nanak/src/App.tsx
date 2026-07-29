@@ -15,6 +15,8 @@ import ModelLimoGreen from "./pages/ModelLimoGreen";
 import TestDrive from "./pages/TestDrive";
 import BookNow from "./pages/BookNow";
 import EMICalculator from "./pages/EMICalculator";
+import ChargingCalculator from "./pages/ChargingCalculator";
+import RunningCostCalculator from "./pages/RunningCostCalculator";
 import ComparePage from "./pages/Compare";
 import AboutPage from "./pages/About";
 import ContactPage from "./pages/Contact";
@@ -25,7 +27,12 @@ import TermsAndConditionsPage from "./pages/TermsAndConditions";
 import PostDeliveryFeedback from "./pages/PostDeliveryFeedback";
 import TestDriveFeedback from "./pages/TestDriveFeedback";
 import NotFound from "./pages/NotFound";
+import SeoMarketingPage from "./pages/seo/SeoMarketingPage";
+import BiharDistrictsPage from "./pages/seo/BiharDistrictsPage";
+import DistrictLandingPage from "./pages/seo/DistrictLandingPage";
+import GlobalSeoBootstrap from "./components/GlobalSeoBootstrap";
 import ScrollToTop from "./components/ScrollToTop";
+import { COMPARE_SEO_PAGES, SEO_ARTICLES } from "./pages/seo/seoPageContent";
 import AdminLogin from "./pages/admin/AdminLogin";
 import StaffLogin from "./pages/staff/StaffLogin";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -83,6 +90,7 @@ const App = () => {
               <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
                 <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                   <ScrollToTop />
+                  <GlobalSeoBootstrap />
                   <Routes>
           {/* Public routes */}
           <Route path="/" element={<Index />} />
@@ -90,9 +98,15 @@ const App = () => {
           <Route path="/models/vf6" element={<ModelVF6 />} />
           <Route path="/models/mpv7" element={<ModelMPV7 />} />
           <Route path="/models/limo-green" element={<ModelLimoGreen />} />
+          <Route path="/vinfast-vf7" element={<ModelVF7 />} />
+          <Route path="/vinfast-vf6" element={<ModelVF6 />} />
+          <Route path="/vinfast-mpv7" element={<ModelMPV7 />} />
+          <Route path="/vinfast-limo-green" element={<ModelLimoGreen />} />
           <Route path="/book-now" element={<BookNow />} />
           <Route path="/test-drive" element={<TestDrive />} />
           <Route path="/emi-calculator" element={<EMICalculator />} />
+          <Route path="/charging-calculator" element={<ChargingCalculator />} />
+          <Route path="/running-cost-calculator" element={<RunningCostCalculator />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
@@ -100,6 +114,13 @@ const App = () => {
           <Route path="/terms-of-service" element={<TermsOfServicePage />} />
           <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
           <Route path="/payment-refund-policy" element={<PaymentRefundPolicyPage />} />
+          <Route path="/bihar" element={<BiharDistrictsPage />} />
+          {SEO_ARTICLES.filter((a) => a.path !== "/bihar").map((article) => (
+            <Route key={article.path} path={article.path} element={<SeoMarketingPage path={article.path} />} />
+          ))}
+          {COMPARE_SEO_PAGES.map((article) => (
+            <Route key={article.path} path={article.path} element={<SeoMarketingPage path={article.path} />} />
+          ))}
           {/* URL-only pages (QR code) — intentionally not linked from any menu or footer */}
           <Route path="/post-delivery-feedback" element={<PostDeliveryFeedback />} />
           <Route path="/test-drive-feedback" element={<TestDriveFeedback />} />
@@ -152,6 +173,8 @@ const App = () => {
             <Route path="td/users" element={<AdminTDUsers />} />
           </Route>
 
+          {/* Hyperlocal SEO: /{district}/{model} e.g. /patna/vinfast-vf6 */}
+          <Route path="/:districtSlug/:modelSlug" element={<DistrictLandingPage />} />
           <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>

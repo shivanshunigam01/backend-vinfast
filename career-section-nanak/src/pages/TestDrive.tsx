@@ -33,6 +33,7 @@ import {
 } from "@/data/testDriveFormOptions";
 import { usePublicFormRecaptcha } from "@/context/PublicRecaptchaContext";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePageSeo } from "@/hooks/usePageSeo";
 import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import { TestDriveSlotPicker } from "@/components/TestDriveSlotPicker";
 import { formatSlotLabel } from "@/lib/publicTdApi";
@@ -96,6 +97,13 @@ function FormSection({
 const TestDrivePage = () => {
   const { getToken } = usePublicFormRecaptcha();
   const { siteConfig, dealer } = usePublicSite();
+  usePageSeo({
+    title: "Book a VinFast Test Drive in Bihar | Patliputra VinFast Patna",
+    description:
+      "Schedule a VinFast VF6, VF7, MPV7 or Limo Green test drive with Patliputra VinFast — Bihar’s authorised EV dealer.",
+    keywords: ["VinFast test drive Patna", "EV test drive Bihar", "VF7 test drive"],
+    canonical: "/test-drive",
+  });
   const vehicleCatalog = useVehicleCatalog();
   const [formData, setFormData] = useState({
     name: "",

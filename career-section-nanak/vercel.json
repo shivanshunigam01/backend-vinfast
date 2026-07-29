@@ -1,5 +1,20 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/sitemap.xml",
+      "destination": "https://apivnfast.patliputragroup.com/api/v1/sitemap.xml"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "https://apivnfast.patliputragroup.com/api/v1/robots.txt"
+    },
+    {
+      "source": "/llms.txt",
+      "destination": "https://apivnfast.patliputragroup.com/api/v1/llms.txt"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

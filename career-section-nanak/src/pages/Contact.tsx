@@ -27,6 +27,7 @@ import {
 import { usePublicSite } from "@/context/PublicSiteContext";
 import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import { usePublicFormRecaptcha } from "@/context/PublicRecaptchaContext";
+import { usePageSeo } from "@/hooks/usePageSeo";
 import { telHref, waMeUrl } from "@/lib/contactLinks";
 import { mapsDirectionsHref, mapsEmbedSrc } from "@/lib/dealerMap";
 
@@ -44,6 +45,13 @@ const getLocalISODate = () => {
 const ContactPage = () => {
   const { dealer, siteConfig } = usePublicSite();
   const { getToken } = usePublicFormRecaptcha();
+  usePageSeo({
+    title: "Contact Patliputra VinFast | Patna Showroom | Bihar",
+    description:
+      "Contact Patliputra VinFast in Patna — phone, WhatsApp, map and enquiry form for VinFast EV sales and test drives.",
+    keywords: ["contact VinFast Patna", "Patliputra VinFast phone", "VinFast showroom Patna"],
+    canonical: "/contact",
+  });
   const address = dealer.address;
   const mapLink = mapsDirectionsHref(address, dealer.mapEmbedUrl);
   const embedSrc = mapsEmbedSrc(address, dealer.mapEmbedUrl);

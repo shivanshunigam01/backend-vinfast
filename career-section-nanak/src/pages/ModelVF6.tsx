@@ -22,6 +22,7 @@ import vf6GalDetail03 from "@/assets/vf6-gallery/vf6-gallery-detail-03.png";
 import vf6GalDetail04 from "@/assets/vf6-gallery/vf6-gallery-detail-04.png";
 import vf6GalDetail05 from "@/assets/vf6-gallery/vf6-gallery-detail-05.png";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePageSeo } from "@/hooks/usePageSeo";
 import { VF6_TRIM_0_100_KMH } from "@/data/vinfastCompareSpecAnchors";
 
 const colors = [
@@ -344,6 +345,14 @@ const ModelVF6 = () => {
   const { siteConfig } = usePublicSite();
   const [selectedColor, setSelectedColor] = useState(0);
   const [variant, setVariant] = useState<VariantId>("earth");
+
+  usePageSeo({
+    title: "VinFast VF6 Price, Specs & Test Drive in Bihar | Patliputra VinFast",
+    description:
+      "Explore VinFast VF6 electric SUV — variants, features, range and booking at Patliputra VinFast, Patna. Serve customers across Bihar.",
+    keywords: ["VinFast VF6", "VF6 price Bihar", "VF6 test drive Patna", "electric SUV Bihar"],
+    canonical: "/models/vf6",
+  });
 
   useEffect(() => {
     // Preload all colour images so palette switches feel instant.

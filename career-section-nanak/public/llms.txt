@@ -1,0 +1,35 @@
+# Patliputra VinFast
+
+> Bihar's first authorised VinFast electric vehicle dealership, located in Patna,
+> Bihar, India. We sell, service and support the full VinFast EV lineup for
+> customers across all 38 districts of Bihar.
+
+Company: Patliputra VinFast
+Location: Plot No. 2421, NH 30, Bypass Road, Paijawa, Patna, Bihar 800009, India
+Phone: +91 92314 45060
+Website: https://patliputravinfast.in/
+
+## Products
+
+- VinFast VF6 — Electric SUV, 5 seats
+- VinFast VF7 — Premium Electric SUV, 5 seats
+- VinFast VF MPV7 — Electric MPV, 7 seats
+- VinFast Limo Green — Electric MPV, 7 seats
+
+## Key pages
+
+- Home: https://patliputravinfast.in/
+- VF6: https://patliputravinfast.in/models/vf6
+- VF7: https://patliputravinfast.in/models/vf7
+- MPV7: https://patliputravinfast.in/models/mpv7
+- Limo Green: https://patliputravinfast.in/models/limo-green
+- Compare models: https://patliputravinfast.in/compare
+- EV Buying Guide: https://patliputravinfast.in/ev-buying-guide
+- FAQs: https://patliputravinfast.in/faq
+- Book a test drive: https://patliputravinfast.in/test-drive
+- District pages: https://patliputravinfast.in/{district}/{model} (e.g. https://patliputravinfast.in/patna/vinfast-vf6)
+
+## Discovery
+
+- Sitemap: https://patliputravinfast.in/sitemap.xml
+- Robots: https://patliputravinfast.in/robots.txt

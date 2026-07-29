@@ -9,10 +9,18 @@ import { Award, Users, Target, Globe } from "lucide-react";
 import patliputraVinfastHero from "@/assets/patliputra-vinfast-about-hero.png";
 import vf8Convoy from "@/assets/vf8-convoy.jpg";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePageSeo } from "@/hooks/usePageSeo";
 
 const AboutPage = () => {
   const { dealer } = usePublicSite();
   const location = useLocation();
+  usePageSeo({
+    title: "About Patliputra VinFast | Authorised VinFast Dealer in Bihar",
+    description:
+      "Learn about Patliputra VinFast — Bihar’s authorised VinFast electric vehicle dealership in Patna.",
+    keywords: ["Patliputra VinFast", "VinFast dealer Bihar", "about VinFast Patna"],
+    canonical: "/about",
+  });
 
   useEffect(() => {
     if (location.pathname !== "/about") return;

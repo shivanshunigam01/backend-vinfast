@@ -5,10 +5,19 @@ import { Button } from "@/components/ui/button";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StickyMobileCTA from "@/components/StickyMobileCTA";
+import { usePageSeo } from "@/hooks/usePageSeo";
 
 const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
 const EMICalculator = () => {
+  usePageSeo({
+    title: "EV EMI Calculator | VinFast Finance Estimates | Patliputra VinFast",
+    description:
+      "Estimate monthly EMI for VinFast VF6, VF7 and MPV models. Plan your EV purchase with Patliputra VinFast, Bihar.",
+    keywords: ["VinFast EMI calculator", "EV finance Bihar", "VF6 EMI", "VF7 EMI"],
+    canonical: "/emi-calculator",
+  });
+
   const [price, setPrice] = useState(2299000);
   const [downPayment, setDownPayment] = useState(500000);
   const [tenure, setTenure] = useState(60);

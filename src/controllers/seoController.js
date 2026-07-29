@@ -167,7 +167,7 @@ exports.getDistrictPage = asyncHandler(async (req, res) => {
     faqSchema(page.faqs),
     breadcrumbSchema([
       { name: 'Home', path: '/' },
-      { name: page.modelName, path: `/${model.slug}` },
+      { name: page.modelName, path: `/models/${model.key === 'limo-green' ? 'limo-green' : model.key}` },
       { name: `${page.modelName} in ${page.districtName}`, path: page.path },
     ]),
   ].filter(Boolean);

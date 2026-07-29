@@ -197,6 +197,10 @@ const STATIC_ROUTES = [
   { path: '/bihar', priority: 0.8, changefreq: 'weekly' },
   { path: '/about', priority: 0.6, changefreq: 'monthly' },
   { path: '/contact', priority: 0.8, changefreq: 'monthly' },
+  { path: '/privacy-policy', priority: 0.3, changefreq: 'yearly' },
+  { path: '/terms-of-service', priority: 0.3, changefreq: 'yearly' },
+  { path: '/terms-and-conditions', priority: 0.3, changefreq: 'yearly' },
+  { path: '/payment-refund-policy', priority: 0.3, changefreq: 'yearly' },
 ];
 
 const modelByKey = new Map(SEO_MODELS.map((m) => [m.key, m]));

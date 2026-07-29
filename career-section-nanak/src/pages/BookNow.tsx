@@ -20,6 +20,7 @@ import { FormCaptcha } from "@/components/FormCaptcha";
 import { BIHAR_DEFAULT_DISTRICT, DISTRICT_OTHER } from "@/data/biharDistricts";
 import { usePublicFormRecaptcha } from "@/context/PublicRecaptchaContext";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePageSeo } from "@/hooks/usePageSeo";
 import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import vf7Real from "@/assets/vf7-real.png";
 import vf6Hero from "@/assets/vf6-earth-hero-family.png";
@@ -41,6 +42,13 @@ const getLocalISODate = () => {
 const BookNowPage = () => {
   const { siteConfig } = usePublicSite();
   const { getToken } = usePublicFormRecaptcha();
+  usePageSeo({
+    title: "Book VinFast Online | Token Booking | Patliputra VinFast",
+    description:
+      "Book your VinFast EV online with Patliputra VinFast. Start your VF6, VF7, MPV7 or Limo Green booking from Patna, Bihar.",
+    keywords: ["book VinFast online", "VinFast booking Bihar", "VF7 book now"],
+    canonical: "/book-now",
+  });
   const paymentCardRef = useRef<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
   const [isSharingScreenshot, setIsSharingScreenshot] = useState(false);

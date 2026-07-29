@@ -27,6 +27,7 @@ import {
 } from "@/data/compareCatalog";
 import { hasApi } from "@/lib/apiConfig";
 import { usePublicOffers } from "@/hooks/usePublicOffers";
+import { usePageSeo } from "@/hooks/usePageSeo";
 
 type Slot = CompareSelection | null;
 
@@ -48,6 +49,13 @@ function VsBadge() {
 }
 
 const ComparePage = () => {
+  usePageSeo({
+    title: "Compare VinFast Models | VF6 VF7 MPV7 | Patliputra VinFast",
+    description:
+      "Compare VinFast electric models side by side — specs, variants and features. Patliputra VinFast, Bihar.",
+    keywords: ["compare VinFast", "VF6 vs VF7", "electric SUV compare"],
+    canonical: "/compare",
+  });
   const { loaded: offersLoaded, hasOffers } = usePublicOffers();
   const [slots, setSlots] = useState<[Slot, Slot, Slot]>(defaultSlots);
   const [hideCommon, setHideCommon] = useState(false);

@@ -4,7 +4,11 @@
   RewriteEngine On
   RewriteBase /
 
-  # Don't rewrite real files or directories
+  # Dynamic SEO files from API (Google follows the redirect for sitemap)
+  RewriteRule ^sitemap\.xml$ https://apivnfast.patliputragroup.com/api/v1/sitemap.xml [R=302,L]
+  RewriteRule ^api/v1/sitemap\.xml$ https://apivnfast.patliputragroup.com/api/v1/sitemap.xml [R=302,L]
+
+  # Don't rewrite real files or directories (robots.txt + llms.txt are static in /public)
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
 
