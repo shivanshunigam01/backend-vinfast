@@ -148,11 +148,14 @@ export default function AdminCrmLeads() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const [importFailures, setImportFailures] = useState<CrmLeadImportFailure[] | null>(null);
+  const [importResultOpen, setImportResultOpen] = useState(false);
+  const [importFailures, setImportFailures] = useState<CrmLeadImportFailure[]>([]);
   const [importSummary, setImportSummary] = useState<{
     created: number;
-    updated?: number;
+    updated: number;
     followUps: number;
+    failed: number;
+    total: number;
   } | null>(null);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
@@ -554,21 +557,25 @@ export default function AdminCrmLeads() {
     setImporting(true);
     try {
       const result = await importPvCrmLeadsFile(file);
-      const failed = result.failed?.length ?? 0;
+      const failedRows = result.failed ?? [];
+      const failed = failedRows.length;
       const followUps = result.followUpsCreated ?? 0;
       const updated = result.updated ?? 0;
-      const summaryMsg =
-        `Created ${result.created}` +
-        (updated ? `, updated ${updated}` : "") +
-        (followUps ? `, ${followUps} follow-up(s)` : "");
+      const created = result.created ?? 0;
+      const uploaded = created + updated + failed;
+      setImportFailures(failedRows);
+      setImportSummary({ created, updated, followUps, failed, total: uploaded });
+      setImportResultOpen(true);
       if (failed > 0) {
-        setImportFailures(result.failed);
-        setImportSummary({ created: result.created, updated, followUps });
-        toast.warning(`${summaryMsg}. ${failed} row(s) failed — download the error file for details.`);
+        toast.warning(
+          `Uploaded ${uploaded}: ${created} created, ${updated} updated, ${failed} failed.`,
+        );
       } else {
-        setImportFailures(null);
-        setImportSummary(null);
-        toast.success(summaryMsg);
+        toast.success(
+          `Uploaded ${uploaded}: ${created} created` +
+            (updated ? `, ${updated} updated` : "") +
+            (followUps ? `, ${followUps} follow-up(s)` : ""),
+        );
       }
       void loadLeads();
     } catch (e) {
@@ -576,6 +583,12 @@ export default function AdminCrmLeads() {
     } finally {
       setImporting(false);
     }
+  };
+
+  const closeImportResult = () => {
+    setImportResultOpen(false);
+    setImportFailures([]);
+    setImportSummary(null);
   };
 
   return (
@@ -1530,70 +1543,109 @@ export default function AdminCrmLeads() {
       </Dialog>
 
       <Dialog
-        open={!!importFailures?.length}
+        open={importResultOpen}
         onOpenChange={(o) => {
-          if (!o) {
-            setImportFailures(null);
-            setImportSummary(null);
-          }
+          if (!o) closeImportResult();
         }}
       >
         <DialogContent className="bg-card border-border max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-amber-500" />
-              Import errors
+              {(importSummary?.failed ?? 0) > 0 ? (
+                <ShieldAlert className="w-5 h-5 text-amber-500" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+              )}
+              Bulk upload results
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Created {importSummary?.created ?? 0}
-              {importSummary?.updated ? `, updated ${importSummary.updated}` : ""}
-              {importSummary?.followUps ? `, ${importSummary.followUps} follow-up(s)` : ""}.{" "}
-              <strong className="text-foreground">{importFailures?.length ?? 0}</strong> row(s) failed
-              (duplicates, missing fields, or invalid data). Download the error file to review and fix.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => importFailures && downloadCrmImportErrors(importFailures, "xlsx")}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download errors (Excel)
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => importFailures && downloadCrmImportErrors(importFailures, "csv")}
-              >
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Download errors (CSV)
-              </Button>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-center">
+                <p className="text-xs text-muted-foreground">Uploaded</p>
+                <p className="text-lg font-semibold tabular-nums">{importSummary?.total ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-emerald-500/10 px-3 py-2.5 text-center">
+                <p className="text-xs text-muted-foreground">Created</p>
+                <p className="text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {importSummary?.created ?? 0}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-sky-500/10 px-3 py-2.5 text-center">
+                <p className="text-xs text-muted-foreground">Updated</p>
+                <p className="text-lg font-semibold tabular-nums text-sky-700 dark:text-sky-400">
+                  {importSummary?.updated ?? 0}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-destructive/10 px-3 py-2.5 text-center">
+                <p className="text-xs text-muted-foreground">Failed</p>
+                <p className="text-lg font-semibold tabular-nums text-destructive">
+                  {importSummary?.failed ?? 0}
+                </p>
+              </div>
             </div>
-            <div className="max-h-60 overflow-y-auto rounded-md border border-border/50 text-xs">
-              <table className="w-full">
-                <thead className="bg-muted/40 sticky top-0">
-                  <tr className="text-left">
-                    <th className="p-2 font-medium">Row</th>
-                    <th className="p-2 font-medium">Name</th>
-                    <th className="p-2 font-medium">Mobile</th>
-                    <th className="p-2 font-medium">Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(importFailures || []).map((f, i) => (
-                    <tr key={`${f.row}-${i}`} className="border-t border-border/40">
-                      <td className="p-2 align-top whitespace-nowrap">{f.row}</td>
-                      <td className="p-2 align-top">{f.name || "—"}</td>
-                      <td className="p-2 align-top font-mono">{f.mobile || "—"}</td>
-                      <td className="p-2 align-top text-destructive">{f.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Button variant="outline" className="w-full" onClick={() => { setImportFailures(null); setImportSummary(null); }}>
+
+            {(importSummary?.followUps ?? 0) > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Also created <strong className="text-foreground">{importSummary?.followUps}</strong> follow-up
+                record(s).
+              </p>
+            ) : null}
+
+            {(importSummary?.failed ?? 0) > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  These rows failed (duplicates, missing fields, or invalid data). Fix them and re-upload, or
+                  download the error file.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => downloadCrmImportErrors(importFailures, "xlsx")}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download errors (Excel)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => downloadCrmImportErrors(importFailures, "csv")}
+                  >
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Download errors (CSV)
+                  </Button>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-md border border-border/50 text-xs">
+                  <table className="w-full">
+                    <thead className="bg-muted/40 sticky top-0">
+                      <tr className="text-left">
+                        <th className="p-2 font-medium">Row</th>
+                        <th className="p-2 font-medium">Name</th>
+                        <th className="p-2 font-medium">Mobile</th>
+                        <th className="p-2 font-medium">Why failed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importFailures.map((f, i) => (
+                        <tr key={`${f.row}-${i}`} className="border-t border-border/40">
+                          <td className="p-2 align-top whitespace-nowrap">{f.row}</td>
+                          <td className="p-2 align-top">{f.name || "—"}</td>
+                          <td className="p-2 align-top font-mono">{f.mobile || "—"}</td>
+                          <td className="p-2 align-top text-destructive">{f.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                All rows in the file were processed successfully.
+              </p>
+            )}
+
+            <Button variant="outline" className="w-full" onClick={closeImportResult}>
               Close
             </Button>
           </div>
