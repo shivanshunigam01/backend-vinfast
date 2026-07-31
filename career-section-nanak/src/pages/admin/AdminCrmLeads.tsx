@@ -149,7 +149,11 @@ export default function AdminCrmLeads() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [importFailures, setImportFailures] = useState<CrmLeadImportFailure[] | null>(null);
-  const [importSummary, setImportSummary] = useState<{ created: number; followUps: number } | null>(null);
+  const [importSummary, setImportSummary] = useState<{
+    created: number;
+    updated?: number;
+    followUps: number;
+  } | null>(null);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
     setEditName(lead.name ?? "");
@@ -552,21 +556,19 @@ export default function AdminCrmLeads() {
       const result = await importPvCrmLeadsFile(file);
       const failed = result.failed?.length ?? 0;
       const followUps = result.followUpsCreated ?? 0;
+      const updated = result.updated ?? 0;
+      const summaryMsg =
+        `Created ${result.created}` +
+        (updated ? `, updated ${updated}` : "") +
+        (followUps ? `, ${followUps} follow-up(s)` : "");
       if (failed > 0) {
         setImportFailures(result.failed);
-        setImportSummary({ created: result.created, followUps });
-        toast.warning(
-          `Imported ${result.created} lead(s)` +
-            (followUps ? `, ${followUps} follow-up(s)` : "") +
-            `. ${failed} row(s) failed — download the error file for details.`,
-        );
+        setImportSummary({ created: result.created, updated, followUps });
+        toast.warning(`${summaryMsg}. ${failed} row(s) failed — download the error file for details.`);
       } else {
         setImportFailures(null);
         setImportSummary(null);
-        toast.success(
-          `Imported ${result.created} lead(s)` +
-            (followUps ? ` and ${followUps} follow-up(s)` : ""),
-        );
+        toast.success(summaryMsg);
       }
       void loadLeads();
     } catch (e) {
@@ -1545,8 +1547,9 @@ export default function AdminCrmLeads() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Imported {importSummary?.created ?? 0} lead(s)
-              {importSummary?.followUps ? ` and ${importSummary.followUps} follow-up(s)` : ""}.{" "}
+              Created {importSummary?.created ?? 0}
+              {importSummary?.updated ? `, updated ${importSummary.updated}` : ""}
+              {importSummary?.followUps ? `, ${importSummary.followUps} follow-up(s)` : ""}.{" "}
               <strong className="text-foreground">{importFailures?.length ?? 0}</strong> row(s) failed
               (duplicates, missing fields, or invalid data). Download the error file to review and fix.
             </p>

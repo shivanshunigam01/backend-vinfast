@@ -58,7 +58,7 @@ exports.adminLogin = asyncHandler(async (req, res) => {
       TDStaff,
       normalizedEmail,
       password,
-      'This is a Staff account. Please sign in from the Staff portal (Login as staff) instead.',
+      'This is an Employee account. Please sign in from the Employee portal (Employee Login) instead.',
     );
     throw new ApiError(401, 'Invalid email or password');
   }

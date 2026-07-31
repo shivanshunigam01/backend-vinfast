@@ -83,6 +83,33 @@ const leadSchema = new mongoose.Schema(
     // Duplicate elimination (MoM #15) — soft-merge markers
     isDuplicate: { type: Boolean, default: false, index: true },
     duplicateOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
+    /**
+     * Snapshot of CRE "Current Format" Excel columns that are not first-class
+     * CRM fields (TD / booking / retail / sales-person activity). Import-only;
+     * does not create TDBooking or sale records.
+     */
+    creSheet: {
+      enquiryDate: { type: Date },
+      callDate: { type: Date },
+      existingVariant: { type: String, trim: true },
+      salesConsultantName: { type: String, trim: true },
+      salesPersonDate: { type: Date },
+      salesPersonRemark: { type: String, trim: true },
+      tdDate: { type: Date },
+      tdDone: { type: Boolean },
+      tdNotDoneWhy: { type: String, trim: true },
+      afterTdRemark: { type: String, trim: true },
+      bookingDone: { type: Boolean },
+      bookingDate: { type: Date },
+      finalModel: { type: String, trim: true },
+      finalVariant: { type: String, trim: true },
+      finalColour: { type: String, trim: true },
+      mailSent: { type: Boolean },
+      retailDone: { type: Boolean },
+      retailDate: { type: Date },
+      deliveryDate: { type: Date },
+      initialRemark: { type: String, trim: true },
+    },
   },
   { timestamps: true },
 );

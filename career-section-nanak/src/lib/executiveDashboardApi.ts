@@ -33,12 +33,38 @@ export type ExecutiveRecentBooking = {
   mobile: string;
 };
 
+export type ManagerTeamMemberStats = {
+  _id: string;
+  name: string;
+  email?: string;
+  designation?: string;
+  leads: number;
+  openLeads: number;
+  testDrives: number;
+  completedTestDrives: number;
+};
+
+export type ManagerTeamStats = {
+  myAssignedLeads: number;
+  myAssignedTestDrives: number;
+  teamLeads: number;
+  teamTestDrives: number;
+  pendingLeads: number;
+  followUpsDue: number;
+  completedTestDrives: number;
+  teamCompletedTestDrives: number;
+  teamSize: number;
+  byMember: ManagerTeamMemberStats[];
+};
+
 export type ExecutiveDashboard = {
   year: number;
   compareYear: number;
   period: { from: string; to: string };
   comparePeriod: { from: string; to: string };
   allTime: { totalLeads: number; totalTestDrives: number };
+  reportType?: "executive" | "manager" | "cre";
+  teamStats?: ManagerTeamStats;
   leads: Pick<
     LeadAdminReport,
     "overview" | "pipeline" | "bySource" | "byModel" | "followUpSummary"

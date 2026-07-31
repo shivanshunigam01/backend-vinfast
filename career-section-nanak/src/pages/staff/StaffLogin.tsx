@@ -28,7 +28,7 @@ const StaffLogin = () => {
   const continueIdentity = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !email.includes("@")) {
-      setError("Enter your registered staff email to continue");
+      setError("Enter your registered employee email to continue");
       return;
     }
     setError("");

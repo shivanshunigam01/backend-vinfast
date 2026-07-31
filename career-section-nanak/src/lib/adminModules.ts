@@ -53,7 +53,7 @@ export type AdminModule = {
   key: AdminModuleKey;
   label: string;
   path: string;
-  group: "Core" | "Staff portal" | "Feedback" | "TD Management";
+  group: "Core" | "Employee portal" | "Feedback" | "TD Management";
   actions: AdminModuleAction[];
 };
 
@@ -87,8 +87,8 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "content", label: "Content", path: "/admin/content", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "media", label: "Media", path: "/admin/media", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "settings", label: "Settings", path: "/admin/settings", group: "Core", actions: ["view", "update"] },
-  { key: "my_dashboard", label: "My Dashboard", path: "/admin/my-dashboard", group: "Staff portal", actions: ["view"] },
-  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Staff portal", actions: ["view", "update", "verify_dl", "start_drive", "reschedule", "cancel", "complete"] },
+  { key: "my_dashboard", label: "My Dashboard", path: "/admin/my-dashboard", group: "Employee portal", actions: ["view"] },
+  { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Employee portal", actions: ["view", "update", "verify_dl", "start_drive", "reschedule", "cancel", "complete"] },
   { key: "feedback_test_drive", label: "TD Feedback Forms", path: "/admin/feedback/test-drive", group: "Feedback", actions: ["view", "delete"] },
   { key: "feedback_post_delivery", label: "Delivery Feedback Forms", path: "/admin/feedback/post-delivery", group: "Feedback", actions: ["view", "delete"] },
   { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "TD Management", actions: ["view", "export"] },
@@ -110,7 +110,7 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
 /** Roles UI shares User Master ACL (td_users). */
 MODULE_BY_PATH["/admin/td/roles"] = "td_users";
 
-export const MODULE_GROUPS = ["Core", "Staff portal", "Feedback", "TD Management"] as const;
+export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "TD Management"] as const;
 
 export function modulesForGroup(group: AdminModule["group"]) {
   return ADMIN_MODULES.filter((m) => m.group === group);

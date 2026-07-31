@@ -143,7 +143,16 @@ export function isPathAllowed(user: AdminUser | null | undefined, pathname: stri
 export function isFieldStaffUser(user: AdminUser | null | undefined): boolean {
   if (!user) return false;
   if (getRestrictedModules(user)) return false;
-  return user.role === "executive" || user.designation === "sales_executive";
+  const designation = String(user.designation || "").toLowerCase();
+  // Managers / heads / CRE use the full staff portal, not the SE-only leaf view.
+  if (
+    ["sales_manager", "sales_head", "branch_manager", "gm", "ceo", "md", "cre"].includes(
+      designation,
+    )
+  ) {
+    return false;
+  }
+  return user.role === "executive" || designation === "sales_executive";
 }
 
 export function getAdminLoginRedirect(user: AdminUser | null | undefined): string {

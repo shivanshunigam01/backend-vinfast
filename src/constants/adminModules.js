@@ -14,7 +14,7 @@ const ADMIN_MODULE_KEYS = [
   'content',
   'media',
   'settings',
-  // Staff portal
+  // Employee portal
   'my_dashboard',
   'td_my_bookings',
   // Customer feedback

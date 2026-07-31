@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   BarChart3, RefreshCw, Loader2, Users, Target, CalendarCheck,
   TrendingUp, TrendingDown, Minus, Star, MessageSquare, ArrowRight,
-  UserCheck, Pencil, Activity,
+  UserCheck, Pencil, Activity, Clock, CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -142,6 +142,8 @@ export default function AdminExecutiveDashboard() {
   }
 
   const { leads, leadsCompare, testDrives, testDrivesCompare } = data;
+  const team = data.teamStats;
+  const isManagerView = data.reportType === "manager" && !!team;
 
   return (
     <div className="space-y-6">
@@ -152,7 +154,10 @@ export default function AdminExecutiveDashboard() {
             My Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {adminUser?.name ?? "Executive"} · Leads & test drives assigned to you
+            {adminUser?.name ?? "Executive"} ·{" "}
+            {isManagerView
+              ? "Your assigned work and your reporting team's leads & test drives"
+              : "Leads & test drives assigned to you"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -172,24 +177,124 @@ export default function AdminExecutiveDashboard() {
         </div>
       </div>
 
+      {isManagerView ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Card className="bg-card border-border/50 p-4">
+            <p className="text-xs text-muted-foreground">My Assigned Leads</p>
+            <p className="text-2xl font-bold mt-1 text-foreground">{team.myAssignedLeads}</p>
+            <Link to="/admin/crm/leads?assignedTo=me" className="text-[11px] text-primary hover:underline mt-1 inline-block">
+              View in Lead CRM
+            </Link>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <p className="text-xs text-muted-foreground">My Assigned Test Drives</p>
+            <p className="text-2xl font-bold mt-1 text-foreground">{team.myAssignedTestDrives}</p>
+            <Link to="/admin/td/bookings" className="text-[11px] text-primary hover:underline mt-1 inline-block">
+              View TD Bookings
+            </Link>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <p className="text-xs text-muted-foreground">Team Leads</p>
+            <p className="text-2xl font-bold mt-1 text-foreground">{team.teamLeads}</p>
+            <p className="text-[11px] text-muted-foreground mt-1">{team.teamSize} team member(s)</p>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <p className="text-xs text-muted-foreground">Team Test Drives</p>
+            <p className="text-2xl font-bold mt-1 text-foreground">{team.teamTestDrives}</p>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Pending Leads</p>
+                <p className="text-2xl font-bold mt-1 text-foreground">{team.pendingLeads}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Open leads (you + team)</p>
+              </div>
+              <Target className="w-5 h-5 text-primary" />
+            </div>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Follow-ups Due</p>
+                <p className="text-2xl font-bold mt-1 text-foreground">{team.followUpsDue}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Due today or overdue</p>
+              </div>
+              <Clock className="w-5 h-5 text-amber-500" />
+            </div>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Completed Test Drives</p>
+                <p className="text-2xl font-bold mt-1 text-foreground">{team.completedTestDrives}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Yours · team total {team.teamCompletedTestDrives}</p>
+              </div>
+              <CheckCircle2 className="w-5 h-5 text-green-500" />
+            </div>
+          </Card>
+          <Card className="bg-card border-border/50 p-4">
+            <p className="text-xs text-muted-foreground">Team Performance</p>
+            <p className="text-2xl font-bold mt-1 text-foreground">
+              {team.myAssignedLeads + team.teamLeads}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Total leads across you + team
+            </p>
+          </Card>
+        </div>
+      ) : null}
+
+      {isManagerView && team.byMember.length > 0 ? (
+        <Card className="bg-card border-border/50 p-4">
+          <h2 className="font-display text-lg font-semibold text-foreground mb-3">Team Performance Summary</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground border-b border-border/50">
+                  <th className="pb-2 pr-3 font-medium">Team member</th>
+                  <th className="pb-2 pr-3 font-medium">Leads</th>
+                  <th className="pb-2 pr-3 font-medium">Open</th>
+                  <th className="pb-2 pr-3 font-medium">Test drives</th>
+                  <th className="pb-2 font-medium">Completed TDs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {team.byMember.map((m) => (
+                  <tr key={m._id} className="border-b border-border/30">
+                    <td className="py-2.5 pr-3">
+                      <p className="font-medium text-foreground">{m.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{m.designation || m.email}</p>
+                    </td>
+                    <td className="py-2.5 pr-3">{m.leads}</td>
+                    <td className="py-2.5 pr-3">{m.openLeads}</td>
+                    <td className="py-2.5 pr-3">{m.testDrives}</td>
+                    <td className="py-2.5">{m.completedTestDrives}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline" className="text-xs">
           {data.year}: {fmtDate(data.period.from)} – {fmtDate(data.period.to)}
         </Badge>
         <Badge variant="secondary" className="text-xs">
-          All-time: {data.allTime.totalLeads} leads · {data.allTime.totalTestDrives} test drives
+          All-time (you): {data.allTime.totalLeads} leads · {data.allTime.totalTestDrives} test drives
         </Badge>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <CompareStat
-          label={`Leads (${data.year})`}
+          label={`My leads (${data.year})`}
           current={leads.overview.totalLeads}
           previous={leadsCompare.overview.totalLeads}
           icon={Users}
         />
         <CompareStat
-          label={`Test drives (${data.year})`}
+          label={`My test drives (${data.year})`}
           current={testDrives.totalBookings}
           previous={testDrivesCompare.totalBookings}
           icon={CalendarCheck}

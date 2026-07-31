@@ -21,6 +21,8 @@ const {
   applyBookingExecutiveAssignment,
   repairExecutiveBookingAssignments,
   resolveStaffIdsForUser,
+  isCreUser,
+  isCreAssignableDesignation,
 } = require('../utils/leadAssignment');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { getActiveModelNames } = require('../utils/vehicleCatalog');
@@ -219,6 +221,11 @@ exports.listBookings = asyncHandler(async (req, res) => {
   const query = buildBookingListQuery(req);
   const andClauses = [];
 
+  // Self-only email backfill so SM/SE see newly assigned bookings immediately.
+  if (isTeamScopedUser(req.admin)) {
+    await repairExecutiveBookingAssignments(req.admin);
+  }
+
   // MoM #12: SM/SH/SE limited to reporting tree; MD/CEO/GM see all.
   if (isTeamScopedUser(req.admin)) {
     andClauses.push(await assignedExecutiveFilterAsync(req.admin));
@@ -251,7 +258,7 @@ exports.listBookings = asyncHandler(async (req, res) => {
   }
 
   let [docs, total] = await Promise.all([
-    TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
+    TDBooking.find(query).populate(BOOKING_POPULATE).sort({ createdAt: -1, slotDate: -1, slotTime: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
 
@@ -265,7 +272,7 @@ exports.listBookings = asyncHandler(async (req, res) => {
   ) {
     await syncAllLegacyTestDrives();
     [docs, total] = await Promise.all([
-      TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
+      TDBooking.find(query).populate(BOOKING_POPULATE).sort({ createdAt: -1, slotDate: -1, slotTime: -1 }).skip(skip).limit(limit),
       TDBooking.countDocuments(query),
     ]);
   }
@@ -279,12 +286,13 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
 
-  // My Bookings: always scoped to self + reporting subtree (even for managers).
+  // Self-only email backfill, then scope to self + reporting subtree.
   await repairExecutiveBookingAssignments(req.admin);
-  Object.assign(query, await assignedExecutiveFilterAsync(req.admin));
+  const scopeFilter = await assignedExecutiveFilterAsync(req.admin);
+  query.$and = [...(query.$and || []), scopeFilter];
 
   const [docs, total] = await Promise.all([
-    TDBooking.find(query).populate(BOOKING_POPULATE).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit),
+    TDBooking.find(query).populate(BOOKING_POPULATE).sort({ createdAt: -1, slotDate: -1, slotTime: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
   const enriched = await ensureBookingsCustomers(docs);
@@ -607,6 +615,9 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   const staff = await TDStaff.findById(executiveId);
   if (!staff || !staff.active) throw new ApiError(404, 'Executive not found');
+  if (isCreUser(req.admin) && !isCreAssignableDesignation(staff.designation)) {
+    throw new ApiError(403, 'CRE can only assign test drives to Sales Executives or Sales Managers');
+  }
 
   applyBookingExecutiveAssignment(doc, staff);
   doc.assignmentStatus = 'PENDING_ACCEPTANCE';

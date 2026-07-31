@@ -2,7 +2,11 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildLeadAdminReport } = require('../utils/leadReportBuilder');
-const { buildExecutiveDashboard } = require('../utils/executiveDashboardBuilder');
+const {
+  buildExecutiveDashboard,
+  buildManagerTeamDashboard,
+  isManagerDashboardUser,
+} = require('../utils/executiveDashboardBuilder');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
 const { isCreUser } = require('../utils/leadAssignment');
@@ -27,6 +31,12 @@ exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
   if (isCreUser(req.admin)) {
     const data = await buildCreReport({ creId: req.admin._id, year });
     return successResponse(res, { ...data, reportType: 'cre' });
+  }
+
+  // Sales Manager / Sales Head / Branch Manager — own + team metrics.
+  if (isManagerDashboardUser(req.admin)) {
+    const data = await buildManagerTeamDashboard({ admin: req.admin, year });
+    return successResponse(res, data);
   }
 
   const data = await buildExecutiveDashboard({

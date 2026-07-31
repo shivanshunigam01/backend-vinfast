@@ -19,8 +19,23 @@ function normalizeEmail(email) {
   return email ? String(email).trim().toLowerCase() : '';
 }
 
+/** Designations that CRE may assign leads / TD bookings to. */
+const CRE_ASSIGNABLE_DESIGNATIONS = new Set(['sales_executive', 'sales_manager']);
+
 function isCreUser(admin) {
   return String(admin?.designation || '').toLowerCase() === 'cre';
+}
+
+function isCreAssignableDesignation(designation) {
+  const d = String(designation || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  if (CRE_ASSIGNABLE_DESIGNATIONS.has(d)) return true;
+  // Custom User Master labels e.g. "Sales Manager"
+  if (d === 'sales_manager' || d.includes('sales_manager')) return true;
+  if (d === 'sales_executive' || d.includes('sales_executive')) return true;
+  return false;
 }
 
 function touchLeadActivity(lead, at = new Date()) {
@@ -28,8 +43,8 @@ function touchLeadActivity(lead, at = new Date()) {
   lead.lastActivityAt = at;
 }
 
-/** CRM list sort — recently assigned/edited leads first. */
-const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
+/** CRM list sort — newest created leads first (date + time), then recent activity. */
+const CRM_LEAD_LIST_SORT = { createdAt: -1, lastActivityAt: -1, updatedAt: -1, _id: -1 };
 
 /**
  * Admin portal, MD / CEO / GM / CRE / superadmin see all records.
@@ -51,10 +66,30 @@ function isExecutiveScopedUser(admin) {
   if (!admin) return false;
   if (isUnrestrictedViewer(admin)) return false;
   if (isCreUser(admin)) return false;
-  if (['manager', 'superadmin'].includes(admin.role) && admin.designation !== 'sales_executive') {
+  const designation = String(admin.designation || '').toLowerCase();
+  // Org managers / heads are never leaf-executive scoped (even if role was mis-set).
+  if (['sales_manager', 'sales_head', 'branch_manager', 'gm', 'ceo', 'md'].includes(designation)) {
     return false;
   }
-  return admin.role === 'executive' || admin.designation === 'sales_executive';
+  if (['manager', 'superadmin'].includes(admin.role) && designation !== 'sales_executive') {
+    return false;
+  }
+  return admin.role === 'executive' || designation === 'sales_executive';
+}
+
+/**
+ * Staff IDs that are "this person" only (login id + duplicate TDStaff rows by email).
+ * Does NOT include reporting subordinates.
+ */
+async function resolveSelfStaffIds(admin) {
+  const ids = new Set();
+  if (admin?._id) ids.add(String(admin._id));
+  const email = normalizeEmail(admin?.email);
+  if (email) {
+    const rows = await TDStaff.find({ email }).select('_id').lean();
+    for (const row of rows) ids.add(String(row._id));
+  }
+  return [...ids];
 }
 
 /**
@@ -130,7 +165,7 @@ async function resolveStaffIdsForUser(admin) {
   return [...ids];
 }
 
-function assignedToIdsFilter(staffIds, staffEmail) {
+function assignedToIdsFilter(staffIds, staffEmail, extraEmails = []) {
   const or = [];
   for (const rawId of staffIds) {
     const idStr = String(rawId);
@@ -141,9 +176,17 @@ function assignedToIdsFilter(staffIds, staffEmail) {
       or.push({ assignedTo: idStr });
     }
   }
-  const email = normalizeEmail(staffEmail);
-  // Only match email for single-person scope (executive). Team scope uses ids.
-  if (email && staffIds.length <= 2) or.push({ assignedToEmail: email });
+  const emails = new Set();
+  const primary = normalizeEmail(staffEmail);
+  if (primary) emails.add(primary);
+  for (const e of extraEmails || []) {
+    const n = normalizeEmail(e);
+    if (n) emails.add(n);
+  }
+  // Always match by email so SM/team lists still work when assignee id is stale/mismatched.
+  for (const email of emails) {
+    or.push({ assignedToEmail: email });
+  }
   if (!or.length) return { assignedTo: null };
   return { $or: or };
 }
@@ -152,9 +195,26 @@ function assignedToStaffFilter(staffId, staffEmail) {
   return assignedToIdsFilter(staffId ? [String(staffId)] : [], staffEmail);
 }
 
+async function resolveStaffEmailsForIds(staffIds, viewerEmail) {
+  const emails = new Set();
+  const primary = normalizeEmail(viewerEmail);
+  if (primary) emails.add(primary);
+
+  const oids = (staffIds || []).map((id) => toObjectId(id)).filter(Boolean);
+  if (oids.length) {
+    const rows = await TDStaff.find({ _id: { $in: oids } }).select('email').lean();
+    for (const row of rows) {
+      const e = normalizeEmail(row.email);
+      if (e) emails.add(e);
+    }
+  }
+  return [...emails];
+}
+
 async function assignedToStaffFilterAsync(admin) {
   const staffIds = await resolveStaffIdsForUser(admin);
-  return assignedToIdsFilter(staffIds, admin?.email);
+  const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
+  return assignedToIdsFilter(staffIds, admin?.email, emails);
 }
 
 function leadAssignedToStaff(lead, staffId, staffEmail) {
@@ -171,9 +231,10 @@ async function leadReadableByAdmin(lead, admin) {
   const staffIds = await resolveStaffIdsForUser(admin);
   const assigned = lead?.assignedTo?._id || lead?.assignedTo;
   if (assigned && staffIds.includes(String(assigned))) return true;
-  const email = normalizeEmail(admin?.email);
-  if (email && normalizeEmail(lead?.assignedToEmail) === email) return true;
-  return false;
+  const leadEmail = normalizeEmail(lead?.assignedToEmail);
+  if (!leadEmail) return false;
+  const teamEmails = await resolveStaffEmailsForIds(staffIds, admin?.email);
+  return teamEmails.includes(leadEmail);
 }
 
 function applyLeadAssignment(lead, assignee) {
@@ -190,7 +251,8 @@ async function repairExecutiveLeadAssignments(admin) {
   const email = normalizeEmail(admin?.email);
   if (!email) return;
 
-  const staffIds = await resolveStaffIdsForUser(admin);
+  // Self only — never rewrite team members' leads onto the viewer (breaks SM dashboards).
+  const staffIds = await resolveSelfStaffIds(admin);
   const idOr = [];
   for (const rawId of staffIds) {
     const oid = toObjectId(rawId);
@@ -219,7 +281,7 @@ async function repairExecutiveLeadAssignments(admin) {
   );
 }
 
-function assignedExecutiveIdsFilter(staffIds, staffEmail) {
+function assignedExecutiveIdsFilter(staffIds, staffEmail, extraEmails = []) {
   const or = [];
   for (const rawId of staffIds) {
     const idStr = String(rawId);
@@ -230,15 +292,24 @@ function assignedExecutiveIdsFilter(staffIds, staffEmail) {
       or.push({ assignedExecutive: idStr });
     }
   }
-  const email = normalizeEmail(staffEmail);
-  if (email && staffIds.length <= 2) or.push({ assignedExecutiveEmail: email });
+  const emails = new Set();
+  const primary = normalizeEmail(staffEmail);
+  if (primary) emails.add(primary);
+  for (const e of extraEmails || []) {
+    const n = normalizeEmail(e);
+    if (n) emails.add(n);
+  }
+  for (const email of emails) {
+    or.push({ assignedExecutiveEmail: email });
+  }
   if (!or.length) return { assignedExecutive: null };
   return { $or: or };
 }
 
 async function assignedExecutiveFilterAsync(admin) {
   const staffIds = await resolveStaffIdsForUser(admin);
-  return assignedExecutiveIdsFilter(staffIds, admin?.email);
+  const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
+  return assignedExecutiveIdsFilter(staffIds, admin?.email, emails);
 }
 
 function bookingAssignedToStaff(booking, staffId, staffEmail) {
@@ -262,12 +333,12 @@ function applyBookingExecutiveAssignment(booking, staff) {
   }
 }
 
-/** Backfill missing assignedExecutiveEmail on TD bookings for this executive. */
+/** Backfill missing assignedExecutiveEmail on TD bookings for this executive (self only). */
 async function repairExecutiveBookingAssignments(admin) {
   const email = normalizeEmail(admin?.email);
   if (!email) return;
 
-  const staffIds = await resolveStaffIdsForUser(admin);
+  const staffIds = await resolveSelfStaffIds(admin);
   const idOr = [];
   for (const rawId of staffIds) {
     const oid = toObjectId(rawId);
@@ -303,12 +374,16 @@ module.exports = {
   touchLeadActivity,
   CRM_LEAD_LIST_SORT,
   UNRESTRICTED_DESIGNATIONS,
+  CRE_ASSIGNABLE_DESIGNATIONS,
   isUnrestrictedViewer,
   isCreUser,
+  isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
   collectSubtreeStaffIds,
   resolveStaffIdsForUser,
+  resolveSelfStaffIds,
+  resolveStaffEmailsForIds,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
   assignedToIdsFilter,

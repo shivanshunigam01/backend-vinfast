@@ -404,9 +404,9 @@ export default function AdminTDUsers() {
       </div>
 
       <Card className="p-4 border-primary/20 bg-primary/5 text-sm">
-        <p className="font-medium text-foreground mb-1">Staff login</p>
+        <p className="font-medium text-foreground mb-1">Employee login</p>
         <p className="text-muted-foreground text-xs leading-relaxed">
-          Every staff user signs in at <span className="font-mono text-foreground">/staff/login</span> with their email and password.
+          Every employee signs in at <span className="font-mono text-foreground">/staff/login</span> with their email and password.
           Admins use <span className="font-mono text-foreground">/admin/login</span>.
           Assigned test drives appear under <strong className="text-foreground">My Test Drives</strong>.
           Sales Executives land on that page automatically; managers and above also see full TD Management.
@@ -581,7 +581,7 @@ export default function AdminTDUsers() {
               {form._id ? (
                 <p className="text-[11px] text-muted-foreground">
                   Shown like name/email when a saved password exists. Edit and save to reset login credentials.
-                  Staff sign in at <span className="font-mono">/staff/login</span>.
+                  Employee sign in at <span className="font-mono">/staff/login</span>.
                 </p>
               ) : null}
             </div>

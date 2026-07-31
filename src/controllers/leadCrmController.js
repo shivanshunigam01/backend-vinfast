@@ -10,7 +10,6 @@ const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const TDStaff = require('../models/TDStaff');
-const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
@@ -20,6 +19,7 @@ const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
   isCreUser,
+  isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
   assignedToStaffFilter,
@@ -98,11 +98,10 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
     const assignee = await TDStaff.findOne({
       _id: executiveId,
       active: true,
-      designation: { $in: STAFF_DESIGNATIONS },
-    }).select('_id name email designation');
+    }).select('_id name email designation role');
     if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
-    if (isCreUser(viewer) && String(assignee.designation || '').toLowerCase() !== 'sales_executive') {
-      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    if (isCreUser(viewer) && !isCreAssignableDesignation(assignee.designation)) {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
     }
     return assignee;
   }
@@ -110,14 +109,14 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
   const needle = normalizeConsultantName(salesConsultant);
   if (!needle || needle === 'un-assigned' || needle === 'unassigned') return null;
 
-  const staff = await TDStaff.find({ active: true, designation: { $in: STAFF_DESIGNATIONS } })
-    .select('_id name email designation')
+  const staff = await TDStaff.find({ active: true })
+    .select('_id name email designation role')
     .lean();
 
   const exact = staff.find((s) => normalizeConsultantName(s.name) === needle);
   if (exact) {
-    if (isCreUser(viewer) && String(exact.designation || '').toLowerCase() !== 'sales_executive') {
-      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    if (isCreUser(viewer) && !isCreAssignableDesignation(exact.designation)) {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
     }
     return exact;
   }
@@ -126,8 +125,8 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
     const n = normalizeConsultantName(s.name);
     return n.includes(needle) || needle.includes(n);
   });
-  if (partial && isCreUser(viewer) && String(partial.designation || '').toLowerCase() !== 'sales_executive') {
-    throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+  if (partial && isCreUser(viewer) && !isCreAssignableDesignation(partial.designation)) {
+    throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
   }
   return partial || null;
 }
@@ -369,6 +368,8 @@ async function buildLeadQuery(admin, queryParams = {}) {
     if (queryParams.assignedTo) {
       if (queryParams.assignedTo === 'unassigned') {
         query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
+      } else if (queryParams.assignedTo === 'me') {
+        query.$and.push(assignedToStaffFilter(admin._id, admin.email));
       } else {
         const allowedIds = await resolveStaffIdsForUser(admin);
         if (!allowedIds.includes(String(queryParams.assignedTo))) {
@@ -450,7 +451,8 @@ async function buildLeadQuery(admin, queryParams = {}) {
 
 exports.getCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  if (isExecutiveScopedUser(req.admin)) {
+  // Backfill missing assignedToEmail for this user only (safe for SM + SE).
+  if (isTeamScopedUser(req.admin)) {
     await repairExecutiveLeadAssignments(req.admin);
   }
   const { page, limit, skip } = buildPagination(req);
@@ -761,11 +763,10 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     assignee = await TDStaff.findOne({
       _id: executiveId,
       active: true,
-      designation: { $in: STAFF_DESIGNATIONS },
     }).select('name email role designation');
     if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
-    if (isCreUser(req.admin) && String(assignee.designation || '').toLowerCase() !== 'sales_executive') {
-      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    if (isCreUser(req.admin) && !isCreAssignableDesignation(assignee.designation)) {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
     }
   }
 
@@ -1170,7 +1171,14 @@ exports.deleteCrmLead = asyncHandler(async (req, res) => {
 });
 
 const XLSX = require('xlsx');
-const { normalizeMobile } = require('../utils/mobile');
+const { normalizeMobile, mobileVariants } = require('../utils/mobile');
+const { nextLeadId, nextOpportunityId } = require('../utils/pvIdGenerator');
+const {
+  isCurrentFormatSheet,
+  parseCurrentFormatRow,
+  pickForwardStage,
+  normalizeImportModel: normalizeCreImportModel,
+} = require('../utils/creCurrentFormatImport');
 
 const CLOSED_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
 
@@ -1265,9 +1273,210 @@ exports.exportCrmLeads = asyncHandler(async (req, res) => {
   return res.status(200).send(buffer);
 });
 
+async function findLeadByMobileAndModel(mobile, modelNorm) {
+  const variants = mobileVariants(mobile);
+  const candidates = await Lead.find({
+    mobile: { $in: variants.length ? variants : [mobile] },
+  })
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  const match = candidates.find(
+    (l) => normalizeCreImportModel(l.model) === modelNorm || String(l.model || '').trim() === modelNorm,
+  );
+  return match || null;
+}
+
+async function syncImportFollowUps(lead, followUps, admin, results) {
+  if (!Array.isArray(followUps) || !followUps.length) return;
+
+  const existing = await LeadFollowUp.find({ leadId: lead._id }).select('note scheduledAt').lean();
+  const existingKeys = new Set(
+    existing.map((f) => {
+      const day = f.scheduledAt ? new Date(f.scheduledAt).toISOString().slice(0, 10) : '';
+      return `${String(f.note || '').trim().toLowerCase()}|${day}`;
+    }),
+  );
+
+  let nextPending = lead.nextFollowUp ? new Date(lead.nextFollowUp) : null;
+
+  for (const fu of followUps.slice(0, 12)) {
+    const note = String(fu?.note || '').trim();
+    if (!note) continue;
+    let scheduled = null;
+    if (fu.scheduledAt) {
+      const d = new Date(fu.scheduledAt);
+      if (!Number.isNaN(d.getTime())) scheduled = d;
+    }
+    const day = scheduled ? scheduled.toISOString().slice(0, 10) : '';
+    const key = `${note.toLowerCase()}|${day}`;
+    if (existingKeys.has(key)) continue;
+    existingKeys.add(key);
+
+    const isCompleted = !scheduled || scheduled <= new Date();
+    await LeadFollowUp.create({
+      leadId: lead._id,
+      createdBy: admin._id,
+      note,
+      scheduledAt: scheduled || undefined,
+      completedAt: isCompleted ? new Date() : undefined,
+      status: isCompleted ? 'completed' : 'pending',
+    });
+    results.followUpsCreated += 1;
+
+    if (scheduled && !isCompleted) {
+      if (!nextPending || scheduled < nextPending) nextPending = scheduled;
+    }
+  }
+
+  if (nextPending) {
+    lead.nextFollowUp = nextPending;
+  }
+}
+
+/**
+ * CRE Current Format upsert: match by mobile + model; store creSheet; stage forward only.
+ */
+async function importCurrentFormatRows(admin, leadRows) {
+  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0 };
+  const seenInBatch = new Set();
+
+  for (let i = 0; i < leadRows.length; i += 1) {
+    const raw = leadRows[i];
+    const rowNum = i + 2;
+    let parsed;
+    try {
+      parsed = parseCurrentFormatRow(raw);
+      const { name, mobile, model } = parsed;
+      if (!name || String(name).trim().length < 2) {
+        throw new Error('Customer name is required');
+      }
+      if (!mobile || !/^[6-9]\d{9}$/.test(mobile)) {
+        throw new Error('Valid 10-digit mobile (PHONE) is required');
+      }
+
+      const batchKey = `${mobile}|${model}`;
+      if (seenInBatch.has(batchKey)) {
+        throw new Error(`Duplicate mobile + model within this import file (${mobile} / ${model})`);
+      }
+      seenInBatch.add(batchKey);
+
+      let assignedTo = null;
+      let assignedToEmail;
+      let assignLabel = '';
+      if (admin.role === 'executive' && !isCreUser(admin)) {
+        assignedTo = toObjectId(admin._id) || admin._id;
+        assignedToEmail = admin.email;
+        assignLabel = admin.name;
+      } else if (parsed.salesConsultant) {
+        const assignee = await resolveSalesConsultant(null, parsed.salesConsultant, admin);
+        if (assignee) {
+          assignedTo = assignee._id;
+          assignedToEmail = assignee.email;
+          assignLabel = assignee.name;
+        }
+      }
+
+      const modelForStorage = normalizeLeadModelForStorage(model);
+      if (!isValidLeadModel(modelForStorage)) {
+        throw new Error(`Invalid model: ${parsed.modelRaw || model}`);
+      }
+
+      let lead = await findLeadByMobileAndModel(mobile, model);
+      const incomingStatus = parsed.derivedStatus || 'Enquiry';
+      const isNew = !lead;
+
+      if (isNew) {
+        const parent = await ensureParentCustomer({
+          name,
+          mobile,
+          email: parsed.email,
+          city: parsed.city,
+        });
+        lead = await Lead.create({
+          leadId: await nextLeadId(),
+          opportunityId: await nextOpportunityId(),
+          pvCustomerId: parent._id,
+          name: String(name).trim(),
+          mobile,
+          email: parsed.email || undefined,
+          city: String(parsed.city || 'Patna').trim(),
+          area: String(parsed.area || parsed.city || '').trim() || undefined,
+          model: modelForStorage,
+          source: parsed.source || 'Excel Import',
+          status: incomingStatus,
+          leadType: parsed.leadType || undefined,
+          remarks: parsed.remarks || undefined,
+          exchangeNeeded: Boolean(parsed.exchangeNeeded),
+          assignedTo: assignedTo || undefined,
+          assignedToEmail: assignedToEmail || undefined,
+          createdBy: admin._id,
+          creSheet: parsed.creSheet || undefined,
+          lastActivityAt: new Date(),
+        });
+        await LeadStageHistory.create({
+          leadId: lead._id,
+          toStage: incomingStatus,
+          changedBy: admin._id,
+          reason: `Lead imported from Current Format Excel by ${admin.name}${
+            assignLabel ? ` · assigned to ${assignLabel}` : ''
+          }`,
+        });
+        results.created += 1;
+      } else {
+        const prevStage = lead.status;
+        const nextStage = pickForwardStage(prevStage, incomingStatus);
+
+        lead.name = String(name).trim();
+        if (parsed.email) lead.email = parsed.email;
+        lead.city = String(parsed.city || lead.city || 'Patna').trim();
+        lead.area = String(parsed.area || parsed.city || lead.area || '').trim() || lead.area;
+        lead.model = modelForStorage;
+        if (parsed.source) lead.source = parsed.source;
+        if (parsed.leadType) lead.leadType = parsed.leadType;
+        if (parsed.remarks) lead.remarks = parsed.remarks;
+        lead.exchangeNeeded = Boolean(parsed.exchangeNeeded);
+        if (assignedTo) {
+          lead.assignedTo = assignedTo;
+          lead.assignedToEmail = assignedToEmail;
+        }
+        lead.creSheet = { ...(lead.creSheet?.toObject?.() || lead.creSheet || {}), ...parsed.creSheet };
+        lead.status = nextStage;
+        touchLeadActivity(lead);
+        await lead.save();
+
+        if (normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)) {
+          await LeadStageHistory.create({
+            leadId: lead._id,
+            fromStage: prevStage,
+            toStage: nextStage,
+            changedBy: admin._id,
+            reason: `Stage updated from Current Format Excel by ${admin.name}`,
+          });
+        }
+        results.updated += 1;
+      }
+
+      await syncImportFollowUps(lead, parsed.followUps, admin, results);
+      touchLeadActivity(lead);
+      await lead.save();
+    } catch (err) {
+      results.failed.push({
+        row: rowNum,
+        name: parsed?.name || cellStr(raw?.['CUSTOMER NAME'] ?? raw?.name) || '',
+        mobile: parsed?.mobile || cellStr(raw?.PHONE ?? raw?.phone) || '',
+        message: err?.message || 'Failed to import row',
+      });
+    }
+  }
+
+  return results;
+}
+
 /**
  * POST /admin/crm/leads/import
  * Body JSON: { leads: [...], followUps: [...] } OR multipart file.
+ * Auto-detects CRE Current Format (upsert by mobile + model) vs simple create-only import.
  */
 exports.importCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
@@ -1296,7 +1505,18 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Maximum 500 leads per import.');
   }
 
-  const results = { created: 0, failed: [], followUpsCreated: 0 };
+  if (isCurrentFormatSheet(leadRows)) {
+    const results = await importCurrentFormatRows(req.admin, leadRows);
+    return successResponse(
+      res,
+      results,
+      `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`,
+      200,
+      { total: leadRows.length, failed: results.failed.length, format: 'current' },
+    );
+  }
+
+  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0 };
   /** mobile (normalized) -> created lead _id for follow-up linking in this batch */
   const createdByMobile = new Map();
   const seenInBatch = new Set();
@@ -1321,7 +1541,6 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       }
       seenInBatch.add(mobile);
 
-      const { mobileVariants } = require('../utils/mobile');
       const variants = mobileVariants(mobile);
       const existing = await Lead.findOne({
         mobile: { $in: variants.length ? variants : [mobile] },

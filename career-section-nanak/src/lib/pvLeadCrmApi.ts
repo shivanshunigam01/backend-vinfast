@@ -22,17 +22,23 @@ export type PvCrmLead = {
   mobile: string;
   email?: string;
   city?: string;
+  area?: string;
+  address?: string;
+  leadType?: string;
   model: string;
   source?: string;
   status: string;
   remarks?: string;
   nextFollowUp?: string;
+  exchangeNeeded?: boolean;
+  financeNeeded?: boolean;
   assignedTo?: { _id: string; name: string; email?: string } | null;
   createdAt?: string;
   updatedAt?: string;
   lastActivityAt?: string;
   convertedAt?: string;
   convertedCustomerId?: { _id: string; customerId?: string; name?: string; mobile?: string } | string | null;
+  creSheet?: Record<string, unknown> | null;
 };
 
 export type LeadStageHistoryItem = {
@@ -230,6 +236,7 @@ export type CrmLeadImportFailure = {
 
 export type CrmLeadImportResult = {
   created: number;
+  updated?: number;
   followUpsCreated?: number;
   failed: CrmLeadImportFailure[];
 };
@@ -309,68 +316,55 @@ export async function importPvCrmLeadsFile(file: File): Promise<CrmLeadImportRes
   return adminPostFormData<CrmLeadImportResult>(`${CRM_BASE}/import`, form);
 }
 
-/** Client-side blank template matching the CRM import/export columns. */
+/** CRE Current Format blank template (all sheet columns; TD = Test Drive). */
 export function downloadPvCrmLeadImportTemplate(): void {
-  const leadHeaders = [
-    "Name",
-    "Mobile",
-    "Email",
-    "City",
-    "Model",
-    "Source",
-    "Status",
-    "Remarks",
-    "AssignedToEmail",
-    "NextFollowUp",
-    "FinanceNeeded",
-    "ExchangeNeeded",
-  ];
-  const sample = [
-    {
-      Name: "Sample Customer",
-      Mobile: "9876543210",
-      Email: "sample@example.com",
-      City: "Patna",
-      Model: "VF 7",
-      Source: "Excel Import",
-      Status: "Enquiry",
-      Remarks: "",
-      AssignedToEmail: "",
-      NextFollowUp: "",
-      FinanceNeeded: "No",
-      ExchangeNeeded: "No",
-    },
-  ];
-  const followHeaders = [
-    "Mobile",
-    "LeadId",
-    "Note",
-    "ScheduledAt",
-    "CompletedAt",
-    "Outcome",
-    "Status",
-    "CreatedAt",
-  ];
-  const followSample = [
-    {
-      Mobile: "9876543210",
-      LeadId: "",
-      Note: "Called customer — interested in VF 7",
-      ScheduledAt: "",
-      CompletedAt: "",
-      Outcome: "",
-      Status: "pending",
-      CreatedAt: "",
-    },
-  ];
+  const sample: Record<string, string | number> = {
+    "Sl. No.": 1,
+    "ENQUIRY DATE": "",
+    "LEAD SOURCE": "Walk-In",
+    "CUSTOMER NAME": "Sample Customer",
+    PHONE: "9876543210",
+    "MAIL ID": "sample@example.com",
+    LOCATION: "Patna",
+    "EXISTING VARIANT": "NO",
+    MODEL: "VF 7",
+    "CALL DATE": "",
+    "INITIAL REMARK": "",
+    "LEAD TYPE": "HOT",
+    "SALES CONSULTANT": "",
+    DATE: "",
+    "SALES PERSON REMARK": "",
+    "TD Date": "",
+    "TD DONE\nYES/ NO": "NO",
+    "TD NOT DONE,\nWHY?": "",
+    "AFTER TD REMARK": "",
+    "CRE Follow up call 1 Date": "",
+    "CRE Follow up call remark 1": "",
+    "Sales Person Follow up call 1 Date": "",
+    "Sales Person Follow up call 1 Remark 1": "",
+    "CRE Follow up call 2 Date": "",
+    "CRE Follow up call remark 2": "",
+    "Sales Person Follow up call remark 2 Date": "",
+    "Sales Person Follow up call remark 2": "",
+    "CRE Follow up call 3 Date": "",
+    "CRE Follow up call remark 3": "",
+    "Sales Person Follow up call remark 3 Date": "",
+    "Sales Person Follow up call remark 3": "",
+    "BOOKING DONE\nYES / NO": "NO",
+    "BOOKING DATE": "",
+    "FINAL MODEL": "",
+    "FINAL VARIANT": "",
+    "FINAL COLOUR": "",
+    "MAIL SENT\nYES / NO": "NO",
+    "EXCHANGE\nYES / NO": "NO",
+    "RETAIL DONE\nYES / NO": "NO",
+    "RETAIL DATE": "",
+    "DELIVERY DATE": "",
+  };
+  const headers = Object.keys(sample);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sample, { header: leadHeaders }), "Leads");
-  XLSX.utils.book_append_sheet(
-    wb,
-    XLSX.utils.json_to_sheet(followSample, { header: followHeaders }),
-    "FollowUps",
-  );
-  XLSX.writeFile(wb, "crm-leads-import-template.xlsx");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([sample], { header: headers }), "Sheet3");
+  XLSX.writeFile(wb, "crm-current-format-import-template.xlsx");
 }
 
 export type ConvertLeadToSalePayload = {
