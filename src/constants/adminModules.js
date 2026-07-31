@@ -56,7 +56,7 @@ const ADMIN_MODULE_ACTIONS = {
   vehicle_stock: ['view', 'create', 'update', 'delete', 'tag_demo'],
   td_reports: ['view', 'export'],
   td_config: ['view', 'update'],
-  calendar: ['view'],
+  calendar: ['view', 'update'],
   td_reschedule_history: ['view', 'approve'],
   td_fleet_health: ['view', 'schedule_charge', 'log_maintenance'],
 };

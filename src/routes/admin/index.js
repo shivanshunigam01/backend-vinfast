@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const validate = require('../../middleware/validate');
 const { protect, authorize, requireModuleAction } = require('../../middleware/auth');
-const { requireModuleActionOrRoles } = require('../../utils/modulePermissions');
+const { requireModuleActionOrRoles, requireAnyModuleAction } = require('../../utils/modulePermissions');
 const authController = require('../../controllers/authController');
 const dashboardController = require('../../controllers/dashboardController');
 const ctrl = require('../../controllers/adminResourceController');
@@ -43,7 +43,22 @@ router.use(protect);
 
 // Dashboard
 router.get('/dashboard/stats', dashboardController.getStats);
-router.get('/dashboard/calendar', calendarController.getCalendarEvents);
+router.get(
+  '/dashboard/calendar',
+  requireModuleAction('calendar', 'view'),
+  calendarController.getCalendarEvents,
+);
+router.patch(
+  '/dashboard/calendar/events/:id',
+  requireAnyModuleAction([
+    ['calendar', 'update'],
+    ['crm_leads', 'update'],
+    ['td_bookings', 'update'],
+    ['td_bookings', 'reschedule'],
+    ['td_my_bookings', 'reschedule'],
+  ]),
+  calendarController.patchCalendarEvent,
+);
 router.get('/geocode/reverse', geocodeController.reverseGeocode);
 router.post('/geocode/reverse', geocodeController.reverseGeocode);
 

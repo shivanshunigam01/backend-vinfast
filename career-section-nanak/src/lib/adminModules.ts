@@ -79,7 +79,7 @@ export const ACTION_LABELS: Record<AdminModuleAction, string> = {
 
 export const ADMIN_MODULES: AdminModule[] = [
   { key: "dashboard", label: "Dashboard", path: "/admin/dashboard", group: "Core", actions: ["view"] },
-  { key: "calendar", label: "Calendar", path: "/admin/calendar", group: "Core", actions: ["view"] },
+  { key: "calendar", label: "Calendar", path: "/admin/calendar", group: "Core", actions: ["view", "update"] },
   { key: "homepage", label: "Homepage", path: "/admin/homepage", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "crm_leads", label: "Lead CRM", path: "/admin/crm/leads", group: "Core", actions: ["view", "create", "update", "delete", "assign", "export"] },
   { key: "products", label: "Products", path: "/admin/products", group: "Core", actions: ["view", "create", "update", "delete"] },
