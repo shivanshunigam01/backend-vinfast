@@ -42,6 +42,8 @@ import {
   type PvCrmLeadDateField,
   type OpportunityDuplicatesReport,
   type CrmLeadImportFailure,
+  type CrmLeadImportRow,
+  type CrmLeadImportRowStatus,
 } from "@/lib/pvLeadCrmApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
@@ -149,6 +151,8 @@ export default function AdminCrmLeads() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [importResultOpen, setImportResultOpen] = useState(false);
+  const [importListFilter, setImportListFilter] = useState<"all" | CrmLeadImportRowStatus>("all");
+  const [importRows, setImportRows] = useState<CrmLeadImportRow[]>([]);
   const [importFailures, setImportFailures] = useState<CrmLeadImportFailure[]>([]);
   const [importSummary, setImportSummary] = useState<{
     created: number;
@@ -563,8 +567,20 @@ export default function AdminCrmLeads() {
       const updated = result.updated ?? 0;
       const created = result.created ?? 0;
       const uploaded = created + updated + failed;
+      const detailRows: CrmLeadImportRow[] =
+        Array.isArray(result.rows) && result.rows.length
+          ? result.rows
+          : failedRows.map((f) => ({
+              row: f.row,
+              status: "failed" as const,
+              name: f.name,
+              mobile: f.mobile,
+              message: f.message,
+            }));
+      setImportRows(detailRows);
       setImportFailures(failedRows);
       setImportSummary({ created, updated, followUps, failed, total: uploaded });
+      setImportListFilter(failed > 0 ? "failed" : "all");
       setImportResultOpen(true);
       if (failed > 0) {
         toast.warning(
@@ -587,9 +603,16 @@ export default function AdminCrmLeads() {
 
   const closeImportResult = () => {
     setImportResultOpen(false);
+    setImportRows([]);
     setImportFailures([]);
     setImportSummary(null);
+    setImportListFilter("all");
   };
+
+  const filteredImportRows = useMemo(() => {
+    if (importListFilter === "all") return importRows;
+    return importRows.filter((r) => r.status === importListFilter);
+  }, [importRows, importListFilter]);
 
   return (
     <div className="space-y-6">
@@ -1548,7 +1571,7 @@ export default function AdminCrmLeads() {
           if (!o) closeImportResult();
         }}
       >
-        <DialogContent className="bg-card border-border max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               {(importSummary?.failed ?? 0) > 0 ? (
@@ -1561,28 +1584,60 @@ export default function AdminCrmLeads() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-center">
-                <p className="text-xs text-muted-foreground">Uploaded</p>
-                <p className="text-lg font-semibold tabular-nums">{importSummary?.total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-emerald-500/10 px-3 py-2.5 text-center">
-                <p className="text-xs text-muted-foreground">Created</p>
-                <p className="text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                  {importSummary?.created ?? 0}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-sky-500/10 px-3 py-2.5 text-center">
-                <p className="text-xs text-muted-foreground">Updated</p>
-                <p className="text-lg font-semibold tabular-nums text-sky-700 dark:text-sky-400">
-                  {importSummary?.updated ?? 0}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-destructive/10 px-3 py-2.5 text-center">
-                <p className="text-xs text-muted-foreground">Failed</p>
-                <p className="text-lg font-semibold tabular-nums text-destructive">
-                  {importSummary?.failed ?? 0}
-                </p>
-              </div>
+              {(
+                [
+                  {
+                    key: "all" as const,
+                    label: "Uploaded",
+                    value: importSummary?.total ?? 0,
+                    active: "border-foreground/40 bg-muted/40 ring-1 ring-foreground/10",
+                    idle: "border-border/60 bg-muted/20",
+                    valueClass: "text-foreground",
+                  },
+                  {
+                    key: "created" as const,
+                    label: "Created",
+                    value: importSummary?.created ?? 0,
+                    active: "border-emerald-500/50 bg-emerald-500/15 ring-1 ring-emerald-500/30",
+                    idle: "border-border/60 bg-emerald-500/10",
+                    valueClass: "text-emerald-700 dark:text-emerald-400",
+                  },
+                  {
+                    key: "updated" as const,
+                    label: "Updated",
+                    value: importSummary?.updated ?? 0,
+                    active: "border-sky-500/50 bg-sky-500/15 ring-1 ring-sky-500/30",
+                    idle: "border-border/60 bg-sky-500/10",
+                    valueClass: "text-sky-700 dark:text-sky-400",
+                  },
+                  {
+                    key: "failed" as const,
+                    label: "Failed",
+                    value: importSummary?.failed ?? 0,
+                    active: "border-destructive/50 bg-destructive/15 ring-1 ring-destructive/30",
+                    idle: "border-border/60 bg-destructive/10",
+                    valueClass: "text-destructive",
+                  },
+                ] as const
+              ).map((card) => {
+                const selected = importListFilter === card.key;
+                return (
+                  <button
+                    key={card.key}
+                    type="button"
+                    onClick={() => setImportListFilter(card.key)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2.5 text-center transition-colors",
+                      selected ? card.active : card.idle,
+                    )}
+                  >
+                    <p className="text-xs text-muted-foreground">{card.label}</p>
+                    <p className={cn("text-lg font-semibold tabular-nums", card.valueClass)}>
+                      {card.value}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
 
             {(importSummary?.followUps ?? 0) > 0 ? (
@@ -1592,12 +1647,16 @@ export default function AdminCrmLeads() {
               </p>
             ) : null}
 
-            {(importSummary?.failed ?? 0) > 0 ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  These rows failed (duplicates, missing fields, or invalid data). Fix them and re-upload, or
-                  download the error file.
-                </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                Showing{" "}
+                <strong className="text-foreground">{filteredImportRows.length}</strong>{" "}
+                {importListFilter === "all"
+                  ? "row(s)"
+                  : `${importListFilter} row(s)`}
+                . Click a summary card to filter.
+              </p>
+              {(importSummary?.failed ?? 0) > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
@@ -1605,7 +1664,7 @@ export default function AdminCrmLeads() {
                     onClick={() => downloadCrmImportErrors(importFailures, "xlsx")}
                   >
                     <Download className="w-4 h-4 mr-2" />
-                    Download errors (Excel)
+                    Errors Excel
                   </Button>
                   <Button
                     size="sm"
@@ -1613,37 +1672,75 @@ export default function AdminCrmLeads() {
                     onClick={() => downloadCrmImportErrors(importFailures, "csv")}
                   >
                     <FileSpreadsheet className="w-4 h-4 mr-2" />
-                    Download errors (CSV)
+                    Errors CSV
                   </Button>
                 </div>
-                <div className="max-h-60 overflow-y-auto rounded-md border border-border/50 text-xs">
-                  <table className="w-full">
-                    <thead className="bg-muted/40 sticky top-0">
-                      <tr className="text-left">
-                        <th className="p-2 font-medium">Row</th>
-                        <th className="p-2 font-medium">Name</th>
-                        <th className="p-2 font-medium">Mobile</th>
-                        <th className="p-2 font-medium">Why failed</th>
+              ) : null}
+            </div>
+
+            <div className="max-h-[22rem] overflow-y-auto rounded-md border border-border/50 text-xs">
+              <table className="w-full">
+                <thead className="bg-muted/40 sticky top-0">
+                  <tr className="text-left">
+                    <th className="p-2 font-medium">Row</th>
+                    <th className="p-2 font-medium">Status</th>
+                    <th className="p-2 font-medium">Name</th>
+                    <th className="p-2 font-medium">Mobile</th>
+                    <th className="p-2 font-medium">Model</th>
+                    <th className="p-2 font-medium">Lead ID</th>
+                    <th className="p-2 font-medium">Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredImportRows.length ? (
+                    filteredImportRows.map((r, i) => (
+                      <tr key={`${r.status}-${r.row}-${i}`} className="border-t border-border/40">
+                        <td className="p-2 align-top whitespace-nowrap">{r.row}</td>
+                        <td className="p-2 align-top">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "capitalize",
+                              r.status === "created" &&
+                                "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
+                              r.status === "updated" &&
+                                "border-sky-500/40 text-sky-700 dark:text-sky-400",
+                              r.status === "failed" && "border-destructive/40 text-destructive",
+                            )}
+                          >
+                            {r.status}
+                          </Badge>
+                        </td>
+                        <td className="p-2 align-top">{r.name || "—"}</td>
+                        <td className="p-2 align-top font-mono">{r.mobile || "—"}</td>
+                        <td className="p-2 align-top">{r.model || "—"}</td>
+                        <td className="p-2 align-top font-mono">{r.leadId || "—"}</td>
+                        <td
+                          className={cn(
+                            "p-2 align-top",
+                            r.status === "failed" ? "text-destructive" : "text-muted-foreground",
+                          )}
+                        >
+                          {r.message || "—"}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {importFailures.map((f, i) => (
-                        <tr key={`${f.row}-${i}`} className="border-t border-border/40">
-                          <td className="p-2 align-top whitespace-nowrap">{f.row}</td>
-                          <td className="p-2 align-top">{f.name || "—"}</td>
-                          <td className="p-2 align-top font-mono">{f.mobile || "—"}</td>
-                          <td className="p-2 align-top text-destructive">{f.message}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="p-4 text-center text-muted-foreground">
+                        No rows in this filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {(importSummary?.failed ?? 0) === 0 ? (
               <p className="text-sm text-muted-foreground">
                 All rows in the file were processed successfully.
               </p>
-            )}
+            ) : null}
 
             <Button variant="outline" className="w-full" onClick={closeImportResult}>
               Close

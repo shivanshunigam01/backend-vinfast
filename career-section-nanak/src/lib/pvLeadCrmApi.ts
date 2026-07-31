@@ -234,11 +234,24 @@ export type CrmLeadImportFailure = {
   message: string;
 };
 
+export type CrmLeadImportRowStatus = "created" | "updated" | "failed";
+
+export type CrmLeadImportRow = {
+  row: number | string;
+  status: CrmLeadImportRowStatus;
+  name?: string;
+  mobile?: string;
+  model?: string;
+  leadId?: string;
+  message?: string;
+};
+
 export type CrmLeadImportResult = {
   created: number;
   updated?: number;
   followUpsCreated?: number;
   failed: CrmLeadImportFailure[];
+  rows?: CrmLeadImportRow[];
 };
 
 /** Download failed import rows as Excel (and optional CSV). */

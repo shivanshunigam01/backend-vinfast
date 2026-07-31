@@ -1337,8 +1337,13 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
 /**
  * CRE Current Format upsert: match by mobile + model; store creSheet; stage forward only.
  */
+function pushImportRow(results, entry) {
+  if (!Array.isArray(results.rows)) results.rows = [];
+  results.rows.push(entry);
+}
+
 async function importCurrentFormatRows(admin, leadRows) {
-  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0 };
+  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0, rows: [] };
   const seenInBatch = new Set();
 
   for (let i = 0; i < leadRows.length; i += 1) {
@@ -1423,6 +1428,15 @@ async function importCurrentFormatRows(admin, leadRows) {
           }`,
         });
         results.created += 1;
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'created',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          leadId: lead.leadId || String(lead._id),
+          message: 'New lead created',
+        });
       } else {
         const prevStage = lead.status;
         const nextStage = pickForwardStage(prevStage, incomingStatus);
@@ -1455,17 +1469,36 @@ async function importCurrentFormatRows(admin, leadRows) {
           });
         }
         results.updated += 1;
+        const stageNote =
+          normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)
+            ? `Updated · stage ${prevStage} → ${nextStage}`
+            : 'Existing lead updated';
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'updated',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          leadId: lead.leadId || String(lead._id),
+          message: stageNote,
+        });
       }
 
       await syncImportFollowUps(lead, parsed.followUps, admin, results);
       touchLeadActivity(lead);
       await lead.save();
     } catch (err) {
-      results.failed.push({
+      const fail = {
         row: rowNum,
         name: parsed?.name || cellStr(raw?.['CUSTOMER NAME'] ?? raw?.name) || '',
         mobile: parsed?.mobile || cellStr(raw?.PHONE ?? raw?.phone) || '',
         message: err?.message || 'Failed to import row',
+      };
+      results.failed.push(fail);
+      pushImportRow(results, {
+        ...fail,
+        status: 'failed',
+        model: parsed?.model || cellStr(raw?.['EXISTING VARIANT'] ?? raw?.model) || '',
       });
     }
   }
@@ -1516,7 +1549,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
     );
   }
 
-  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0 };
+  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0, rows: [] };
   /** mobile (normalized) -> created lead _id for follow-up linking in this batch */
   const createdByMobile = new Map();
   const seenInBatch = new Set();
@@ -1592,12 +1625,13 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         cellStr(raw.exchangeNeeded ?? raw.ExchangeNeeded) ||
         headerKey(raw, ['exchange', 'exchange needed']);
 
+      const modelForStorage = normalizeLeadModelForStorage(model);
       const { lead } = await intakePvLead({
         name,
         mobile,
         email,
         city,
-        model: normalizeLeadModelForStorage(model),
+        model: modelForStorage,
         source,
         status: normalizeStageLabel(status) || 'Enquiry',
         remarks,
@@ -1611,6 +1645,15 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
 
       createdByMobile.set(mobile, lead._id);
       results.created += 1;
+      pushImportRow(results, {
+        row: rowNum,
+        status: 'created',
+        name: String(name).trim(),
+        mobile,
+        model: modelForStorage,
+        leadId: lead.leadId || String(lead._id),
+        message: 'New lead created',
+      });
 
       // Optional next follow-up date on lead row
       const nextFu =
@@ -1623,11 +1666,20 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         }
       }
     } catch (err) {
-      results.failed.push({
+      const fail = {
         row: rowNum,
         name: cellStr(raw?.name ?? raw?.Name) || headerKey(raw || {}, ['name']),
         mobile: cellStr(raw?.mobile ?? raw?.Mobile) || headerKey(raw || {}, ['mobile', 'phone']),
         message: err?.message || 'Failed to import row',
+      };
+      results.failed.push(fail);
+      pushImportRow(results, {
+        ...fail,
+        status: 'failed',
+        model:
+          cellStr(raw?.model ?? raw?.Model) ||
+          headerKey(raw || {}, ['model', 'interested model', 'vehicle']) ||
+          '',
       });
     }
   }
@@ -1701,12 +1753,14 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         }
       }
     } catch (err) {
-      results.failed.push({
+      const fail = {
         row: `FollowUp:${i + 2}`,
         name: '',
         mobile: cellStr(raw?.mobile ?? raw?.Mobile) || '',
         message: err?.message || 'Failed to import follow-up',
-      });
+      };
+      results.failed.push(fail);
+      pushImportRow(results, { ...fail, status: 'failed', model: '' });
     }
   }
 
