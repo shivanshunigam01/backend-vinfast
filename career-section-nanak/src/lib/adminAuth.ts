@@ -126,9 +126,14 @@ export function canPerformManagerAction(
 export function isPathAllowed(user: AdminUser | null | undefined, pathname: string): boolean {
   const restricted = getRestrictedModules(user);
   if (!restricted) return true;
-  return ADMIN_MODULES.some(
+  if (ADMIN_MODULES.some(
     (m) => restricted.includes(m.key) && (pathname === m.path || pathname.startsWith(`${m.path}/`)),
-  );
+  )) {
+    return true;
+  }
+  // Roles page shares User Master permission
+  if (pathname.startsWith("/admin/td/roles") && restricted.includes("td_users")) return true;
+  return false;
 }
 
 /**

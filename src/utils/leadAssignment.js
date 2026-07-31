@@ -32,12 +32,14 @@ function touchLeadActivity(lead, at = new Date()) {
 const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
 
 /**
- * MD / CEO / GM / CRE / superadmin see all records.
+ * Admin portal, MD / CEO / GM / CRE / superadmin see all records.
  * Sales Head, Sales Managers, Branch Managers, Executives are limited to their
  * org subtree (self + everyone who reports up to them via reportsTo).
  */
 function isUnrestrictedViewer(admin) {
   if (!admin) return false;
+  // Admin-collection logins are not in the TDStaff reporting tree — never team-scope them.
+  if (admin.userType === 'admin') return true;
   if (admin.role === 'superadmin') return true;
   if (isCreUser(admin)) return true;
   const designation = String(admin.designation || '').toLowerCase();

@@ -9,7 +9,7 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
-const { isTeamScopedUser, resolveStaffIdsForUser } = require('../utils/leadAssignment');
+const { isTeamScopedUser, resolveStaffIdsForUser, isCreUser } = require('../utils/leadAssignment');
 
 const STAFF_ROLES = ['executive', 'manager'];
 const StaffRole = require('../models/StaffRole');
@@ -380,7 +380,13 @@ async function listAssignableStaff(viewer) {
     .lean();
 
   let filtered = docs;
-  if (viewer && isTeamScopedUser(viewer)) {
+
+  // CRE assigns only to Sales Executives — hide SM/SH/BM/etc. from the dropdown.
+  if (viewer && isCreUser(viewer)) {
+    filtered = docs.filter(
+      (row) => String(row.designation || '').toLowerCase() === 'sales_executive',
+    );
+  } else if (viewer && isTeamScopedUser(viewer)) {
     const allowed = new Set(await resolveStaffIdsForUser(viewer));
     filtered = docs.filter((row) => allowed.has(String(row._id)));
   }

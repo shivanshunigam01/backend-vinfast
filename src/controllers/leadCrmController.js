@@ -52,21 +52,32 @@ const LEAD_POPULATE = [
 ];
 
 function assertCrmAccess(admin) {
+  if (admin?.userType === 'admin') return;
   if (!isCrmStaffRole(admin.role) && !isCreUser(admin)) {
     throw new ApiError(403, 'Lead CRM access is for executives, managers, and CRE only');
   }
 }
 
 function assertCanAssignLeads(admin) {
-  if (!['manager', 'superadmin'].includes(admin.role) && !isCreUser(admin)) {
-    throw new ApiError(403, 'Only managers and CRE can assign leads to executives');
+  if (
+    admin?.userType === 'admin' ||
+    ['manager', 'superadmin'].includes(admin?.role) ||
+    isCreUser(admin)
+  ) {
+    return;
   }
+  throw new ApiError(403, 'Only managers and CRE can assign leads to executives');
 }
 
 function assertAdminEditRights(admin) {
-  if (!['manager', 'superadmin'].includes(admin.role) && !isCreUser(admin)) {
-    throw new ApiError(403, 'Only managers, admins, and CRE can edit lead details');
+  if (
+    admin?.userType === 'admin' ||
+    ['manager', 'superadmin'].includes(admin?.role) ||
+    isCreUser(admin)
+  ) {
+    return;
   }
+  throw new ApiError(403, 'Only managers, admins, and CRE can edit lead details');
 }
 
 function isCrmManagerLike(admin) {
@@ -82,14 +93,17 @@ function normalizeConsultantName(raw) {
     .toLowerCase();
 }
 
-async function resolveSalesConsultant(executiveId, salesConsultant) {
+async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
   if (executiveId) {
     const assignee = await TDStaff.findOne({
       _id: executiveId,
       active: true,
       designation: { $in: STAFF_DESIGNATIONS },
-    }).select('_id name email');
+    }).select('_id name email designation');
     if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
+    if (isCreUser(viewer) && String(assignee.designation || '').toLowerCase() !== 'sales_executive') {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    }
     return assignee;
   }
 
@@ -101,12 +115,20 @@ async function resolveSalesConsultant(executiveId, salesConsultant) {
     .lean();
 
   const exact = staff.find((s) => normalizeConsultantName(s.name) === needle);
-  if (exact) return exact;
+  if (exact) {
+    if (isCreUser(viewer) && String(exact.designation || '').toLowerCase() !== 'sales_executive') {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    }
+    return exact;
+  }
 
   const partial = staff.find((s) => {
     const n = normalizeConsultantName(s.name);
     return n.includes(needle) || needle.includes(n);
   });
+  if (partial && isCreUser(viewer) && String(partial.designation || '').toLowerCase() !== 'sales_executive') {
+    throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+  }
   return partial || null;
 }
 
@@ -184,7 +206,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     assignedToEmail = admin.email;
     assignLabel = admin.name;
   } else {
-    const assignee = await resolveSalesConsultant(executiveId, salesConsultant);
+    const assignee = await resolveSalesConsultant(executiveId, salesConsultant, admin);
     if (assignee) {
       assignedTo = assignee._id;
       assignedToEmail = assignee.email;
@@ -722,7 +744,7 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
 
 exports.listCrmExecutives = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  const data = await listAssignableStaff();
+  const data = await listAssignableStaff(req.admin);
   return successResponse(res, data);
 });
 
@@ -742,6 +764,9 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
       designation: { $in: STAFF_DESIGNATIONS },
     }).select('name email role designation');
     if (!assignee) throw new ApiError(404, 'Staff user not found in User Master or inactive');
+    if (isCreUser(req.admin) && String(assignee.designation || '').toLowerCase() !== 'sales_executive') {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives');
+    }
   }
 
   const prevAssignee = lead.assignedTo
@@ -1298,13 +1323,12 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
 
       const { mobileVariants } = require('../utils/mobile');
       const variants = mobileVariants(mobile);
-      const open = await Lead.findOne({
+      const existing = await Lead.findOne({
         mobile: { $in: variants.length ? variants : [mobile] },
-        status: { $nin: CLOSED_STATUSES },
       }).sort({ createdAt: -1 });
-      if (open) {
+      if (existing) {
         throw new Error(
-          `Duplicate mobile — open lead already exists (${open.leadId || open.opportunityId || open._id}, stage: ${open.status})`,
+          `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
         );
       }
 
@@ -1427,18 +1451,36 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       const fuStatus =
         cellStr(raw.status ?? raw.Status) || headerKey(raw, ['status']) || 'pending';
 
+      const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : undefined;
+      const completedAt = completedAtRaw ? new Date(completedAtRaw) : undefined;
+      const normalizedFuStatus = ['pending', 'completed', 'cancelled'].includes(
+        String(fuStatus || '').toLowerCase(),
+      )
+        ? String(fuStatus).toLowerCase()
+        : 'pending';
+
       await LeadFollowUp.create({
         leadId: leadDoc._id,
         createdBy: req.admin._id || req.tdStaff?._id,
         note,
-        scheduledAt: scheduledAtRaw ? new Date(scheduledAtRaw) : undefined,
-        completedAt: completedAtRaw ? new Date(completedAtRaw) : undefined,
+        scheduledAt: scheduledAt && !Number.isNaN(scheduledAt.getTime()) ? scheduledAt : undefined,
+        completedAt: completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : undefined,
         outcome,
-        status: ['pending', 'completed', 'cancelled'].includes(fuStatus.toLowerCase())
-          ? fuStatus.toLowerCase()
-          : 'pending',
+        status: normalizedFuStatus,
       });
       results.followUpsCreated += 1;
+
+      // Keep lead.nextFollowUp in sync with the soonest pending scheduled follow-up.
+      if (
+        normalizedFuStatus === 'pending' &&
+        scheduledAt &&
+        !Number.isNaN(scheduledAt.getTime())
+      ) {
+        if (!leadDoc.nextFollowUp || scheduledAt < new Date(leadDoc.nextFollowUp)) {
+          leadDoc.nextFollowUp = scheduledAt;
+          await leadDoc.save();
+        }
+      }
     } catch (err) {
       results.failed.push({
         row: `FollowUp:${i + 2}`,

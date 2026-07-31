@@ -107,6 +107,9 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
   ADMIN_MODULES.map((m) => [m.path, m.key]),
 ) as Record<string, AdminModuleKey>;
 
+/** Roles UI shares User Master ACL (td_users). */
+MODULE_BY_PATH["/admin/td/roles"] = "td_users";
+
 export const MODULE_GROUPS = ["Core", "Staff portal", "Feedback", "TD Management"] as const;
 
 export function modulesForGroup(group: AdminModule["group"]) {

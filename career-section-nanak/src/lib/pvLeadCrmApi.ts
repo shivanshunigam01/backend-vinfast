@@ -1,6 +1,7 @@
-import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson } from "@/lib/api";
+import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson, adminDownloadBlob, adminPostFormData } from "@/lib/api";
 import { CRM_LEAD_STAGES, type CrmLeadStage } from "@/lib/leadStages";
 import { LEAD_SOURCE_OPTIONS } from "@/data/leadSources";
+import * as XLSX from "xlsx";
 
 const CRM_BASE = "/admin/crm/leads";
 
@@ -218,6 +219,158 @@ export async function bulkDeletePvCrmLeads(
   ids: string[],
 ): Promise<{ deleted: number; requested: number }> {
   return adminPostJson<{ deleted: number; requested: number }>(`${CRM_BASE}/bulk-delete`, { ids });
+}
+
+export type CrmLeadImportFailure = {
+  row: number | string;
+  name?: string;
+  mobile?: string;
+  message: string;
+};
+
+export type CrmLeadImportResult = {
+  created: number;
+  followUpsCreated?: number;
+  failed: CrmLeadImportFailure[];
+};
+
+/** Download failed import rows as Excel (and optional CSV). */
+export function downloadCrmImportErrors(
+  failed: CrmLeadImportFailure[],
+  format: "xlsx" | "csv" = "xlsx",
+): void {
+  const rows = (failed || []).map((f) => ({
+    Row: f.row,
+    Name: f.name || "",
+    Mobile: f.mobile || "",
+    Error: f.message || "",
+  }));
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (format === "csv") {
+    const header = "Row,Name,Mobile,Error";
+    const escape = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const body = rows.map((r) => [r.Row, r.Name, r.Mobile, r.Error].map(escape).join(",")).join("\n");
+    const blob = new Blob([`${header}\n${body}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `crm-import-errors-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Errors");
+  XLSX.writeFile(wb, `crm-import-errors-${stamp}.xlsx`);
+}
+
+/** Download Excel export of current CRM filter (Leads + FollowUps sheets). */
+export async function exportPvCrmLeadsExcel(params?: {
+  search?: string;
+  status?: string;
+  source?: string;
+  assignedTo?: string;
+  from?: string;
+  to?: string;
+  dateField?: PvCrmLeadDateField;
+}): Promise<void> {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.status && params.status !== "all") q.set("status", params.status);
+  if (params?.source && params.source !== "all") q.set("source", params.source);
+  if (params?.assignedTo) q.set("assignedTo", params.assignedTo);
+  if (params?.from) q.set("from", params.from);
+  if (params?.to) q.set("to", params.to);
+  if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
+  const qs = q.toString();
+  const { blob, filename } = await adminDownloadBlob(
+    `${CRM_BASE}/export${qs ? `?${qs}` : ""}`,
+    `crm-leads-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Upload Excel/CSV for bulk lead import (multipart field name: file). */
+export async function importPvCrmLeadsFile(file: File): Promise<CrmLeadImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  return adminPostFormData<CrmLeadImportResult>(`${CRM_BASE}/import`, form);
+}
+
+/** Client-side blank template matching the CRM import/export columns. */
+export function downloadPvCrmLeadImportTemplate(): void {
+  const leadHeaders = [
+    "Name",
+    "Mobile",
+    "Email",
+    "City",
+    "Model",
+    "Source",
+    "Status",
+    "Remarks",
+    "AssignedToEmail",
+    "NextFollowUp",
+    "FinanceNeeded",
+    "ExchangeNeeded",
+  ];
+  const sample = [
+    {
+      Name: "Sample Customer",
+      Mobile: "9876543210",
+      Email: "sample@example.com",
+      City: "Patna",
+      Model: "VF 7",
+      Source: "Excel Import",
+      Status: "Enquiry",
+      Remarks: "",
+      AssignedToEmail: "",
+      NextFollowUp: "",
+      FinanceNeeded: "No",
+      ExchangeNeeded: "No",
+    },
+  ];
+  const followHeaders = [
+    "Mobile",
+    "LeadId",
+    "Note",
+    "ScheduledAt",
+    "CompletedAt",
+    "Outcome",
+    "Status",
+    "CreatedAt",
+  ];
+  const followSample = [
+    {
+      Mobile: "9876543210",
+      LeadId: "",
+      Note: "Called customer — interested in VF 7",
+      ScheduledAt: "",
+      CompletedAt: "",
+      Outcome: "",
+      Status: "pending",
+      CreatedAt: "",
+    },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sample, { header: leadHeaders }), "Leads");
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(followSample, { header: followHeaders }),
+    "FollowUps",
+  );
+  XLSX.writeFile(wb, "crm-leads-import-template.xlsx");
 }
 
 export type ConvertLeadToSalePayload = {

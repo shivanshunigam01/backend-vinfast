@@ -148,6 +148,65 @@ export async function adminDeleteJson<T = unknown>(path: string): Promise<T | un
   return json.data as T | undefined;
 }
 
+/** Download a binary response (Excel export, etc.) with auth. */
+export async function adminDownloadBlob(
+  path: string,
+  fallbackFilename = "download.bin",
+): Promise<{ blob: Blob; filename: string }> {
+  const headers = new Headers();
+  mergeAuthHeaders(headers);
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (res.status === 401) {
+    const loginPath = getPortalLoginPath(getAdminUser());
+    clearAdminSession();
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/admin") &&
+      !window.location.pathname.includes("/admin/login") &&
+      !window.location.pathname.includes("/staff/login")
+    ) {
+      window.location.assign(`${window.location.origin}${loginPath}?reason=session-expired`);
+    }
+  }
+  if (!res.ok) {
+    let message = "Download failed";
+    try {
+      const json = (await res.json()) as { message?: string };
+      if (json.message) message = String(json.message);
+    } catch {
+      /* ignore */
+    }
+    throw new ApiRequestError(message, res.status);
+  }
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+  const filename = match ? decodeURIComponent(match[1].replace(/"/g, "").trim()) : fallbackFilename;
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+/** POST multipart/form-data (do not set Content-Type — browser sets boundary). */
+export async function adminPostFormData<T>(path: string, formData: FormData): Promise<T> {
+  const headers = new Headers();
+  mergeAuthHeaders(headers);
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers, body: formData });
+  const json = await parseJson(res);
+  if (res.status === 401) {
+    const loginPath = getPortalLoginPath(getAdminUser());
+    clearAdminSession();
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/admin") &&
+      !window.location.pathname.includes("/admin/login") &&
+      !window.location.pathname.includes("/staff/login")
+    ) {
+      window.location.assign(`${window.location.origin}${loginPath}?reason=session-expired`);
+    }
+  }
+  assertOk(res, json);
+  return json.data as T;
+}
+
 export async function adminLogin(email: string, password: string): Promise<{ token: string; admin: Record<string, unknown> }> {
   const res = await fetch(`${API_BASE}/admin/auth/login`, {
     method: "POST",

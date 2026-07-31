@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   Users, Search, RefreshCw, Loader2, Phone, Clock,
   MessageSquare, ArrowRight, CheckCircle2, CalendarClock, UserCheck, Plus, ChevronLeft, ChevronRight, Pencil,
-  History, Trophy, ShieldAlert, Trash2, CheckSquare, Square, X,
+  History, Trophy, ShieldAlert, Trash2, CheckSquare, Square, X, Download, Upload, FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -31,12 +31,17 @@ import {
   convertPvCrmLeadToSale,
   deletePvCrmLead,
   bulkDeletePvCrmLeads,
+  exportPvCrmLeadsExcel,
+  importPvCrmLeadsFile,
+  downloadPvCrmLeadImportTemplate,
+  downloadCrmImportErrors,
   fetchOpportunityDuplicates,
   type AssignableStaffUser,
   type PvCrmLead,
   type PvCrmLeadDetail,
   type PvCrmLeadDateField,
   type OpportunityDuplicatesReport,
+  type CrmLeadImportFailure,
 } from "@/lib/pvLeadCrmApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
@@ -67,12 +72,28 @@ const PAGE_SIZE = 20;
 export default function AdminCrmLeads() {
   const adminUser = getAdminUser();
   const isExecutive = isFieldStaffUser(adminUser);
+  const isCre = String(adminUser?.designation || "").toLowerCase() === "cre";
+  const isAdminPortal =
+    adminUser?.userType === "admin" || adminUser?.role === "superadmin";
   const canCreate = canPerformAction(adminUser, "crm_leads", "create");
   const canUpdate = canPerformAction(adminUser, "crm_leads", "update");
-  const canAssignLeads = canPerformManagerAction(adminUser, "crm_leads", "assign");
+  const canAssignLeads =
+    isCre || canPerformManagerAction(adminUser, "crm_leads", "assign");
   const canEditDetails = canPerformManagerAction(adminUser, "crm_leads", "update");
-  const canDelete = canPerformManagerAction(adminUser, "crm_leads", "delete");
+  const canDelete =
+    isCre || canPerformManagerAction(adminUser, "crm_leads", "delete");
+  /** Bulk Excel download/upload — Admin + CRE (and managers with export/create). */
+  const canExportExcel =
+    isAdminPortal ||
+    isCre ||
+    canPerformAction(adminUser, "crm_leads", "export") ||
+    canAssignLeads;
+  const canImportExcel =
+    canCreate && (isAdminPortal || isCre || adminUser?.role === "manager" || canAssignLeads);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [leads, setLeads] = useState<PvCrmLead[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -127,6 +148,8 @@ export default function AdminCrmLeads() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [importFailures, setImportFailures] = useState<CrmLeadImportFailure[] | null>(null);
+  const [importSummary, setImportSummary] = useState<{ created: number; followUps: number } | null>(null);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
     setEditName(lead.name ?? "");
@@ -496,6 +519,63 @@ export default function AdminCrmLeads() {
     }
   };
 
+  const handleExportExcel = async () => {
+    if (!canExportExcel) return;
+    setExporting(true);
+    try {
+      await exportPvCrmLeadsExcel({
+        search: search.trim() || undefined,
+        status: filterStatus,
+        source: filterSource,
+        from: filterDateFrom || undefined,
+        to: filterDateTo || undefined,
+        dateField: filterDateField,
+        assignedTo:
+          canAssignLeads && filterExecutive !== "all"
+            ? filterExecutive === "unassigned"
+              ? "unassigned"
+              : filterExecutive
+            : undefined,
+      });
+      toast.success("Excel download started");
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    if (!canImportExcel) return;
+    setImporting(true);
+    try {
+      const result = await importPvCrmLeadsFile(file);
+      const failed = result.failed?.length ?? 0;
+      const followUps = result.followUpsCreated ?? 0;
+      if (failed > 0) {
+        setImportFailures(result.failed);
+        setImportSummary({ created: result.created, followUps });
+        toast.warning(
+          `Imported ${result.created} lead(s)` +
+            (followUps ? `, ${followUps} follow-up(s)` : "") +
+            `. ${failed} row(s) failed — download the error file for details.`,
+        );
+      } else {
+        setImportFailures(null);
+        setImportSummary(null);
+        toast.success(
+          `Imported ${result.created} lead(s)` +
+            (followUps ? ` and ${followUps} follow-up(s)` : ""),
+        );
+      }
+      void loadLeads();
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -513,6 +593,38 @@ export default function AdminCrmLeads() {
           {canCreate ? (
             <Button size="sm" className="bg-primary text-primary-foreground" onClick={() => setShowAddLead(true)}>
               <Plus className="w-4 h-4 mr-2" /> Add Lead
+            </Button>
+          ) : null}
+          {canImportExcel ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+              Bulk upload
+            </Button>
+          ) : null}
+          {canImportExcel ? (
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => downloadPvCrmLeadImportTemplate()}
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
+            </Button>
+          ) : null}
+          {canExportExcel ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={exporting}
+              onClick={() => void handleExportExcel()}
+            >
+              {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              Download
             </Button>
           ) : null}
           {canDelete ? (
@@ -536,6 +648,19 @@ export default function AdminCrmLeads() {
           <Button variant="outline" size="sm" onClick={() => void loadLeads()}>
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
+          {canImportExcel ? (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void handleImportFile(file);
+              }}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -1379,8 +1504,10 @@ export default function AdminCrmLeads() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Permanently delete <strong className="text-foreground">{selectedIds.size}</strong> lead(s)?
-              Follow-ups and stage history will also be removed. This cannot be undone.
+              You are about to permanently delete{" "}
+              <strong className="text-foreground">{selectedIds.size}</strong> junk lead(s).
+              This also removes all follow-up history and stage history for those leads.
+              This action cannot be undone.
             </p>
             <div className="flex gap-3">
               <Button
@@ -1396,6 +1523,76 @@ export default function AdminCrmLeads() {
                 Keep
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!importFailures?.length}
+        onOpenChange={(o) => {
+          if (!o) {
+            setImportFailures(null);
+            setImportSummary(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-card border-border max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-500" />
+              Import errors
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Imported {importSummary?.created ?? 0} lead(s)
+              {importSummary?.followUps ? ` and ${importSummary.followUps} follow-up(s)` : ""}.{" "}
+              <strong className="text-foreground">{importFailures?.length ?? 0}</strong> row(s) failed
+              (duplicates, missing fields, or invalid data). Download the error file to review and fix.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => importFailures && downloadCrmImportErrors(importFailures, "xlsx")}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download errors (Excel)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => importFailures && downloadCrmImportErrors(importFailures, "csv")}
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Download errors (CSV)
+              </Button>
+            </div>
+            <div className="max-h-60 overflow-y-auto rounded-md border border-border/50 text-xs">
+              <table className="w-full">
+                <thead className="bg-muted/40 sticky top-0">
+                  <tr className="text-left">
+                    <th className="p-2 font-medium">Row</th>
+                    <th className="p-2 font-medium">Name</th>
+                    <th className="p-2 font-medium">Mobile</th>
+                    <th className="p-2 font-medium">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(importFailures || []).map((f, i) => (
+                    <tr key={`${f.row}-${i}`} className="border-t border-border/40">
+                      <td className="p-2 align-top whitespace-nowrap">{f.row}</td>
+                      <td className="p-2 align-top">{f.name || "—"}</td>
+                      <td className="p-2 align-top font-mono">{f.mobile || "—"}</td>
+                      <td className="p-2 align-top text-destructive">{f.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Button variant="outline" className="w-full" onClick={() => { setImportFailures(null); setImportSummary(null); }}>
+              Close
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

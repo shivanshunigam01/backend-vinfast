@@ -82,12 +82,12 @@ const StaffLogin = () => {
             />
             <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium text-primary mb-3">
               <Users className="h-3.5 w-3.5" />
-              Staff portal
+              Employee portal
             </div>
-            <h1 className="font-display text-2xl font-bold text-foreground">Staff Login</h1>
+            <h1 className="font-display text-2xl font-bold text-foreground">Employee Login</h1>
             <p className="text-muted-foreground text-sm mt-1">
               {step === "identity"
-                ? "Step 1 of 2 — enter your registered staff email"
+                ? "Step 1 of 2 — enter your registered employee email"
                 : "Step 2 of 2 — enter your password"}
             </p>
           </div>

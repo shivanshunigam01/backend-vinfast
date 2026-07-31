@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
   Tag, Bell, Home, Image,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
-  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck
+  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield
 } from "lucide-react";
 import vinLogo from "@/assets/patliputra-vinfast-logo.png";
 import { hasApi } from "@/lib/apiConfig";
@@ -76,6 +76,7 @@ const tdNavItems = [
   { label: "Reschedule History", icon: Clock, path: "/admin/td/reschedule-history", staff: false },
   { label: "Fleet Health",   icon: Gauge,         path: "/admin/td/fleet-health", staff: false },
   { label: "User Master",    icon: Users,         path: "/admin/td/users",       staff: false },
+  { label: "Roles",          icon: Shield,        path: "/admin/td/roles",       staff: false },
   { label: "Demo Fleet",     icon: Gauge,         path: "/admin/td/vehicles",    staff: false },
   { label: "Model Master",   icon: Car,           path: "/admin/td/models",      staff: false },
   { label: "Vehicle Stock",  icon: Warehouse,     path: "/admin/stock",          staff: false },
@@ -347,7 +348,7 @@ const AdminLayout = () => {
           </button>
         </div>
 
-        <nav className="flex min-h-0 flex-1 flex-col gap-px overflow-hidden px-2 py-2 sm:px-2.5">
+        <nav className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto overscroll-contain px-2 py-2 sm:px-2.5">
           {fieldStaff ? (
             <>
               {crmNavItems.map((item) => {

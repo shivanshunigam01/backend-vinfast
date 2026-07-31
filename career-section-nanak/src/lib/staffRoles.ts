@@ -1,5 +1,6 @@
 export const STAFF_DESIGNATIONS = [
   "sales_executive",
+  "cre",
   "sales_manager",
   "sales_head",
   "branch_manager",
@@ -12,6 +13,7 @@ export type StaffDesignation = (typeof STAFF_DESIGNATIONS)[number];
 
 export const DESIGNATION_LABELS: Record<StaffDesignation, string> = {
   sales_executive: "Sales Executive",
+  cre: "CRE",
   sales_manager: "Sales Manager",
   sales_head: "Sales Head",
   branch_manager: "Branch Manager",
@@ -28,6 +30,7 @@ export const DESIGNATION_RANK: Record<StaffDesignation, number> = {
   branch_manager: 70,
   sales_head: 60,
   sales_manager: 40,
+  cre: 30,
   sales_executive: 20,
 };
 

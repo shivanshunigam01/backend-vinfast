@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   CalendarCheck, Search, RefreshCw, Car, Clock, Building2,
   CheckCircle2, XCircle, AlertTriangle, Loader2, Eye, UserCheck, Ban, Play, CalendarClock, Lock, Pencil, Trash2,
-  CheckSquare, Square, X,
+  CheckSquare, Square, X, Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +32,7 @@ import {
 import {
   CompleteTestDriveDialog,
   TestDriveCompletionSummary,
+  UpdateCompletionMediaDialog,
 } from "@/components/admin/CompleteTestDriveDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
 
@@ -162,6 +163,7 @@ export default function AdminTDBookings() {
   const [openingOdometer, setOpeningOdometer] = useState("");
   const [closingOdometer, setClosingOdometer] = useState("");
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [updateMediaOpen, setUpdateMediaOpen] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [detailName, setDetailName] = useState("");
   const [detailMobile, setDetailMobile] = useState("");
@@ -1290,6 +1292,16 @@ export default function AdminTDBookings() {
                           </div>
                         ) : null}
                         {tdLog ? <TestDriveCompletionSummary log={tdLog} /> : null}
+                        {tdLog ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setUpdateMediaOpen(true)}
+                          >
+                            <Camera className="w-4 h-4 mr-2" />
+                            Update photo / location
+                          </Button>
+                        ) : null}
                         {feedbackLoading ? (
                           <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
                         ) : (
@@ -1345,6 +1357,15 @@ export default function AdminTDBookings() {
           vehicleBattery={selected.vehicleId?.batteryPercent}
           initialClosingOdometer={closingOdometer}
           onCompleted={handleDriveCompleted}
+        />
+      ) : null}
+
+      {selected && tdLog ? (
+        <UpdateCompletionMediaDialog
+          open={updateMediaOpen}
+          onOpenChange={setUpdateMediaOpen}
+          log={tdLog}
+          onSaved={(updated) => setTdLog(updated)}
         />
       ) : null}
 

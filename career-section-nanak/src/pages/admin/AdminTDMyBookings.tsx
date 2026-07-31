@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import {
   CalendarCheck, Search, RefreshCw, Car, Clock, Building2,
-  CheckCircle2, XCircle, Loader2, Eye, Ban, Play, CalendarClock, User, Plus,
+  CheckCircle2, XCircle, Loader2, Eye, Ban, Play, CalendarClock, User, Plus, Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatTime12h } from "@/lib/tdSlotSchedule";
@@ -26,6 +26,7 @@ import {
 import {
   CompleteTestDriveDialog,
   TestDriveCompletionSummary,
+  UpdateCompletionMediaDialog,
 } from "@/components/admin/CompleteTestDriveDialog";
 import { AddCrmLeadDialog } from "@/components/admin/AddCrmLeadDialog";
 import { DrivingLicenceVerify } from "@/components/admin/DrivingLicenceVerify";
@@ -114,6 +115,7 @@ export default function AdminTDMyBookings() {
   const [openingOdometer, setOpeningOdometer] = useState("");
   const [closingOdometer, setClosingOdometer] = useState("");
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [updateMediaOpen, setUpdateMediaOpen] = useState(false);
   const [showAddLead, setShowAddLead] = useState(false);
 
   const isExecutive = isFieldStaffUser(adminUser);
@@ -620,6 +622,16 @@ export default function AdminTDMyBookings() {
                         </div>
                       ) : null}
                       {tdLog ? <TestDriveCompletionSummary log={tdLog} /> : null}
+                      {tdLog ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setUpdateMediaOpen(true)}
+                        >
+                          <Camera className="w-4 h-4 mr-2" />
+                          Update photo / location
+                        </Button>
+                      ) : null}
                       <div className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
                         Test drive completed — customer added to your Leads (source: Test Drive). Capture feedback below to update their status.
                       </div>
@@ -664,6 +676,15 @@ export default function AdminTDMyBookings() {
           vehicleBattery={selected.vehicleId?.batteryPercent}
           initialClosingOdometer={closingOdometer}
           onCompleted={handleDriveCompleted}
+        />
+      ) : null}
+
+      {selected && tdLog ? (
+        <UpdateCompletionMediaDialog
+          open={updateMediaOpen}
+          onOpenChange={setUpdateMediaOpen}
+          log={tdLog}
+          onSaved={(updated) => setTdLog(updated)}
         />
       ) : null}
 

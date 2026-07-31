@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, Camera, CheckCircle2, Loader2, MapPin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { endTestDriveLog, type TDLogRecord } from "@/lib/tdLogApi";
+import { endTestDriveLog, updateCompletionMedia, type TDLogRecord } from "@/lib/tdLogApi";
 import { submitTDFeedback } from "@/lib/tdFeedbackApi";
 import { formatApiErrors } from "@/lib/api";
 import {
@@ -20,6 +20,44 @@ import {
 type GeoFix = { lat: number; lng: number; accuracy?: number };
 
 type PhotoPick = { file: File | null; preview: string | null };
+
+/** Parse lat/lng from Google Maps share/pin URLs or plain "lat,lng" text. */
+export function parseGoogleMapsLocation(raw: string): GeoFix | null {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+
+  const atMatch = text.match(/@(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/);
+  if (atMatch) {
+    const lat = Number(atMatch[1]);
+    const lng = Number(atMatch[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+
+  const qMatch = text.match(/[?&](?:q|query|ll)=(-?\d+\.?\d*)[,+\s]+(-?\d+\.?\d*)/i);
+  if (qMatch) {
+    const lat = Number(qMatch[1]);
+    const lng = Number(qMatch[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+
+  const placeMatch = text.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+  if (placeMatch) {
+    const lat = Number(placeMatch[1]);
+    const lng = Number(placeMatch[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+
+  const plain = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (plain) {
+    const lat = Number(plain[1]);
+    const lng = Number(plain[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+  }
+
+  return null;
+}
 
 type Props = {
   open: boolean;
@@ -505,6 +543,215 @@ export function CompleteTestDriveDialog({
             The completion timestamp, GPS location, photos, DL data, ratings, and remarks are stored on the test
             drive record.
           </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type UpdateMediaProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  log: TDLogRecord | null;
+  onSaved: (log: TDLogRecord) => void | Promise<void>;
+};
+
+/** Post-completion: upload/replace customer photo and Google-pinned location. */
+export function UpdateCompletionMediaDialog({ open, onOpenChange, log, onSaved }: UpdateMediaProps) {
+  const idBase = useId();
+  const [customerPhoto, setCustomerPhoto] = useState<PhotoPick>({ file: null, preview: null });
+  const [vehiclePhoto, setVehiclePhoto] = useState<PhotoPick>({ file: null, preview: null });
+  const [geo, setGeo] = useState<GeoFix | null>(null);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [geoError, setGeoError] = useState("");
+  const [mapsUrl, setMapsUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const hasExistingPhoto = Boolean(log?.customerPhotoUrl);
+  const hasExistingLocation = log?.endLocation?.lat != null && log?.endLocation?.lng != null;
+
+  const captureLocation = () => {
+    if (!("geolocation" in navigator)) {
+      setGeoStatus("error");
+      setGeoError("Geolocation is not supported on this device/browser.");
+      return;
+    }
+    setGeoStatus("loading");
+    setGeoError("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+        setGeoStatus("ok");
+        setMapsUrl("");
+      },
+      (err) => {
+        setGeoStatus("error");
+        setGeoError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied — allow location access and retry."
+            : "Could not get the current location. Retry near a window / outdoors.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setCustomerPhoto({
+      file: null,
+      preview: log?.customerPhotoUrl || null,
+    });
+    setVehiclePhoto({
+      file: null,
+      preview: log?.vehiclePhotoUrl || null,
+    });
+    if (log?.endLocation?.lat != null && log?.endLocation?.lng != null) {
+      setGeo({
+        lat: log.endLocation.lat,
+        lng: log.endLocation.lng,
+        accuracy: log.endLocation.accuracy,
+      });
+      setGeoStatus("ok");
+    } else {
+      setGeo(null);
+      setGeoStatus("idle");
+      captureLocation();
+    }
+    setMapsUrl("");
+    setGeoError("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, log?._id]);
+
+  const applyMapsUrl = () => {
+    const parsed = parseGoogleMapsLocation(mapsUrl);
+    if (!parsed) {
+      toast.error("Could not read coordinates from that Google Maps link. Paste a pin URL or lat,lng.");
+      return;
+    }
+    setGeo(parsed);
+    setGeoStatus("ok");
+    setGeoError("");
+    toast.success("Location set from Google Maps pin");
+  };
+
+  const handleSave = async () => {
+    if (!log?._id) {
+      toast.error("No completion log found for this booking.");
+      return;
+    }
+    if (!hasExistingPhoto && !customerPhoto.file) {
+      toast.error("Customer photo is required.");
+      return;
+    }
+    if (!geo && !hasExistingLocation) {
+      toast.error("Capture GPS or paste a Google Maps pin for the test drive location.");
+      return;
+    }
+    if (!customerPhoto.file && !vehiclePhoto.file && !geo) {
+      toast.error("Choose a new photo or update the location.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updated = await updateCompletionMedia(log._id, {
+        customerPhoto: customerPhoto.file,
+        vehiclePhoto: vehiclePhoto.file,
+        endLat: geo?.lat,
+        endLng: geo?.lng,
+        endAccuracy: geo?.accuracy,
+      });
+      toast.success("Photo / location updated");
+      await onSaved(updated);
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display">Update photo / location</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Add or replace the customer photo and the Google-pinned location where the test drive was conducted.
+          </p>
+
+          <PhotoField
+            id={`${idBase}-upd-customer`}
+            label="Customer photo"
+            required={!hasExistingPhoto}
+            photo={customerPhoto}
+            onPick={setCustomerPhoto}
+            disabled={saving}
+          />
+          <PhotoField
+            id={`${idBase}-upd-vehicle`}
+            label="Vehicle photo"
+            photo={vehiclePhoto}
+            onPick={setVehiclePhoto}
+            disabled={saving}
+          />
+
+          <div className="space-y-2 rounded-lg border border-border/50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Test drive location
+              </Label>
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={captureLocation} disabled={saving}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${geoStatus === "loading" ? "animate-spin" : ""}`} />
+                Use GPS
+              </Button>
+            </div>
+            {geo ? (
+              <a
+                href={`https://www.google.com/maps?q=${geo.lat},${geo.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-mono text-primary hover:underline block"
+              >
+                {geo.lat.toFixed(6)}, {geo.lng.toFixed(6)} — open in Google Maps
+              </a>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">No location yet</p>
+            )}
+            {geoError ? <p className="text-[11px] text-destructive">{geoError}</p> : null}
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-[11px] text-muted-foreground">Or paste Google Maps pin / share URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={mapsUrl}
+                  onChange={(e) => setMapsUrl(e.target.value)}
+                  placeholder="https://maps.google.com/… or 25.61, 85.14"
+                  className="bg-secondary/50 text-xs"
+                  disabled={saving}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={applyMapsUrl} disabled={saving || !mapsUrl.trim()}>
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button className="flex-1" disabled={saving} onClick={() => void handleSave()}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Camera className="w-4 h-4 mr-2" />}
+              Save
+            </Button>
+            <Button variant="outline" className="flex-1" disabled={saving} onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

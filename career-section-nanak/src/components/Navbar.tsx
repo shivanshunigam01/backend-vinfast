@@ -31,7 +31,7 @@ const navLinks = [
 
 const loginOptions = [
   { label: "Customer", href: "/customer/login" },
-  { label: "Staff", href: "/staff/login" },
+  { label: "Employee", href: "/staff/login" },
   { label: "Admin", href: "/admin/login" },
 ] as const;
 

@@ -54,6 +54,7 @@ import AdminVehicleStock from "./pages/admin/AdminVehicleStock";
 import AdminTDReports from "./pages/admin/AdminTDReports";
 import AdminTDSlotConfig from "./pages/admin/AdminTDSlotConfig";
 import AdminTDUsers from "./pages/admin/AdminTDUsers";
+import AdminTDRoles from "./pages/admin/AdminTDRoles";
 import AdminFeedbackSubmissions from "./pages/admin/AdminFeedbackSubmissions";
 import AdminCrmLeads from "./pages/admin/AdminCrmLeads";
 import AdminExecutiveDashboard from "./pages/admin/AdminExecutiveDashboard";
@@ -171,6 +172,7 @@ const App = () => {
             <Route path="td/reports" element={<AdminTDReports />} />
             <Route path="td/config" element={<AdminTDSlotConfig />} />
             <Route path="td/users" element={<AdminTDUsers />} />
+            <Route path="td/roles" element={<AdminTDRoles />} />
           </Route>
 
           {/* Hyperlocal SEO: /{district}/{model} e.g. /patna/vinfast-vf6 */}
