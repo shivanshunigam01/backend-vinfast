@@ -15,15 +15,79 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatApiErrors } from "@/lib/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatApiErrors, adminGet } from "@/lib/api";
 import { getAdminUser } from "@/lib/adminAuth";
-import { fetchExecutiveDashboard, type ExecutiveDashboard } from "@/lib/executiveDashboardApi";
+import {
+  fetchExecutiveDashboard,
+  type ExecutiveDashboard,
+  type ManagerTeamMemberStats,
+} from "@/lib/executiveDashboardApi";
+import { fetchPvCrmLeads, type PvCrmLead } from "@/lib/pvLeadCrmApi";
 import { STAGE_COLORS, normalizeCrmStage } from "@/lib/leadStages";
 import { cn } from "@/lib/utils";
 
 const CHART_COLORS = ["#00d4ff", "#7c3aed", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 const YEAR_OPTIONS = [2024, 2025, 2026, 2027];
+
+const CLOSED_LEAD_STAGES = new Set(["Lost", "Delivered", "Not Interested"]);
+
+type TeamMetricKey = "leads" | "openLeads" | "testDrives" | "completedTestDrives";
+
+type DetailMode = "leads" | "tds";
+
+type DashboardCardKey =
+  | "my_leads"
+  | "my_tds"
+  | "team_leads"
+  | "team_tds"
+  | "pending_leads"
+  | "followups_due"
+  | "completed_tds"
+  | "team_performance"
+  | "year_leads"
+  | "year_tds"
+  | "year_td_completed"
+  | "active_leads"
+  | "followups_pending"
+  | "followups_overdue";
+
+type TeamTdRow = {
+  _id: string;
+  bookingId?: string;
+  bookingStatus?: string;
+  preferredModel?: string;
+  slotDate?: string;
+  slotTime?: string;
+  customerId?: { name?: string; mobile?: string } | null;
+  testDriveId?: { customerName?: string; mobile?: string; model?: string } | null;
+  assignedExecutive?: { _id?: string; name?: string } | null;
+};
+
+const TEAM_METRIC_LABELS: Record<TeamMetricKey, string> = {
+  leads: "Leads",
+  openLeads: "Open leads",
+  testDrives: "Test drives",
+  completedTestDrives: "Completed TDs",
+};
+
+const DASHBOARD_CARD_META: Record<DashboardCardKey, { title: string; mode: DetailMode }> = {
+  my_leads: { title: "My Assigned Leads", mode: "leads" },
+  my_tds: { title: "My Assigned Test Drives", mode: "tds" },
+  team_leads: { title: "Team Leads", mode: "leads" },
+  team_tds: { title: "Team Test Drives", mode: "tds" },
+  pending_leads: { title: "Pending Leads", mode: "leads" },
+  followups_due: { title: "Follow-ups Due", mode: "leads" },
+  completed_tds: { title: "Completed Test Drives", mode: "tds" },
+  team_performance: { title: "Team Performance — All Leads", mode: "leads" },
+  year_leads: { title: "My Leads (year)", mode: "leads" },
+  year_tds: { title: "My Test Drives (year)", mode: "tds" },
+  year_td_completed: { title: "TD Completed (year)", mode: "tds" },
+  active_leads: { title: "Active Leads", mode: "leads" },
+  followups_pending: { title: "Follow-ups Pending", mode: "leads" },
+  followups_overdue: { title: "Follow-ups Overdue", mode: "leads" },
+};
 
 function fmtDate(iso?: string | null) {
   if (!iso) return "—";
@@ -49,33 +113,123 @@ function CompareStat({
   previous,
   suffix = "",
   icon: Icon,
+  onClick,
 }: {
   label: string;
   current: number;
   previous: number;
   suffix?: string;
   icon: React.ElementType;
+  onClick?: () => void;
 }) {
   const delta = current - previous;
   const TrendIcon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
   const trendColor = delta > 0 ? "text-green-500" : delta < 0 ? "text-red-400" : "text-muted-foreground";
+  const clickable = Boolean(onClick) && current > 0;
 
   return (
-    <Card className="bg-card border-border/50 p-4">
+    <Card
+      className={cn(
+        "bg-card border-border/50 p-4",
+        clickable && "cursor-pointer hover:border-primary/40 transition-colors",
+      )}
+      onClick={clickable ? onClick : undefined}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-2xl font-bold mt-1 text-foreground">
+          <p
+            className={cn(
+              "text-2xl font-bold mt-1",
+              clickable ? "text-primary underline-offset-2 hover:underline" : "text-foreground",
+            )}
+          >
             {current}{suffix}
           </p>
           <div className={cn("flex items-center gap-1 mt-1 text-xs", trendColor)}>
             <TrendIcon className="w-3.5 h-3.5 shrink-0" />
             <span>{delta >= 0 ? "+" : ""}{delta}{suffix} vs last year</span>
           </div>
+          {clickable ? (
+            <p className="text-[10px] text-muted-foreground mt-1">Click for details</p>
+          ) : null}
         </div>
         <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
           <Icon className="w-5 h-5" />
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function CountCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  iconClass,
+  onClick,
+  children,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  icon?: React.ElementType;
+  iconClass?: string;
+  onClick?: () => void;
+  children?: React.ReactNode;
+}) {
+  const clickable = Boolean(onClick) && value > 0;
+  return (
+    <Card
+      className={cn(
+        "bg-card border-border/50 p-4",
+        clickable && "cursor-pointer hover:border-primary/40 transition-colors",
+      )}
+      onClick={clickable ? onClick : undefined}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p
+            className={cn(
+              "text-2xl font-bold mt-1 tabular-nums",
+              clickable ? "text-primary underline-offset-2 hover:underline" : "text-foreground",
+            )}
+          >
+            {value}
+          </p>
+          {hint ? <p className="text-[11px] text-muted-foreground mt-1">{hint}</p> : null}
+          {children}
+          {clickable ? (
+            <p className="text-[10px] text-muted-foreground mt-1">Click for details</p>
+          ) : null}
+        </div>
+        {Icon ? <Icon className={cn("w-5 h-5 shrink-0", iconClass || "text-primary")} /> : null}
       </div>
     </Card>
   );
@@ -93,11 +247,72 @@ function bookingStatusBadge(status: string) {
   return map[status] ?? "bg-muted text-muted-foreground";
 }
 
+function isOpenLead(status?: string) {
+  return !CLOSED_LEAD_STAGES.has(normalizeCrmStage(status || ""));
+}
+
+function reportRowToLead(row: {
+  leadId: string;
+  name: string;
+  mobile: string;
+  model: string;
+  status: string;
+  source: string;
+  updatedAt?: string;
+  assignedTo?: string;
+  nextFollowUp?: string | null;
+}): PvCrmLead {
+  return {
+    _id: row.leadId,
+    name: row.name,
+    mobile: row.mobile,
+    model: row.model,
+    status: row.status,
+    source: row.source,
+    updatedAt: row.updatedAt,
+    nextFollowUp: row.nextFollowUp || undefined,
+    assignedTo: row.assignedTo
+      ? { _id: "assigned", name: row.assignedTo }
+      : undefined,
+  } as PvCrmLead;
+}
+
+function bookingFromRecent(b: {
+  bookingId: string;
+  status: string;
+  slotDate?: string;
+  slotTime?: string;
+  model: string;
+  customerName: string;
+  mobile: string;
+}): TeamTdRow {
+  return {
+    _id: b.bookingId,
+    bookingId: b.bookingId,
+    bookingStatus: b.status,
+    preferredModel: b.model,
+    slotDate: b.slotDate,
+    slotTime: b.slotTime,
+    testDriveId: { customerName: b.customerName, mobile: b.mobile, model: b.model },
+    assignedExecutive: { _id: "self", name: "Assigned" },
+  };
+}
+
 export default function AdminExecutiveDashboard() {
   const adminUser = getAdminUser();
+  const selfId = String(adminUser?._id || "");
   const [year, setYear] = useState(new Date().getFullYear());
   const [data, setData] = useState<ExecutiveDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTitle, setDetailTitle] = useState("");
+  const [detailSubtitle, setDetailSubtitle] = useState("");
+  const [detailMode, setDetailMode] = useState<DetailMode>("leads");
+  const [detailLeads, setDetailLeads] = useState<PvCrmLead[]>([]);
+  const [detailTds, setDetailTds] = useState<TeamTdRow[]>([]);
+  const [detailCrmLink, setDetailCrmLink] = useState("/admin/crm/leads");
+  const [detailTdLink, setDetailTdLink] = useState("/admin/td/bookings");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +328,189 @@ export default function AdminExecutiveDashboard() {
   }, [year]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setDetailLeads([]);
+    setDetailTds([]);
+  };
+
+  const showDetail = async (opts: {
+    title: string;
+    subtitle?: string;
+    mode: DetailMode;
+    crmLink?: string;
+    tdLink?: string;
+    loader: () => Promise<{ leads?: PvCrmLead[]; tds?: TeamTdRow[] }>;
+  }) => {
+    setDetailTitle(opts.title);
+    setDetailSubtitle(opts.subtitle || "Detailed list — click through to manage in CRM / TD Bookings.");
+    setDetailMode(opts.mode);
+    setDetailCrmLink(opts.crmLink || "/admin/crm/leads");
+    setDetailTdLink(opts.tdLink || "/admin/td/bookings");
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailLeads([]);
+    setDetailTds([]);
+    try {
+      const result = await opts.loader();
+      setDetailLeads(result.leads ?? []);
+      setDetailTds(result.tds ?? []);
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const fetchMyTds = async (status?: string) => {
+    const params = new URLSearchParams({ limit: "100" });
+    if (selfId) params.set("assignedExecutive", selfId);
+    if (status) params.set("status", status);
+    const { data: bookings } = await adminGet<TeamTdRow[]>(`/admin/td/bookings?${params}`);
+    return bookings ?? [];
+  };
+
+  const fetchTeamTds = async (status?: string) => {
+    const members = data?.teamStats?.byMember ?? [];
+    if (!members.length) return [] as TeamTdRow[];
+    const chunks = await Promise.all(
+      members.map(async (m) => {
+        const params = new URLSearchParams({
+          limit: "100",
+          assignedExecutive: m._id,
+        });
+        if (status) params.set("status", status);
+        const { data: bookings } = await adminGet<TeamTdRow[]>(`/admin/td/bookings?${params}`);
+        return bookings ?? [];
+      }),
+    );
+    return chunks.flat();
+  };
+
+  const openTeamMetric = (member: ManagerTeamMemberStats, metric: TeamMetricKey) => {
+    void showDetail({
+      title: `${member.name} · ${TEAM_METRIC_LABELS[metric]}`,
+      subtitle: `${member.designation || member.email || "—"} · cover this list if they are on leave.`,
+      mode: metric === "leads" || metric === "openLeads" ? "leads" : "tds",
+      crmLink: `/admin/crm/leads?assignedTo=${member._id}`,
+      loader: async () => {
+        if (metric === "leads" || metric === "openLeads") {
+          const { leads } = await fetchPvCrmLeads({ assignedTo: member._id, limit: 100 });
+          return {
+            leads:
+              metric === "openLeads" ? leads.filter((l) => isOpenLead(l.status)) : leads,
+          };
+        }
+        const params = new URLSearchParams({
+          limit: "100",
+          assignedExecutive: member._id,
+        });
+        if (metric === "completedTestDrives") params.set("status", "COMPLETED");
+        const { data: bookings } = await adminGet<TeamTdRow[]>(`/admin/td/bookings?${params}`);
+        return { tds: bookings ?? [] };
+      },
+    });
+  };
+
+  const openDashboardCard = (key: DashboardCardKey) => {
+    const meta = DASHBOARD_CARD_META[key];
+    const yearFrom = `${year}-01-01`;
+    const yearTo = `${year}-12-31`;
+
+    void showDetail({
+      title: key.startsWith("year_") ? `${meta.title.replace("(year)", String(year))}` : meta.title,
+      mode: meta.mode,
+      crmLink:
+        key === "my_leads"
+          ? "/admin/crm/leads?assignedTo=me"
+          : key === "followups_due" || key === "followups_pending" || key === "followups_overdue"
+            ? "/admin/crm/leads"
+            : "/admin/crm/leads",
+      loader: async () => {
+        switch (key) {
+          case "my_leads": {
+            const { leads } = await fetchPvCrmLeads({ assignedTo: "me", limit: 100 });
+            return { leads };
+          }
+          case "my_tds":
+            return { tds: await fetchMyTds() };
+          case "team_leads": {
+            const members = data?.teamStats?.byMember ?? [];
+            if (!members.length) return { leads: [] };
+            const chunks = await Promise.all(
+              members.map(async (m) => {
+                const { leads } = await fetchPvCrmLeads({ assignedTo: m._id, limit: 100 });
+                return leads;
+              }),
+            );
+            return { leads: chunks.flat() };
+          }
+          case "team_tds":
+            return { tds: await fetchTeamTds() };
+          case "pending_leads": {
+            const { leads } = await fetchPvCrmLeads({ limit: 100 });
+            return { leads: leads.filter((l) => isOpenLead(l.status)) };
+          }
+          case "followups_due": {
+            const { leads } = await fetchPvCrmLeads({ followUpDue: true, limit: 100 });
+            return { leads };
+          }
+          case "completed_tds":
+            return { tds: await fetchMyTds("COMPLETED") };
+          case "team_performance": {
+            const { leads } = await fetchPvCrmLeads({ limit: 100 });
+            return { leads };
+          }
+          case "year_leads": {
+            if (data?.leads.leadDetailRows?.length) {
+              return { leads: data.leads.leadDetailRows.map(reportRowToLead) };
+            }
+            const { leads } = await fetchPvCrmLeads({
+              assignedTo: "me",
+              from: yearFrom,
+              to: yearTo,
+              limit: 100,
+            });
+            return { leads };
+          }
+          case "year_tds": {
+            if (data?.recentBookings?.length) {
+              return { tds: data.recentBookings.map(bookingFromRecent) };
+            }
+            return { tds: await fetchMyTds() };
+          }
+          case "year_td_completed": {
+            const fromDash = (data?.recentBookings ?? [])
+              .filter((b) => b.status === "COMPLETED")
+              .map(bookingFromRecent);
+            if (fromDash.length) return { tds: fromDash };
+            return { tds: await fetchMyTds("COMPLETED") };
+          }
+          case "active_leads": {
+            const { leads } = await fetchPvCrmLeads({
+              assignedTo: "me",
+              from: yearFrom,
+              to: yearTo,
+              limit: 100,
+            });
+            return { leads: leads.filter((l) => isOpenLead(l.status)) };
+          }
+          case "followups_pending":
+          case "followups_overdue": {
+            const { leads } = await fetchPvCrmLeads({
+              assignedTo: "me",
+              followUpDue: true,
+              limit: 100,
+            });
+            return { leads };
+          }
+          default:
+            return {};
+        }
+      },
+    });
+  };
 
   const pipelineData = useMemo(
     () => (data ? Object.entries(data.leads.pipeline).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value })) : []),
@@ -179,74 +577,81 @@ export default function AdminExecutiveDashboard() {
 
       {isManagerView ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <Card className="bg-card border-border/50 p-4">
-            <p className="text-xs text-muted-foreground">My Assigned Leads</p>
-            <p className="text-2xl font-bold mt-1 text-foreground">{team.myAssignedLeads}</p>
-            <Link to="/admin/crm/leads?assignedTo=me" className="text-[11px] text-primary hover:underline mt-1 inline-block">
+          <CountCard
+            label="My Assigned Leads"
+            value={team.myAssignedLeads}
+            onClick={() => openDashboardCard("my_leads")}
+          >
+            <Link
+              to="/admin/crm/leads?assignedTo=me"
+              className="text-[11px] text-primary hover:underline mt-1 inline-block"
+              onClick={(e) => e.stopPropagation()}
+            >
               View in Lead CRM
             </Link>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <p className="text-xs text-muted-foreground">My Assigned Test Drives</p>
-            <p className="text-2xl font-bold mt-1 text-foreground">{team.myAssignedTestDrives}</p>
-            <Link to="/admin/td/bookings" className="text-[11px] text-primary hover:underline mt-1 inline-block">
+          </CountCard>
+          <CountCard
+            label="My Assigned Test Drives"
+            value={team.myAssignedTestDrives}
+            onClick={() => openDashboardCard("my_tds")}
+          >
+            <Link
+              to="/admin/td/bookings"
+              className="text-[11px] text-primary hover:underline mt-1 inline-block"
+              onClick={(e) => e.stopPropagation()}
+            >
               View TD Bookings
             </Link>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <p className="text-xs text-muted-foreground">Team Leads</p>
-            <p className="text-2xl font-bold mt-1 text-foreground">{team.teamLeads}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">{team.teamSize} team member(s)</p>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <p className="text-xs text-muted-foreground">Team Test Drives</p>
-            <p className="text-2xl font-bold mt-1 text-foreground">{team.teamTestDrives}</p>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Pending Leads</p>
-                <p className="text-2xl font-bold mt-1 text-foreground">{team.pendingLeads}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Open leads (you + team)</p>
-              </div>
-              <Target className="w-5 h-5 text-primary" />
-            </div>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Follow-ups Due</p>
-                <p className="text-2xl font-bold mt-1 text-foreground">{team.followUpsDue}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Due today or overdue</p>
-              </div>
-              <Clock className="w-5 h-5 text-amber-500" />
-            </div>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Completed Test Drives</p>
-                <p className="text-2xl font-bold mt-1 text-foreground">{team.completedTestDrives}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Yours · team total {team.teamCompletedTestDrives}</p>
-              </div>
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
-            </div>
-          </Card>
-          <Card className="bg-card border-border/50 p-4">
-            <p className="text-xs text-muted-foreground">Team Performance</p>
-            <p className="text-2xl font-bold mt-1 text-foreground">
-              {team.myAssignedLeads + team.teamLeads}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Total leads across you + team
-            </p>
-          </Card>
+          </CountCard>
+          <CountCard
+            label="Team Leads"
+            value={team.teamLeads}
+            hint={`${team.teamSize} team member(s)`}
+            onClick={() => openDashboardCard("team_leads")}
+          />
+          <CountCard
+            label="Team Test Drives"
+            value={team.teamTestDrives}
+            onClick={() => openDashboardCard("team_tds")}
+          />
+          <CountCard
+            label="Pending Leads"
+            value={team.pendingLeads}
+            hint="Open leads (you + team)"
+            icon={Target}
+            onClick={() => openDashboardCard("pending_leads")}
+          />
+          <CountCard
+            label="Follow-ups Due"
+            value={team.followUpsDue}
+            hint="Due today or overdue"
+            icon={Clock}
+            iconClass="text-amber-500"
+            onClick={() => openDashboardCard("followups_due")}
+          />
+          <CountCard
+            label="Completed Test Drives"
+            value={team.completedTestDrives}
+            hint={`Yours · team total ${team.teamCompletedTestDrives}`}
+            icon={CheckCircle2}
+            iconClass="text-green-500"
+            onClick={() => openDashboardCard("completed_tds")}
+          />
+          <CountCard
+            label="Team Performance"
+            value={team.myAssignedLeads + team.teamLeads}
+            hint="Total leads across you + team"
+            onClick={() => openDashboardCard("team_performance")}
+          />
         </div>
       ) : null}
 
       {isManagerView && team.byMember.length > 0 ? (
         <Card className="bg-card border-border/50 p-4">
-          <h2 className="font-display text-lg font-semibold text-foreground mb-3">Team Performance Summary</h2>
+          <h2 className="font-display text-lg font-semibold text-foreground mb-1">Team Performance Summary</h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            Click any count to see the detailed list — useful when a team member is on leave.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -265,10 +670,30 @@ export default function AdminExecutiveDashboard() {
                       <p className="font-medium text-foreground">{m.name}</p>
                       <p className="text-[11px] text-muted-foreground">{m.designation || m.email}</p>
                     </td>
-                    <td className="py-2.5 pr-3">{m.leads}</td>
-                    <td className="py-2.5 pr-3">{m.openLeads}</td>
-                    <td className="py-2.5 pr-3">{m.testDrives}</td>
-                    <td className="py-2.5">{m.completedTestDrives}</td>
+                    {(
+                      [
+                        ["leads", m.leads],
+                        ["openLeads", m.openLeads],
+                        ["testDrives", m.testDrives],
+                        ["completedTestDrives", m.completedTestDrives],
+                      ] as const
+                    ).map(([metric, value]) => (
+                      <td key={metric} className="py-2.5 pr-3 last:pr-0">
+                        <button
+                          type="button"
+                          disabled={value <= 0}
+                          onClick={() => void openTeamMetric(m, metric)}
+                          className={cn(
+                            "tabular-nums font-semibold rounded px-1.5 py-0.5 transition-colors",
+                            value > 0
+                              ? "text-primary hover:bg-primary/10 underline-offset-2 hover:underline"
+                              : "text-muted-foreground cursor-default",
+                          )}
+                        >
+                          {value}
+                        </button>
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -292,18 +717,21 @@ export default function AdminExecutiveDashboard() {
           current={leads.overview.totalLeads}
           previous={leadsCompare.overview.totalLeads}
           icon={Users}
+          onClick={() => openDashboardCard("year_leads")}
         />
         <CompareStat
           label={`My test drives (${data.year})`}
           current={testDrives.totalBookings}
           previous={testDrivesCompare.totalBookings}
           icon={CalendarCheck}
+          onClick={() => openDashboardCard("year_tds")}
         />
         <CompareStat
           label="TD completed"
           current={testDrives.completed}
           previous={testDrivesCompare.completed}
           icon={Target}
+          onClick={() => openDashboardCard("year_td_completed")}
         />
         <CompareStat
           label="Conversion rate"
@@ -316,16 +744,40 @@ export default function AdminExecutiveDashboard() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Active leads", value: leads.overview.activeLeads },
-          { label: "Follow-ups pending", value: leads.followUpSummary.pending },
-          { label: "Follow-ups overdue", value: leads.followUpSummary.overdue },
-          { label: "TD completion rate", value: `${testDrives.completionRate}%` },
-        ].map((item) => (
-          <Card key={item.label} className="p-3 border-border/50">
-            <p className="text-[11px] text-muted-foreground">{item.label}</p>
-            <p className="text-lg font-bold mt-0.5">{item.value}</p>
-          </Card>
-        ))}
+          { label: "Active leads", value: leads.overview.activeLeads, key: "active_leads" as const },
+          { label: "Follow-ups pending", value: leads.followUpSummary.pending, key: "followups_pending" as const },
+          { label: "Follow-ups overdue", value: leads.followUpSummary.overdue, key: "followups_overdue" as const },
+          { label: "TD completion rate", value: `${testDrives.completionRate}%`, key: null },
+        ].map((item) => {
+          const clickable = Boolean(item.key) && typeof item.value === "number" && item.value > 0;
+          return (
+            <Card
+              key={item.label}
+              className={cn(
+                "p-3 border-border/50",
+                clickable && "cursor-pointer hover:border-primary/40 transition-colors",
+              )}
+              onClick={
+                clickable && item.key
+                  ? () => openDashboardCard(item.key as DashboardCardKey)
+                  : undefined
+              }
+            >
+              <p className="text-[11px] text-muted-foreground">{item.label}</p>
+              <p
+                className={cn(
+                  "text-lg font-bold mt-0.5",
+                  clickable ? "text-primary" : undefined,
+                )}
+              >
+                {item.value}
+              </p>
+              {clickable ? (
+                <p className="text-[10px] text-muted-foreground mt-0.5">Click for details</p>
+              ) : null}
+            </Card>
+          );
+        })}
       </div>
 
       <Card className="p-4 border-border/50">
@@ -471,16 +923,30 @@ export default function AdminExecutiveDashboard() {
         <TabsContent value="test-drives" className="mt-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "Total", value: testDrives.totalBookings },
-              { label: "Completed", value: testDrives.completed },
-              { label: "Pending", value: testDrives.pending },
-              { label: "Avg feedback", value: testDrives.avgFeedbackRating || "—" },
-            ].map((item) => (
-              <Card key={item.label} className="p-3 border-border/50">
-                <p className="text-[11px] text-muted-foreground">{item.label}</p>
-                <p className="text-lg font-bold">{item.value}</p>
-              </Card>
-            ))}
+              { label: "Total", value: testDrives.totalBookings, key: "year_tds" as const },
+              { label: "Completed", value: testDrives.completed, key: "year_td_completed" as const },
+              { label: "Pending", value: testDrives.pending, key: "year_tds" as const },
+              { label: "Avg feedback", value: testDrives.avgFeedbackRating || "—", key: null },
+            ].map((item) => {
+              const clickable = Boolean(item.key) && typeof item.value === "number" && item.value > 0;
+              return (
+                <Card
+                  key={item.label}
+                  className={cn(
+                    "p-3 border-border/50",
+                    clickable && "cursor-pointer hover:border-primary/40 transition-colors",
+                  )}
+                  onClick={
+                    clickable && item.key
+                      ? () => openDashboardCard(item.key as DashboardCardKey)
+                      : undefined
+                  }
+                >
+                  <p className="text-[11px] text-muted-foreground">{item.label}</p>
+                  <p className={cn("text-lg font-bold", clickable && "text-primary")}>{item.value}</p>
+                </Card>
+              );
+            })}
           </div>
 
           <Card className="border-border/50 overflow-hidden">
@@ -609,6 +1075,182 @@ export default function AdminExecutiveDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(o) => {
+          if (!o) closeDetail();
+        }}
+      >
+        <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">{detailTitle}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-1">{detailSubtitle}</p>
+
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading list…
+            </div>
+          ) : detailMode === "leads" ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  <strong className="text-foreground">{detailLeads.length}</strong> lead(s)
+                </p>
+                <Link to={detailCrmLink} className="text-xs text-primary hover:underline">
+                  Open in Lead CRM
+                </Link>
+              </div>
+              <div className="max-h-[24rem] overflow-y-auto rounded-md border border-border/50 text-xs">
+                <table className="w-full">
+                  <thead className="bg-muted/40 sticky top-0">
+                    <tr className="text-left">
+                      <th className="p-2 font-medium">Name</th>
+                      <th className="p-2 font-medium">Mobile</th>
+                      <th className="p-2 font-medium">Model</th>
+                      <th className="p-2 font-medium">Stage</th>
+                      <th className="p-2 font-medium">Assigned</th>
+                      <th className="p-2 font-medium">Follow-up</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailLeads.length ? (
+                      detailLeads.map((lead) => {
+                        const assignee = lead.assignedTo?.name || "Unassigned";
+                        const isAssigned = Boolean(lead.assignedTo?._id || lead.assignedTo?.name);
+                        return (
+                          <tr key={lead._id} className="border-t border-border/40">
+                            <td className="p-2 align-top font-medium">{lead.name}</td>
+                            <td className="p-2 align-top font-mono">{lead.mobile || "—"}</td>
+                            <td className="p-2 align-top">{lead.model || "—"}</td>
+                            <td className="p-2 align-top">
+                              <Badge
+                                className={cn(
+                                  "text-[10px]",
+                                  STAGE_COLORS[normalizeCrmStage(lead.status)] ?? "bg-muted",
+                                )}
+                              >
+                                {normalizeCrmStage(lead.status)}
+                              </Badge>
+                            </td>
+                            <td className="p-2 align-top">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px]",
+                                  isAssigned
+                                    ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                                    : "border-amber-500/40 text-amber-700 dark:text-amber-400",
+                                )}
+                              >
+                                {isAssigned ? assignee : "Not assigned"}
+                              </Badge>
+                            </td>
+                            <td className="p-2 align-top text-muted-foreground">
+                              {fmtDate(lead.nextFollowUp)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                          No leads in this list.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  <strong className="text-foreground">{detailTds.length}</strong> test drive(s)
+                </p>
+                <Link to={detailTdLink} className="text-xs text-primary hover:underline">
+                  Open TD Bookings
+                </Link>
+              </div>
+              <div className="max-h-[24rem] overflow-y-auto rounded-md border border-border/50 text-xs">
+                <table className="w-full">
+                  <thead className="bg-muted/40 sticky top-0">
+                    <tr className="text-left">
+                      <th className="p-2 font-medium">Booking</th>
+                      <th className="p-2 font-medium">Customer</th>
+                      <th className="p-2 font-medium">Mobile</th>
+                      <th className="p-2 font-medium">Model</th>
+                      <th className="p-2 font-medium">Slot</th>
+                      <th className="p-2 font-medium">Status</th>
+                      <th className="p-2 font-medium">Assigned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailTds.length ? (
+                      detailTds.map((b) => {
+                        const name =
+                          b.testDriveId?.customerName || b.customerId?.name || "—";
+                        const mobile =
+                          b.testDriveId?.mobile || b.customerId?.mobile || "—";
+                        const model = b.preferredModel || b.testDriveId?.model || "—";
+                        const isAssigned = Boolean(b.assignedExecutive?._id);
+                        return (
+                          <tr key={b._id} className="border-t border-border/40">
+                            <td className="p-2 align-top font-mono">{b.bookingId || "—"}</td>
+                            <td className="p-2 align-top font-medium">{name}</td>
+                            <td className="p-2 align-top font-mono">{mobile}</td>
+                            <td className="p-2 align-top">{model}</td>
+                            <td className="p-2 align-top whitespace-nowrap">
+                              {fmtDate(b.slotDate)} {b.slotTime || ""}
+                            </td>
+                            <td className="p-2 align-top">
+                              <Badge
+                                className={cn(
+                                  "text-[10px]",
+                                  bookingStatusBadge(b.bookingStatus || ""),
+                                )}
+                              >
+                                {b.bookingStatus || "—"}
+                              </Badge>
+                            </td>
+                            <td className="p-2 align-top">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px]",
+                                  isAssigned
+                                    ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                                    : "border-amber-500/40 text-amber-700 dark:text-amber-400",
+                                )}
+                              >
+                                {isAssigned
+                                  ? b.assignedExecutive?.name || "Assigned"
+                                  : "Not assigned"}
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                          No test drives in this list.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <Button variant="outline" className="w-full" onClick={closeDetail}>
+            Close
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
