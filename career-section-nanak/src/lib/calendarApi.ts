@@ -62,12 +62,16 @@ export async function patchCalendarEvent(
 }
 
 export function calendarEventToFc(ev: CalendarEvent) {
+  const allDay = Boolean(ev.allDay);
+  // Date-only strings avoid timezone drift that can make all-day events
+  // span / stack incorrectly in week view.
+  const dateOnly = ev.date || (ev.start ? String(ev.start).slice(0, 10) : undefined);
   return {
     id: ev.id,
     title: ev.title,
-    start: ev.start,
-    end: ev.end,
-    allDay: Boolean(ev.allDay),
+    start: allDay && dateOnly ? dateOnly : ev.start,
+    end: allDay ? undefined : ev.end,
+    allDay,
     backgroundColor: ev.color || "#3b82f6",
     borderColor: ev.color || "#3b82f6",
     extendedProps: ev,

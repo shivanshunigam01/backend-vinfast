@@ -6,7 +6,8 @@ import {
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield
 } from "lucide-react";
-import vinLogo from "@/assets/patliputra-vinfast-logo.png";
+import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
+import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { hasApi } from "@/lib/apiConfig";
 import { adminGet } from "@/lib/api";
 import { dashboardStatsFromApi } from "@/lib/apiMappers";
@@ -329,13 +330,19 @@ const AdminLayout = () => {
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5 sm:px-3.5 sm:py-3">
           <Link
             to="/admin/dashboard"
-            className="flex min-w-0 flex-1 items-center"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:gap-2"
             onClick={() => setSidebarOpen(false)}
           >
             <img
-              src={vinLogo}
+              src={vinfastLogo}
               alt="Patliputra VinFast"
-              className="h-9 w-auto max-w-full object-contain object-left sm:h-10"
+              className="h-8 w-auto max-w-[7.5rem] shrink object-contain object-left sm:h-9 sm:max-w-[9rem]"
+            />
+            <span className="h-5 w-px shrink-0 bg-border sm:h-6" aria-hidden />
+            <img
+              src={patliputraOutlineLogo}
+              alt="Patliputra Group"
+              className="h-5 w-auto max-w-[5.5rem] shrink-0 object-contain object-left sm:h-6 sm:max-w-[6.5rem]"
             />
           </Link>
           <button
@@ -506,7 +513,23 @@ const AdminLayout = () => {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <div className="min-w-0 flex-1 lg:block" />
+          <Link
+            to="/admin/dashboard"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden lg:hidden"
+          >
+            <img
+              src={vinfastLogo}
+              alt="Patliputra VinFast"
+              className="h-8 w-auto max-w-[7rem] shrink object-contain object-left"
+            />
+            <span className="h-5 w-px shrink-0 bg-border" aria-hidden />
+            <img
+              src={patliputraOutlineLogo}
+              alt="Patliputra Group"
+              className="h-5 w-auto max-w-[5.5rem] shrink-0 object-contain object-left"
+            />
+          </Link>
+          <div className="hidden min-w-0 flex-1 lg:block" />
           <Popover
             open={notifOpen}
             onOpenChange={(open) => {

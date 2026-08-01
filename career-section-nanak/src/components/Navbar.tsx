@@ -135,13 +135,13 @@ const Navbar = () => {
               <img
                 src={vinfastLogo}
                 alt={dealer.dealerName}
-                className="h-9 w-auto max-w-[9.5rem] object-contain object-left sm:h-11 sm:max-w-[12rem] lg:h-11 lg:max-w-[13rem]"
+                className="h-8 w-auto max-w-[7.5rem] shrink object-contain object-left sm:h-11 sm:max-w-[12rem] lg:h-11 lg:max-w-[13rem]"
               />
-              <span className="hidden h-6 w-px shrink-0 bg-border md:block" aria-hidden />
+              <span className="h-5 w-px shrink-0 bg-border sm:h-6" aria-hidden />
               <img
                 src={patliputraOutlineLogo}
                 alt="Patliputra Group"
-                className="hidden h-6 w-auto max-w-[7rem] object-contain object-left md:block lg:h-7 lg:max-w-[8.5rem]"
+                className="h-5 w-auto max-w-[5.5rem] shrink-0 object-contain object-left sm:h-6 sm:max-w-[7rem] lg:h-7 lg:max-w-[8.5rem]"
               />
             </Link>
 

@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { LogOut, CalendarCheck } from "lucide-react";
-import vinLogo from "@/assets/patliputra-vinfast-logo.png";
+import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
+import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { Button } from "@/components/ui/button";
 import { clearCustomerSession, getCustomerToken, getCustomerUser } from "@/lib/customerAuth";
 
@@ -23,11 +24,25 @@ export default function CustomerLayout() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <Link to="/" className="flex items-center gap-3">
-            <img src={vinLogo} alt="Patliputra VinFast" className="h-10 w-auto object-contain" />
-            <span className="hidden sm:inline text-sm font-medium text-muted-foreground">Customer Portal</span>
-          </Link>
+        <div className="container mx-auto flex h-16 items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link to="/" className="flex min-w-0 items-center gap-1.5 overflow-hidden sm:gap-2">
+              <img
+                src={vinfastLogo}
+                alt="Patliputra VinFast"
+                className="h-8 w-auto max-w-[7.5rem] shrink object-contain object-left sm:h-10 sm:max-w-[11rem]"
+              />
+              <span className="h-5 w-px shrink-0 bg-border sm:h-6" aria-hidden />
+              <img
+                src={patliputraOutlineLogo}
+                alt="Patliputra Group"
+                className="h-5 w-auto max-w-[5.5rem] shrink-0 object-contain object-left sm:h-6 sm:max-w-[7.5rem]"
+              />
+            </Link>
+            <span className="hidden sm:inline shrink-0 text-sm font-medium text-muted-foreground">
+              Customer Portal
+            </span>
+          </div>
 
           <div className="flex items-center gap-3">
             {customer ? (

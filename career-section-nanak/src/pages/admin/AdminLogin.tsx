@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, Mail, Eye, EyeOff, ArrowLeft, ShieldCheck } from "lucide-react";
-import vinLogo from "@/assets/patliputra-vinfast-logo.png";
+import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
+import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { hasApi } from "@/lib/apiConfig";
 import { adminLogin, ApiRequestError, formatApiErrors } from "@/lib/api";
 import { markAdminSessionStart, setAdminSession, getAdminLoginRedirect, type AdminUser } from "@/lib/adminAuth";
@@ -75,11 +76,22 @@ const AdminLogin = () => {
       >
         <div className="rounded-2xl border border-border/60 bg-card/95 p-8 sm:p-10 shadow-sm backdrop-blur">
           <div className="text-center mb-8">
-            <img
-              src={vinLogo}
-              alt="Patliputra VinFast"
-              className="mx-auto mb-4 h-16 w-auto max-w-[min(100%,280px)] object-contain sm:h-20 sm:max-w-[320px]"
-            />
+            <Link
+              to="/"
+              className="mx-auto mb-4 flex w-full min-w-0 max-w-full items-center justify-center gap-2 px-1"
+            >
+              <img
+                src={vinfastLogo}
+                alt="Patliputra VinFast"
+                className="h-10 w-auto max-w-[min(48%,11rem)] shrink object-contain object-left sm:h-12"
+              />
+              <span className="h-7 w-px shrink-0 bg-border sm:h-8" aria-hidden />
+              <img
+                src={patliputraOutlineLogo}
+                alt="Patliputra Group"
+                className="h-7 w-auto max-w-[min(42%,9rem)] shrink-0 object-contain object-left sm:h-8"
+              />
+            </Link>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-medium text-primary mb-3">
               <ShieldCheck className="h-3.5 w-3.5" />
               Admin portal

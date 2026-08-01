@@ -7,7 +7,8 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import vinLogo from "@/assets/patliputra-vinfast-logo.png";
+import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
+import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { hasApi } from "@/lib/apiConfig";
 import { ApiRequestError, formatApiErrors } from "@/lib/api";
 import { customerCheckMobile, customerLogin } from "@/lib/customerApi";
@@ -129,11 +130,22 @@ export default function CustomerLogin() {
         >
           <div className="rounded-2xl border border-border/60 bg-card p-8 shadow-sm">
             <div className="text-center mb-8">
-              <img
-                src={vinLogo}
-                alt="Patliputra VinFast"
-                className="mx-auto mb-4 h-14 w-auto object-contain"
-              />
+              <Link
+                to="/"
+                className="mx-auto mb-4 flex w-full min-w-0 max-w-full items-center justify-center gap-2 px-1"
+              >
+                <img
+                  src={vinfastLogo}
+                  alt="Patliputra VinFast"
+                  className="h-10 w-auto max-w-[min(48%,11rem)] shrink object-contain object-left sm:h-12"
+                />
+                <span className="h-7 w-px shrink-0 bg-border sm:h-8" aria-hidden />
+                <img
+                  src={patliputraOutlineLogo}
+                  alt="Patliputra Group"
+                  className="h-7 w-auto max-w-[min(42%,9rem)] shrink-0 object-contain object-left sm:h-8"
+                />
+              </Link>
               <h1 className="font-display text-2xl font-bold text-foreground">Customer Login</h1>
               <p className="text-sm text-muted-foreground mt-2">
                 View and manage your test drive bookings using the mobile number from your booking form.

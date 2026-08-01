@@ -226,13 +226,13 @@ export default function AdminCalendar() {
           </Select>
         </div>
 
-        <div className="p-2 sm:p-3 calendar-fc min-h-[640px]">
+        <div className="p-2 sm:p-3 calendar-fc h-[min(72vh,720px)] min-h-[520px]">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
             initialView={view}
             headerToolbar={false}
-            height="auto"
+            height="100%"
             stickyHeaderDates
             nowIndicator
             editable={canEdit}
@@ -240,7 +240,11 @@ export default function AdminCalendar() {
             eventDurationEditable={false}
             selectable={false}
             weekends
-            dayMaxEvents={4}
+            dayMaxEvents={3}
+            dayMaxEventRows={3}
+            eventMaxStack={4}
+            moreLinkClick="popover"
+            moreLinkContent={(arg) => `+${arg.num} more`}
             events={fcEvents}
             datesSet={onDatesSet}
             eventClick={onEventClick}
@@ -249,7 +253,7 @@ export default function AdminCalendar() {
             slotMinTime="08:00:00"
             slotMaxTime="21:00:00"
             allDaySlot
-            expandRows
+            expandRows={false}
           />
         </div>
       </div>
@@ -304,6 +308,7 @@ export default function AdminCalendar() {
           --fc-today-bg-color: hsl(var(--primary) / 0.08);
           --fc-event-border-color: transparent;
           font-family: inherit;
+          height: 100%;
         }
         .calendar-fc .fc .fc-col-header-cell-cushion,
         .calendar-fc .fc .fc-daygrid-day-number {
@@ -327,9 +332,63 @@ export default function AdminCalendar() {
           padding: 1px 4px;
           font-size: 0.72rem;
           cursor: pointer;
+          overflow: hidden;
         }
         .calendar-fc .fc-timegrid-slot {
           height: 2.5rem;
+        }
+        /* Keep all-day row compact so dense lead lists never spill into timed slots */
+        .calendar-fc .fc-timegrid .fc-daygrid-body {
+          max-height: 6.75rem !important;
+          overflow: hidden !important;
+        }
+        .calendar-fc .fc-timegrid .fc-daygrid-day-events {
+          max-height: 6.25rem;
+          overflow: hidden;
+        }
+        .calendar-fc .fc-daygrid-day-frame {
+          min-height: 0 !important;
+          overflow: hidden;
+        }
+        .calendar-fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+          max-height: 7.5rem;
+        }
+        .calendar-fc .fc-daygrid-event-harness {
+          max-width: 100%;
+        }
+        .calendar-fc .fc-more-link {
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: hsl(var(--primary));
+          padding: 1px 4px;
+        }
+        /* "+N more" popover: scroll instead of covering the week grid */
+        .calendar-fc .fc-popover,
+        .calendar-fc .fc-more-popover {
+          z-index: 50 !important;
+          max-width: min(18rem, calc(100vw - 2rem));
+          max-height: min(20rem, 45vh) !important;
+          display: flex !important;
+          flex-direction: column;
+          overflow: hidden;
+          box-shadow: 0 12px 32px hsl(var(--foreground) / 0.18);
+          border: 1px solid hsl(var(--border));
+          border-radius: 0.5rem;
+          background: hsl(var(--card));
+        }
+        .calendar-fc .fc-popover-header {
+          flex-shrink: 0;
+          font-size: 0.8rem;
+          font-weight: 600;
+          padding: 0.5rem 0.65rem;
+          background: hsl(var(--muted) / 0.5);
+        }
+        .calendar-fc .fc-popover-body {
+          flex: 1 1 auto;
+          overflow-y: auto;
+          max-height: none !important;
+          padding: 0.35rem;
+          -webkit-overflow-scrolling: touch;
         }
         .calendar-fc .fc-list-event:hover td {
           background: hsl(var(--muted) / 0.4);
