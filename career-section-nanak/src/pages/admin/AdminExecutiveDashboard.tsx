@@ -994,7 +994,7 @@ export default function AdminExecutiveDashboard() {
                 );
               }) : (
                 <p className="text-sm text-muted-foreground text-center py-4">No activity yet</p>
-              )}
+              ))}
             </div>
           </Card>
         </TabsContent>
@@ -1033,7 +1033,7 @@ export default function AdminExecutiveDashboard() {
                     </tr>
                   )) : (
                     <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No leads assigned in {execData.year}</td></tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1190,7 +1190,7 @@ export default function AdminExecutiveDashboard() {
                     </div>
                   ))}
                 </div>
-              ) : null}
+              ) : null)}
             </Card>
           </div>
         </TabsContent>
