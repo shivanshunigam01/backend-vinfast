@@ -104,7 +104,8 @@ export default function AdminCrmLeads() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterExecutive, setFilterExecutive] = useState("all");
+  // Default CRE list to unassigned so the calling queue is obvious; backend also scopes CRE.
+  const [filterExecutive, setFilterExecutive] = useState(isCre ? "unassigned" : "all");
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -622,9 +623,11 @@ export default function AdminCrmLeads() {
             <Users className="w-6 h-6 text-primary" /> Lead CRM
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {isExecutive
-              ? "Your assigned leads from website, Meta Ads, test drives, and enquiries."
-              : "Unified lead pipeline — assign executives, track stages, notes, and follow-ups."}
+            {isCre
+              ? "Calling queue — unassigned, unfollowed, and in-calling leads. Assign to executives after the call."
+              : isExecutive
+                ? "Your assigned leads from website, Meta Ads, test drives, and enquiries."
+                : "Unified lead pipeline — assign executives, track stages, notes, and follow-ups."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -769,7 +772,7 @@ export default function AdminCrmLeads() {
               <SelectValue placeholder="Staff" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All (my team)</SelectItem>
+              <SelectItem value="all">{isCre ? "Calling queue (all)" : "All (my team)"}</SelectItem>
               <SelectItem value="unassigned">Unassigned</SelectItem>
               {staffUsers.map((e) => (
                 <SelectItem key={e._id} value={e._id}>

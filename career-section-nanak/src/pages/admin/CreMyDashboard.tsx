@@ -101,7 +101,7 @@ export function CreMyDashboard({
             My Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {adminName || data.cre?.name || "CRE"} · Leads you created — assignment status & pipeline
+            {adminName || data.cre?.name || "CRE"} · Calling queue — unassigned, unfollowed, and in-calling leads
           </p>
         </div>
         <div className="flex items-center gap-2">

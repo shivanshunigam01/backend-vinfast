@@ -446,7 +446,54 @@ async function buildLeadQuery(admin, queryParams = {}) {
     query.nextFollowUp = { $lte: new Date() };
     query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
   }
+
+  // CRE work queue: only unassigned, unfollowed, or still-in-calling leads.
+  // Managers/admins keep full CRM; CRE can pass creView=all only if we add it later for support.
+  if (isCreUser(admin) && String(queryParams.creView || 'queue') !== 'all') {
+    applyCreCallingQueueFilter(query);
+  }
+
   return query;
+}
+
+const CRE_CALLING_STAGES = [
+  'Enquiry',
+  'Interested',
+  'New Lead',
+  'Contact Attempted',
+  'Follow Up',
+];
+const CRE_CLOSED_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
+
+/**
+ * CRE login list scope — calling work queue only:
+ * - unassigned open leads
+ * - unfollowed / still-calling stages (Enquiry, Interested, …)
+ * - leads with a CRE call date still in calling stages
+ * Assigned leads that have moved past calling (TD / negotiation / booking) stay hidden.
+ */
+function applyCreCallingQueueFilter(query) {
+  query.$and = query.$and || [];
+  query.$and.push({ status: { $nin: CRE_CLOSED_STATUSES } });
+  query.$and.push({
+    $or: [
+      { assignedTo: { $exists: false } },
+      { assignedTo: null },
+      { status: { $in: CRE_CALLING_STAGES } },
+      {
+        $and: [
+          { $or: [{ nextFollowUp: { $exists: false } }, { nextFollowUp: null }] },
+          { status: { $in: CRE_CALLING_STAGES } },
+        ],
+      },
+      {
+        $and: [
+          { 'creSheet.callDate': { $exists: true, $ne: null } },
+          { status: { $in: CRE_CALLING_STAGES } },
+        ],
+      },
+    ],
+  });
 }
 
 exports.getCrmLeads = asyncHandler(async (req, res) => {
