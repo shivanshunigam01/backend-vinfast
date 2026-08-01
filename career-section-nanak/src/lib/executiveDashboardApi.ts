@@ -131,12 +131,65 @@ export type ExecutiveDashboard = {
 export type MyDashboardPayload = ExecutiveDashboard | CreDashboard;
 
 export function isCreDashboard(data: MyDashboardPayload | null | undefined): data is CreDashboard {
-  return Boolean(data && data.reportType === "cre");
+  if (!data) return false;
+  if (data.reportType === "cre") return true;
+  // Shape fallback when reportType is missing/older backends:
+  // CRE payload has top-level pipeline + recentLeads/cre, and no executive `leads` block.
+  const raw = data as Record<string, unknown>;
+  const hasCreShape =
+    Boolean(raw.cre || raw.recentLeads) ||
+    Boolean(
+      raw.overview &&
+        typeof raw.overview === "object" &&
+        "totalCreated" in (raw.overview as Record<string, unknown>),
+    );
+  const hasExecLeads =
+    raw.leads &&
+    typeof raw.leads === "object" &&
+    "overview" in (raw.leads as Record<string, unknown>);
+  return hasCreShape && !hasExecLeads;
+}
+
+function readPipelineMap(data: MyDashboardPayload | null | undefined): Record<string, number> {
+  if (!data || typeof data !== "object") return {};
+  const raw = data as Record<string, unknown>;
+  const nested = raw.leads;
+  if (nested && typeof nested === "object") {
+    const p = (nested as Record<string, unknown>).pipeline;
+    if (p && typeof p === "object") return p as Record<string, number>;
+  }
+  if (raw.pipeline && typeof raw.pipeline === "object") {
+    return raw.pipeline as Record<string, number>;
+  }
+  return {};
+}
+
+function readBySourceMap(data: MyDashboardPayload | null | undefined): Record<string, number> {
+  if (!data || typeof data !== "object") return {};
+  const raw = data as Record<string, unknown>;
+  const nested = raw.leads;
+  if (nested && typeof nested === "object") {
+    const s = (nested as Record<string, unknown>).bySource;
+    if (s && typeof s === "object") return s as Record<string, number>;
+  }
+  if (raw.bySource && typeof raw.bySource === "object") {
+    return raw.bySource as Record<string, number>;
+  }
+  return {};
 }
 
 export async function fetchExecutiveDashboard(year?: number): Promise<MyDashboardPayload> {
   const q = new URLSearchParams();
   if (year) q.set("year", String(year));
   const { data } = await adminGet<MyDashboardPayload>(`/admin/crm/leads/reports/me?${q}`);
+  if (!data) {
+    throw new Error("Dashboard response was empty");
+  }
+  // Normalize CRE detection for older/partial payloads.
+  if (isCreDashboard(data) && data.reportType !== "cre") {
+    return { ...data, reportType: "cre" };
+  }
   return data;
 }
+
+export { readPipelineMap, readBySourceMap };

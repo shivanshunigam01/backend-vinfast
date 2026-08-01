@@ -21,6 +21,8 @@ import { getAdminUser } from "@/lib/adminAuth";
 import {
   fetchExecutiveDashboard,
   isCreDashboard,
+  readPipelineMap,
+  readBySourceMap,
   type ExecutiveDashboard,
   type ManagerTeamMemberStats,
   type MyDashboardPayload,
@@ -516,18 +518,14 @@ export default function AdminExecutiveDashboard() {
   };
 
   const pipelineData = useMemo(() => {
-    if (!data) return [];
-    const pipeline = isCreDashboard(data) ? data.pipeline : data.leads?.pipeline;
-    if (!pipeline || typeof pipeline !== "object") return [];
+    const pipeline = readPipelineMap(data);
     return Object.entries(pipeline)
       .filter(([, v]) => Number(v) > 0)
       .map(([name, value]) => ({ name, value: Number(value) }));
   }, [data]);
 
   const sourceData = useMemo(() => {
-    if (!data) return [];
-    const bySource = isCreDashboard(data) ? data.bySource : data.leads?.bySource;
-    if (!bySource || typeof bySource !== "object") return [];
+    const bySource = readBySourceMap(data);
     return Object.entries(bySource).map(([name, value]) => ({ name, value: Number(value) }));
   }, [data]);
 
