@@ -20,12 +20,15 @@ import { formatApiErrors, adminGet } from "@/lib/api";
 import { getAdminUser } from "@/lib/adminAuth";
 import {
   fetchExecutiveDashboard,
+  isCreDashboard,
   type ExecutiveDashboard,
   type ManagerTeamMemberStats,
+  type MyDashboardPayload,
 } from "@/lib/executiveDashboardApi";
 import { fetchPvCrmLeads, type PvCrmLead } from "@/lib/pvLeadCrmApi";
 import { STAGE_COLORS, normalizeCrmStage } from "@/lib/leadStages";
 import { cn } from "@/lib/utils";
+import { CreMyDashboard } from "@/pages/admin/CreMyDashboard";
 
 const CHART_COLORS = ["#00d4ff", "#7c3aed", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
@@ -302,7 +305,7 @@ export default function AdminExecutiveDashboard() {
   const adminUser = getAdminUser();
   const selfId = String(adminUser?._id || "");
   const [year, setYear] = useState(new Date().getFullYear());
-  const [data, setData] = useState<ExecutiveDashboard | null>(null);
+  const [data, setData] = useState<MyDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -372,7 +375,7 @@ export default function AdminExecutiveDashboard() {
   };
 
   const fetchTeamTds = async (status?: string) => {
-    const members = data?.teamStats?.byMember ?? [];
+    const members = !isCreDashboard(data) ? data?.teamStats?.byMember ?? [] : [];
     if (!members.length) return [] as TeamTdRow[];
     const chunks = await Promise.all(
       members.map(async (m) => {
@@ -436,7 +439,7 @@ export default function AdminExecutiveDashboard() {
           case "my_tds":
             return { tds: await fetchMyTds() };
           case "team_leads": {
-            const members = data?.teamStats?.byMember ?? [];
+            const members = data && !isCreDashboard(data) ? data.teamStats?.byMember ?? [] : [];
             if (!members.length) return { leads: [] };
             const chunks = await Promise.all(
               members.map(async (m) => {
@@ -463,7 +466,7 @@ export default function AdminExecutiveDashboard() {
             return { leads };
           }
           case "year_leads": {
-            if (data?.leads.leadDetailRows?.length) {
+            if (!isCreDashboard(data) && data?.leads?.leadDetailRows?.length) {
               return { leads: data.leads.leadDetailRows.map(reportRowToLead) };
             }
             const { leads } = await fetchPvCrmLeads({
@@ -475,13 +478,13 @@ export default function AdminExecutiveDashboard() {
             return { leads };
           }
           case "year_tds": {
-            if (data?.recentBookings?.length) {
+            if (!isCreDashboard(data) && data?.recentBookings?.length) {
               return { tds: data.recentBookings.map(bookingFromRecent) };
             }
             return { tds: await fetchMyTds() };
           }
           case "year_td_completed": {
-            const fromDash = (data?.recentBookings ?? [])
+            const fromDash = (!isCreDashboard(data) ? data?.recentBookings ?? [] : [])
               .filter((b) => b.status === "COMPLETED")
               .map(bookingFromRecent);
             if (fromDash.length) return { tds: fromDash };
@@ -512,15 +515,21 @@ export default function AdminExecutiveDashboard() {
     });
   };
 
-  const pipelineData = useMemo(
-    () => (data ? Object.entries(data.leads.pipeline).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value })) : []),
-    [data],
-  );
+  const pipelineData = useMemo(() => {
+    if (!data) return [];
+    const pipeline = isCreDashboard(data) ? data.pipeline : data.leads?.pipeline;
+    if (!pipeline || typeof pipeline !== "object") return [];
+    return Object.entries(pipeline)
+      .filter(([, v]) => Number(v) > 0)
+      .map(([name, value]) => ({ name, value: Number(value) }));
+  }, [data]);
 
-  const sourceData = useMemo(
-    () => (data ? Object.entries(data.leads.bySource).map(([name, value]) => ({ name, value })) : []),
-    [data],
-  );
+  const sourceData = useMemo(() => {
+    if (!data) return [];
+    const bySource = isCreDashboard(data) ? data.bySource : data.leads?.bySource;
+    if (!bySource || typeof bySource !== "object") return [];
+    return Object.entries(bySource).map(([name, value]) => ({ name, value: Number(value) }));
+  }, [data]);
 
   if (loading && !data) {
     return (
@@ -539,9 +548,122 @@ export default function AdminExecutiveDashboard() {
     );
   }
 
-  const { leads, leadsCompare, testDrives, testDrivesCompare } = data;
-  const team = data.teamStats;
-  const isManagerView = data.reportType === "manager" && !!team;
+  if (isCreDashboard(data)) {
+    return (
+      <CreMyDashboard
+        data={data}
+        year={year}
+        setYear={setYear}
+        loading={loading}
+        onRefresh={() => void load()}
+        adminName={adminUser?.name}
+        pipelineData={pipelineData}
+        sourceData={sourceData}
+        openAssignedLeads={() =>
+          void showDetail({
+            title: "Assigned leads (created by you)",
+            subtitle: "Leads you created that are assigned to an executive.",
+            mode: "leads",
+            loader: async () => ({
+              leads: (data.recentLeads || [])
+                .filter((l) => l.assignedTo?._id)
+                .map(
+                  (l) =>
+                    ({
+                      _id: l._id,
+                      name: l.name,
+                      mobile: l.mobile,
+                      model: l.model,
+                      status: l.status,
+                      source: l.source,
+                      assignedTo: l.assignedTo
+                        ? { _id: l.assignedTo._id, name: l.assignedTo.name }
+                        : null,
+                      createdAt: l.createdAt,
+                    }) as PvCrmLead,
+                ),
+            }),
+          })
+        }
+        openUnassignedLeads={() =>
+          void showDetail({
+            title: "Unassigned leads (created by you)",
+            subtitle: "Leads you created that still need an executive.",
+            mode: "leads",
+            loader: async () => ({
+              leads: (data.recentLeads || [])
+                .filter((l) => !l.assignedTo?._id)
+                .map(
+                  (l) =>
+                    ({
+                      _id: l._id,
+                      name: l.name,
+                      mobile: l.mobile,
+                      model: l.model,
+                      status: l.status,
+                      source: l.source,
+                      assignedTo: null,
+                      createdAt: l.createdAt,
+                    }) as PvCrmLead,
+                ),
+            }),
+          })
+        }
+        openAllRecent={() =>
+          void showDetail({
+            title: `Leads created (${data.year})`,
+            subtitle: "Recent leads created by you — assigned and unassigned.",
+            mode: "leads",
+            loader: async () => ({
+              leads: (data.recentLeads || []).map(
+                (l) =>
+                  ({
+                    _id: l._id,
+                    name: l.name,
+                    mobile: l.mobile,
+                    model: l.model,
+                    status: l.status,
+                    source: l.source,
+                    assignedTo: l.assignedTo
+                      ? { _id: l.assignedTo._id, name: l.assignedTo.name }
+                      : null,
+                    createdAt: l.createdAt,
+                  }) as PvCrmLead,
+              ),
+            }),
+          })
+        }
+        detailOpen={detailOpen}
+        detailLoading={detailLoading}
+        detailTitle={detailTitle}
+        detailSubtitle={detailSubtitle}
+        detailMode={detailMode}
+        detailLeads={detailLeads}
+        detailTds={detailTds}
+        detailCrmLink={detailCrmLink}
+        detailTdLink={detailTdLink}
+        closeDetail={closeDetail}
+      />
+    );
+  }
+
+  const execData = data as ExecutiveDashboard;
+  const leads = execData.leads;
+  const leadsCompare = execData.leadsCompare;
+  const testDrives = execData.testDrives;
+  const testDrivesCompare = execData.testDrivesCompare;
+
+  if (!leads?.overview || !testDrives || !leadsCompare?.overview || !testDrivesCompare) {
+    return (
+      <div className="text-center py-24 text-muted-foreground space-y-3">
+        <p>Dashboard data is incomplete. Please refresh.</p>
+        <Button variant="outline" onClick={() => void load()}>Retry</Button>
+      </div>
+    );
+  }
+
+  const team = execData.teamStats;
+  const isManagerView = execData.reportType === "manager" && !!team;
 
   return (
     <div className="space-y-6">
@@ -704,23 +826,23 @@ export default function AdminExecutiveDashboard() {
 
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline" className="text-xs">
-          {data.year}: {fmtDate(data.period.from)} – {fmtDate(data.period.to)}
+          {execData.year}: {fmtDate(execData.period?.from)} – {fmtDate(execData.period?.to)}
         </Badge>
         <Badge variant="secondary" className="text-xs">
-          All-time (you): {data.allTime.totalLeads} leads · {data.allTime.totalTestDrives} test drives
+          All-time (you): {execData.allTime?.totalLeads ?? 0} leads · {execData.allTime?.totalTestDrives ?? 0} test drives
         </Badge>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <CompareStat
-          label={`My leads (${data.year})`}
+          label={`My leads (${execData.year})`}
           current={leads.overview.totalLeads}
           previous={leadsCompare.overview.totalLeads}
           icon={Users}
           onClick={() => openDashboardCard("year_leads")}
         />
         <CompareStat
-          label={`My test drives (${data.year})`}
+          label={`My test drives (${execData.year})`}
           current={testDrives.totalBookings}
           previous={testDrivesCompare.totalBookings}
           icon={CalendarCheck}
@@ -745,8 +867,8 @@ export default function AdminExecutiveDashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Active leads", value: leads.overview.activeLeads, key: "active_leads" as const },
-          { label: "Follow-ups pending", value: leads.followUpSummary.pending, key: "followups_pending" as const },
-          { label: "Follow-ups overdue", value: leads.followUpSummary.overdue, key: "followups_overdue" as const },
+          { label: "Follow-ups pending", value: leads.followUpSummary?.pending ?? 0, key: "followups_pending" as const },
+          { label: "Follow-ups overdue", value: leads.followUpSummary?.overdue ?? 0, key: "followups_overdue" as const },
           { label: "TD completion rate", value: `${testDrives.completionRate}%`, key: null },
         ].map((item) => {
           const clickable = Boolean(item.key) && typeof item.value === "number" && item.value > 0;
@@ -781,9 +903,9 @@ export default function AdminExecutiveDashboard() {
       </div>
 
       <Card className="p-4 border-border/50">
-        <h3 className="font-semibold text-sm mb-4">{data.year} monthly performance</h3>
+        <h3 className="font-semibold text-sm mb-4">{execData.year} monthly performance</h3>
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={data.monthly}>
+          <LineChart data={execData.monthly ?? []}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
@@ -799,8 +921,8 @@ export default function AdminExecutiveDashboard() {
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="leads">My Leads ({leads.leadDetailRows.length})</TabsTrigger>
-          <TabsTrigger value="test-drives">Test Drives ({data.recentBookings.length})</TabsTrigger>
+          <TabsTrigger value="leads">My Leads ({leads.leadDetailRows?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="test-drives">Test Drives ({(execData.recentBookings?.length ?? 0)})</TabsTrigger>
           <TabsTrigger value="compare">Year compare</TabsTrigger>
         </TabsList>
 
@@ -820,7 +942,7 @@ export default function AdminExecutiveDashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-sm text-muted-foreground py-8 text-center">No leads in {data.year}</p>
+                <p className="text-sm text-muted-foreground py-8 text-center">No leads in {execData.year}</p>
               )}
             </Card>
 
@@ -849,7 +971,7 @@ export default function AdminExecutiveDashboard() {
               </Link>
             </div>
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {data.leads.activityLog.length ? data.leads.activityLog.map((row, i) => {
+              {(leads.activityLog?.length ? leads.activityLog.map((row, i) => {
                 const meta = ACTIVITY_META[row.type] ?? { label: "Activity", icon: Activity, badge: "bg-muted text-muted-foreground" };
                 const Icon = meta.icon;
                 return (
@@ -882,7 +1004,7 @@ export default function AdminExecutiveDashboard() {
         <TabsContent value="leads" className="mt-4">
           <Card className="border-border/50 overflow-hidden">
             <div className="p-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="font-semibold text-sm">Your leads — {data.year}</h3>
+              <h3 className="font-semibold text-sm">Your leads — {execData.year}</h3>
               <Link to="/admin/crm/leads">
                 <Button size="sm" variant="outline">Manage leads</Button>
               </Link>
@@ -897,7 +1019,7 @@ export default function AdminExecutiveDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.leadDetailRows.length ? leads.leadDetailRows.map((row) => (
+                  {(leads.leadDetailRows?.length ? leads.leadDetailRows.map((row) => (
                     <tr key={row.leadId} className="border-b border-border/30 hover:bg-muted/20">
                       <td className="p-3 font-medium">{row.name}</td>
                       <td className="p-3">{row.mobile}</td>
@@ -912,7 +1034,7 @@ export default function AdminExecutiveDashboard() {
                       <td className="p-3 text-muted-foreground">{fmtDate(row.updatedAt)}</td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No leads assigned in {data.year}</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No leads assigned in {execData.year}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -966,7 +1088,7 @@ export default function AdminExecutiveDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recentBookings.length ? data.recentBookings.map((b) => (
+                  {(execData.recentBookings?.length ?? 0) ? execData.recentBookings!.map((b) => (
                     <tr key={b.bookingId} className="border-b border-border/30 hover:bg-muted/20">
                       <td className="p-3 font-mono">{b.bookingId}</td>
                       <td className="p-3">{b.customerName}</td>
@@ -989,15 +1111,15 @@ export default function AdminExecutiveDashboard() {
         <TabsContent value="compare" className="mt-4 space-y-4">
           <Card className="p-4 border-border/50">
             <h3 className="font-semibold text-sm mb-4">
-              {data.year} vs {data.compareYear} comparison
+              {execData.year} vs {execData.compareYear} comparison
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/50">
                     <th className="text-left p-3 text-muted-foreground font-medium">Metric</th>
-                    <th className="text-right p-3 text-muted-foreground font-medium">{data.year}</th>
-                    <th className="text-right p-3 text-muted-foreground font-medium">{data.compareYear}</th>
+                    <th className="text-right p-3 text-muted-foreground font-medium">{execData.year}</th>
+                    <th className="text-right p-3 text-muted-foreground font-medium">{execData.compareYear}</th>
                     <th className="text-right p-3 text-muted-foreground font-medium">Change</th>
                   </tr>
                 </thead>
@@ -1032,7 +1154,7 @@ export default function AdminExecutiveDashboard() {
 
           <div className="grid lg:grid-cols-2 gap-4">
             <Card className="p-4 border-border/50">
-              <h3 className="font-semibold text-sm mb-3">Lead sources — {data.year} vs {data.compareYear}</h3>
+              <h3 className="font-semibold text-sm mb-3">Lead sources — {execData.year} vs {execData.compareYear}</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart
                   data={Object.keys({ ...leads.bySource, ...leadsCompare.bySource }).map((name) => ({
@@ -1045,8 +1167,8 @@ export default function AdminExecutiveDashboard() {
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="current" name={String(data.year)} fill="#00d4ff" />
-                  <Bar dataKey="previous" name={String(data.compareYear)} fill="#7c3aed" />
+                  <Bar dataKey="current" name={String(execData.year)} fill="#00d4ff" />
+                  <Bar dataKey="previous" name={String(execData.compareYear)} fill="#7c3aed" />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -1056,13 +1178,13 @@ export default function AdminExecutiveDashboard() {
                 <Star className="w-4 h-4 text-amber-500" /> Feedback summary
               </h3>
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Avg rating ({data.year})</span><span className="font-semibold">{testDrives.avgFeedbackRating || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Avg rating ({execData.year})</span><span className="font-semibold">{testDrives.avgFeedbackRating || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Avg purchase intent</span><span className="font-semibold">{testDrives.avgPurchaseIntention || "—"}/5</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Feedback count</span><span className="font-semibold">{testDrives.feedbackCount}</span></div>
               </div>
-              {data.leads.feedbackRows.length ? (
+              {(leads.feedbackRows?.length ? (
                 <div className="mt-4 space-y-2 max-h-40 overflow-y-auto">
-                  {data.leads.feedbackRows.slice(0, 5).map((fb, i) => (
+                  {leads.feedbackRows.slice(0, 5).map((fb, i) => (
                     <div key={i} className="text-xs border-t border-border/30 pt-2 flex items-center gap-2">
                       <MessageSquare className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       <span className="font-medium">{fb.leadName}</span>
