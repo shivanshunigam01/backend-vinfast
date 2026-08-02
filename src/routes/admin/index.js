@@ -16,12 +16,15 @@ const tdLogsRoutes = require('./tdLogs');
 const tdLeadsRoutes = require('./tdLeads');
 const crmLeadsRoutes = require('./crmLeads');
 const crmCustomersRoutes = require('./crmCustomers');
+const leadStagesRoutes = require('./leadStages');
+const pricingRoutes = require('./pricing');
 const vehicleModelsRoutes = require('./vehicleModels');
 const vehicleStockRoutes = require('./vehicleStock');
 const seoPagesRoutes = require('./seoPages');
 const fleetHealthRoutes = require('./fleetHealth');
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdReportsController = require('../../controllers/tdReportsController');
+const leadReportController = require('../../controllers/leadReportController');
 const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
 const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
 const calendarController = require('../../controllers/calendarController');
@@ -110,6 +113,10 @@ router.use('/td/fleet', fleetHealthRoutes);
 // Standalone Lead CRM module (/api/v1/admin/crm/*)
 router.use('/crm/leads', crmLeadsRoutes);
 router.use('/crm/customers', crmCustomersRoutes);
+router.use('/crm/lead-stages', leadStagesRoutes);
+
+// Vehicle pricing (/api/v1/admin/pricing)
+router.use('/pricing', pricingRoutes);
 
 // Vehicle stock register with demo tagging (/api/v1/admin/stock/vehicles)
 router.use('/stock/vehicles', vehicleStockRoutes);
@@ -142,7 +149,21 @@ router.delete(
 
 // SEO module — district landing pages (/api/v1/admin/seo/*)
 router.use('/seo', seoPagesRoutes);
-router.get('/td/reports/admin', tdReportsController.getAdminReport);
+router.get(
+  '/td/reports/admin',
+  requireModuleAction('td_reports', 'view'),
+  tdReportsController.getAdminReport,
+);
+router.get(
+  '/reports/deliveries',
+  requireModuleAction('delivery_reports', 'view'),
+  leadReportController.getDeliveryReport,
+);
+router.get(
+  '/crm/reports/deliveries',
+  requireModuleAction('delivery_reports', 'view'),
+  leadReportController.getDeliveryReport,
+);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 
 // Test drives (legacy CRM)

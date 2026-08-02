@@ -3,6 +3,7 @@ require('../models/tdModels');
 const Lead = require('../models/Lead');
 const TDBooking = require('../models/TDBooking');
 const LeadFollowUp = require('../models/LeadFollowUp');
+const LeadStageHistory = require('../models/LeadStageHistory');
 const TDRescheduleRequest = require('../models/TDRescheduleRequest');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
@@ -21,6 +22,7 @@ const {
 } = require('../utils/leadAssignment');
 
 const TD_DURATION_MS = 60 * 60 * 1000;
+const QUERY_LIMIT = 2500;
 const CLOSED_LEAD_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
 
 function dayBounds(from, to) {
@@ -43,8 +45,27 @@ function wantType(types, key) {
   if (!types.length) return true;
   // Aliases
   if (key === 'lead' && types.includes('leads')) return true;
+  if (key === 'new_lead' && (types.includes('new_leads') || types.includes('leads_new'))) return true;
   if (key === 'test_drive' && (types.includes('test_drives') || types.includes('td'))) return true;
   if (key === 'lead_follow_up' && (types.includes('follow_up') || types.includes('follow_ups'))) return true;
+  if (key === 'stage_activity' && (types.includes('stage') || types.includes('stage_activities'))) return true;
+  if (key === 'booking_update' && (types.includes('booking') || types.includes('bookings'))) return true;
+  if (key === 'delivery' && types.includes('deliveries')) return true;
+  if (key === 'sales_activity' && (types.includes('sales') || types.includes('assignment'))) return true;
+  if (key === 'awaiting_vehicle' && types.includes('awaiting')) return true;
+  if (key === 'pending_approval' && (types.includes('approvals') || types.includes('approval'))) return true;
+  if (
+    key === 'customer_appointment' &&
+    (types.includes('reschedule') ||
+      types.includes('reschedules') ||
+      types.includes('meeting') ||
+      types.includes('meetings'))
+  ) {
+    return true;
+  }
+  if (key === 'reschedule' && (types.includes('customer_appointment') || types.includes('reschedule'))) {
+    return true;
+  }
   return types.includes(key);
 }
 
@@ -57,6 +78,10 @@ function combineDateTime(dateVal, timeStr) {
   return d;
 }
 
+function leadHref(id) {
+  return id ? `/admin/crm/leads?leadId=${id}` : '/admin/crm/leads';
+}
+
 function colorForEvent(type, status) {
   const s = String(status || '').toUpperCase();
   if (s === 'CANCELLED' || s === 'LOST' || s === 'CANCELLED'.toLowerCase()) return '#9ca3af';
@@ -66,15 +91,48 @@ function colorForEvent(type, status) {
     if (s === 'MISSED') return '#dc2626';
     return '#3b82f6';
   }
+  if (type === 'new_lead') return '#0ea5e9';
   if (type === 'lead') {
     if (s === 'DELIVERED') return '#059669';
     if (s === 'INTERESTED' || s === 'BOOKING') return '#d97706';
     return '#f59e0b';
   }
   if (type === 'lead_follow_up') return '#10b981';
+  if (type === 'stage_activity') return '#6366f1';
+  if (type === 'booking_update') return '#d97706';
+  if (type === 'delivery') return '#059669';
+  if (type === 'sales_activity') return '#14b8a6';
+  if (type === 'awaiting_vehicle') return '#f97316';
   if (type === 'pending_approval') return '#8b5cf6';
   if (type === 'customer_appointment') return '#ec4899';
   return '#6b7280';
+}
+
+function allDayRange(dateVal) {
+  const start = new Date(dateVal);
+  if (Number.isNaN(start.getTime())) return null;
+  const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  return { start: dayStart, end: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+function assigneeBlock(assignee) {
+  return {
+    assignedExecutive: assignee
+      ? {
+          _id: String(assignee._id || assignee),
+          name: assignee.name,
+          email: assignee.email,
+          designation: assignee.designation,
+        }
+      : null,
+    assignedManager: assignee?.reportsTo
+      ? {
+          _id: String(assignee.reportsTo._id || assignee.reportsTo),
+          name: assignee.reportsTo.name,
+          email: assignee.reportsTo.email,
+        }
+      : null,
+  };
 }
 
 function formatLeadEvent(lead) {
@@ -91,7 +149,7 @@ function formatLeadEvent(lead) {
   return {
     id: `lead-${lead._id}`,
     type: 'lead',
-    title: `Lead · ${lead.name || 'Customer'}`,
+    title: `Follow-up due · ${lead.name || 'Customer'}`,
     start: start.toISOString(),
     end: end.toISOString(),
     allDay,
@@ -101,20 +159,36 @@ function formatLeadEvent(lead) {
     customerName: lead.name || '',
     mobile: lead.mobile || '',
     vehicle: lead.model || '',
-    assignedExecutive: assignee
-      ? { _id: String(assignee._id), name: assignee.name, email: assignee.email, designation: assignee.designation }
-      : null,
-    assignedManager: assignee?.reportsTo
-      ? {
-          _id: String(assignee.reportsTo._id || assignee.reportsTo),
-          name: assignee.reportsTo.name,
-          email: assignee.reportsTo.email,
-        }
-      : null,
+    ...assigneeBlock(assignee),
     leadId: String(lead._id),
     remarks: lead.remarks || '',
-    href: `/admin/crm/leads`,
+    href: leadHref(lead._id),
     color: colorForEvent('lead', lead.status),
+  };
+}
+
+function formatNewLeadEvent(lead) {
+  const range = allDayRange(lead.createdAt);
+  if (!range) return null;
+  const assignee = lead.assignedTo;
+  return {
+    id: `nl-${lead._id}`,
+    type: 'new_lead',
+    title: `New lead · ${lead.name || 'Customer'}`,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    allDay: true,
+    date: isoDateOnly(range.start),
+    time: null,
+    status: lead.status,
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || '',
+    ...assigneeBlock(assignee),
+    leadId: String(lead._id),
+    remarks: lead.remarks || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('new_lead', lead.status),
   };
 }
 
@@ -148,6 +222,7 @@ function formatTdEvent(b) {
       : null,
     bookingId: String(b._id),
     bookingCode: b.bookingId,
+    leadId: b.leadId ? String(b.leadId) : null,
     remarks: b.remarks || '',
     assignmentStatus: b.assignmentStatus,
     href: `/admin/td/bookings?highlight=${b._id}`,
@@ -160,6 +235,7 @@ function formatFollowUpEvent(f) {
   const start = f.scheduledAt ? new Date(f.scheduledAt) : null;
   if (!start || Number.isNaN(start.getTime())) return null;
   const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const leadId = lead?._id ? String(lead._id) : null;
   return {
     id: `fu-${f._id}`,
     type: 'lead_follow_up',
@@ -180,12 +256,227 @@ function formatFollowUpEvent(f) {
           email: lead.assignedTo.email,
         }
       : null,
-    leadId: lead?._id ? String(lead._id) : null,
+    leadId,
     followUpId: String(f._id),
     remarks: f.note || '',
-    href: lead?._id ? `/admin/crm/leads` : '/admin/crm/leads',
+    href: leadHref(leadId),
     color: colorForEvent('lead_follow_up', f.status),
   };
+}
+
+function formatStageActivityEvent(h) {
+  const lead = h.leadId;
+  const start = h.createdAt ? new Date(h.createdAt) : null;
+  if (!start || Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const leadId = lead?._id ? String(lead._id) : h.leadId ? String(h.leadId) : null;
+  const from = h.fromStage || '—';
+  const to = h.toStage || '—';
+  return {
+    id: `sa-${h._id}`,
+    type: 'stage_activity',
+    title: `Stage · ${lead?.name || 'Lead'} · ${from} → ${to}`,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    allDay: false,
+    date: isoDateOnly(start),
+    time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    status: to,
+    customerName: lead?.name || '',
+    mobile: lead?.mobile || '',
+    vehicle: lead?.model || '',
+    ...assigneeBlock(lead?.assignedTo),
+    leadId,
+    remarks: h.reason || '',
+    href: leadHref(leadId),
+    color: colorForEvent('stage_activity', to),
+  };
+}
+
+function formatBookingUpdateEvent(lead, dateVal) {
+  const range = allDayRange(dateVal);
+  if (!range) return null;
+  return {
+    id: `bk-${lead._id}-${isoDateOnly(range.start)}`,
+    type: 'booking_update',
+    title: `Booking · ${lead.name || 'Customer'}`,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    allDay: true,
+    date: isoDateOnly(range.start),
+    time: null,
+    status: lead.status || 'Booking',
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || '',
+    ...assigneeBlock(lead.assignedTo),
+    leadId: String(lead._id),
+    remarks: lead.remarks || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('booking_update', 'Booking'),
+  };
+}
+
+function formatDeliveryEvent(lead, dateVal) {
+  const range = allDayRange(dateVal);
+  if (!range) return null;
+  return {
+    id: `dl-${lead._id}`,
+    type: 'delivery',
+    title: `Delivery · ${lead.name || 'Customer'}`,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    allDay: true,
+    date: isoDateOnly(range.start),
+    time: null,
+    status: 'Delivered',
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || '',
+    ...assigneeBlock(lead.assignedTo),
+    leadId: String(lead._id),
+    remarks: lead.remarks || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('delivery', 'Delivered'),
+  };
+}
+
+function formatSalesActivityEvent(source, kind) {
+  if (kind === 'history') {
+    const lead = source.leadId;
+    const start = source.createdAt ? new Date(source.createdAt) : null;
+    if (!start || Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + 30 * 60 * 1000);
+    const leadId = lead?._id ? String(lead._id) : source.leadId ? String(source.leadId) : null;
+    return {
+      id: `sales-h-${source._id}`,
+      type: 'sales_activity',
+      title: `Assignment · ${lead?.name || 'Lead'}`,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      allDay: false,
+      date: isoDateOnly(start),
+      time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+      status: source.toStage || 'Assignment',
+      customerName: lead?.name || '',
+      mobile: lead?.mobile || '',
+      vehicle: lead?.model || '',
+      ...assigneeBlock(lead?.assignedTo),
+      leadId,
+      remarks: source.reason || '',
+      href: leadHref(leadId),
+      color: colorForEvent('sales_activity', 'Assignment'),
+    };
+  }
+  const lead = source;
+  const range = allDayRange(lead.lastActivityAt);
+  if (!range) return null;
+  return {
+    id: `sales-a-${lead._id}`,
+    type: 'sales_activity',
+    title: `Activity · ${lead.name || 'Customer'}`,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    allDay: true,
+    date: isoDateOnly(range.start),
+    time: null,
+    status: lead.status,
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || '',
+    ...assigneeBlock(lead.assignedTo),
+    leadId: String(lead._id),
+    remarks: lead.remarks || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('sales_activity', lead.status),
+  };
+}
+
+function formatAwaitingVehicleEvent(lead) {
+  const dateVal = lead.updatedAt || lead.creSheet?.bookingDate || lead.createdAt;
+  const range = allDayRange(dateVal);
+  if (!range) return null;
+  return {
+    id: `av-${lead._id}`,
+    type: 'awaiting_vehicle',
+    title: `Awaiting vehicle · ${lead.name || 'Customer'}`,
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    allDay: true,
+    date: isoDateOnly(range.start),
+    time: null,
+    status: 'Booking',
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || lead.creSheet?.finalModel || '',
+    ...assigneeBlock(lead.assignedTo),
+    leadId: String(lead._id),
+    remarks: lead.remarks || lead.creSheet?.initialRemark || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('awaiting_vehicle', 'Booking'),
+  };
+}
+
+function isAwaitingVehicleLead(lead) {
+  if (String(lead.status || '') !== 'Booking') return false;
+  if (lead.convertedAt) return false;
+  const sheet = lead.creSheet || {};
+  if (sheet.retailDone === true || sheet.deliveryDate) return false;
+  // Explicit waiting signals, or Booking without conversion/delivery = awaiting
+  if (sheet.bookingDone === true && sheet.retailDone !== true) return true;
+  if (sheet.mailSent === true && !sheet.deliveryDate) return true;
+  const remarks = String(lead.remarks || sheet.initialRemark || sheet.salesPersonRemark || '').toLowerCase();
+  if (/(await|waiting|awaiting).{0,20}(vehicle|stock|delivery|car)/i.test(remarks)) return true;
+  return true;
+}
+
+function deliveryDateForLead(lead) {
+  if (lead.convertedAt) return new Date(lead.convertedAt);
+  if (lead.creSheet?.deliveryDate) return new Date(lead.creSheet.deliveryDate);
+  if (lead.updatedAt) return new Date(lead.updatedAt);
+  return null;
+}
+
+function dateInRange(d, start, end) {
+  if (!d || Number.isNaN(d.getTime())) return false;
+  return d >= start && d <= end;
+}
+
+function applyLeadScope(query, leadScope, assigneeLeadFilter) {
+  const and = Array.isArray(query.$and) ? [...query.$and] : [];
+  if (leadScope) and.push(leadScope);
+  if (assigneeLeadFilter) and.push(assigneeLeadFilter);
+  if (and.length) query.$and = and;
+  return query;
+}
+
+function leadMatchesAssignee(lead, admin, assigneeParam) {
+  if (!assigneeParam || assigneeParam === 'all') return true;
+  const assigned = lead?.assignedTo?._id || lead?.assignedTo;
+  if (assigneeParam === 'unassigned') return !assigned;
+  const target = assigneeParam === 'me' ? String(admin._id) : String(assigneeParam);
+  return Boolean(assigned && String(assigned) === target);
+}
+
+async function filterHistoryByLeadScope(histories, teamScoped, admin, assigneeParam) {
+  const list = histories || [];
+  if (!list.length) return [];
+  let allowed = null;
+  if (teamScoped) allowed = new Set(await resolveStaffIdsForUser(admin));
+  const email = normalizeEmail(admin.email);
+  return list.filter((h) => {
+    const lead = h.leadId;
+    if (!lead) return false;
+    if (allowed) {
+      const assigned = lead.assignedTo?._id || lead.assignedTo;
+      const ok =
+        (assigned && allowed.has(String(assigned))) ||
+        (email && normalizeEmail(lead.assignedToEmail) === email) ||
+        (email && normalizeEmail(lead.assignedTo?.email) === email);
+      if (!ok) return false;
+    }
+    return leadMatchesAssignee(lead, admin, assigneeParam);
+  });
 }
 
 async function assertCanEditCalendarRecord(admin, kind, doc) {
@@ -210,6 +501,12 @@ async function assertCanEditCalendarRecord(admin, kind, doc) {
     throw new ApiError(403, 'You cannot edit this test drive');
   }
 }
+
+const LEAD_POPULATE = {
+  path: 'assignedTo',
+  select: 'name email designation reportsTo',
+  populate: { path: 'reportsTo', select: 'name email designation' },
+};
 
 /**
  * GET /admin/dashboard/calendar
@@ -239,9 +536,6 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       assigneeLeadFilter = { $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] };
       assigneeTdFilter = { $or: [{ assignedExecutive: { $exists: false } }, { assignedExecutive: null }] };
     } else if (assigneeParam === 'me') {
-      assigneeLeadFilter = await assignedToStaffFilterAsync(req.admin);
-      // For "me" on TD use self-only by email/id via same async but for managers
-      // team filter already includes self; intersect by using assignedToStaffFilter with self
       const { assignedToStaffFilter, assignedExecutiveIdsFilter } = require('../utils/leadAssignment');
       assigneeLeadFilter = assignedToStaffFilter(req.admin._id, req.admin.email);
       assigneeTdFilter = assignedExecutiveIdsFilter([req.admin._id], req.admin.email);
@@ -285,48 +579,16 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       })
       .populate('customerId', 'name mobile')
       .select(
-        'bookingId bookingStatus slotDate slotTime preferredModel customerName customerMobile assignmentStatus remarks assignedExecutive',
+        'bookingId bookingStatus slotDate slotTime preferredModel customerName customerMobile assignmentStatus remarks assignedExecutive leadId',
       )
-      .limit(1000)
+      .limit(QUERY_LIMIT)
       .lean();
 
     for (const b of bookings) events.push(formatTdEvent(b));
   }
 
-  if (wantType(types, 'lead')) {
-    const query = {
-      status: { $nin: CLOSED_LEAD_STATUSES },
-      $or: [
-        { nextFollowUp: { $gte: start, $lte: end } },
-        {
-          $and: [
-            { $or: [{ nextFollowUp: { $exists: false } }, { nextFollowUp: null }] },
-            { createdAt: { $gte: start, $lte: end } },
-          ],
-        },
-      ],
-    };
-    if (statusFilter) query.status = statusFilter;
-    if (modelFilter) query.model = new RegExp(modelFilter, 'i');
-
-    const and = [];
-    if (leadScope) and.push(leadScope);
-    if (assigneeLeadFilter) and.push(assigneeLeadFilter);
-    if (and.length) query.$and = and;
-
-    const leads = await Lead.find(query)
-      .populate({
-        path: 'assignedTo',
-        select: 'name email designation reportsTo',
-        populate: { path: 'reportsTo', select: 'name email designation' },
-      })
-      .select('name mobile model status nextFollowUp createdAt remarks assignedTo')
-      .limit(1000)
-      .lean();
-
-    for (const lead of leads) events.push(formatLeadEvent(lead));
-  }
-
+  // Follow-up docs first (needed for nextFollowUp lead dedupe)
+  const followUpLeadDayKeys = new Set();
   if (wantType(types, 'lead_follow_up') || wantType(types, 'follow_up')) {
     const fuQuery = { scheduledAt: { $gte: start, $lte: end } };
     if (statusFilter) fuQuery.status = statusFilter.toLowerCase();
@@ -334,11 +596,11 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
     let followUps = await LeadFollowUp.find(fuQuery)
       .populate({
         path: 'leadId',
-        select: 'name mobile model status assignedTo',
+        select: 'name mobile model status assignedTo assignedToEmail',
         populate: { path: 'assignedTo', select: 'name email designation' },
       })
       .select('leadId scheduledAt status note')
-      .limit(1000)
+      .limit(QUERY_LIMIT)
       .lean()
       .catch(() => []);
 
@@ -374,24 +636,286 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
 
     for (const f of followUps || []) {
       const ev = formatFollowUpEvent(f);
+      if (ev) {
+        events.push(ev);
+        if (ev.leadId && ev.date) followUpLeadDayKeys.add(`${ev.leadId}:${ev.date}`);
+      }
+    }
+  }
+
+  // Legacy nextFollowUp lead events — skip when a LeadFollowUp exists same day
+  if (wantType(types, 'lead') || wantType(types, 'lead_follow_up')) {
+    const query = applyLeadScope(
+      {
+        status: { $nin: CLOSED_LEAD_STATUSES },
+        nextFollowUp: { $gte: start, $lte: end },
+      },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (statusFilter) query.status = statusFilter;
+    if (modelFilter) query.model = new RegExp(modelFilter, 'i');
+
+    const leads = await Lead.find(query)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status nextFollowUp createdAt remarks assignedTo')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of leads) {
+      const day = isoDateOnly(lead.nextFollowUp);
+      const key = `${lead._id}:${day}`;
+      if (followUpLeadDayKeys.has(key)) continue;
+      events.push(formatLeadEvent(lead));
+    }
+  }
+
+  if (wantType(types, 'new_lead')) {
+    const query = applyLeadScope(
+      { createdAt: { $gte: start, $lte: end } },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (statusFilter) query.status = statusFilter;
+    if (modelFilter) query.model = new RegExp(modelFilter, 'i');
+
+    const leads = await Lead.find(query)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status createdAt remarks assignedTo')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of leads) {
+      const ev = formatNewLeadEvent(lead);
       if (ev) events.push(ev);
     }
   }
 
-  // Keep optional ops events for admins when no type filter or explicitly requested
-  if (wantType(types, 'pending_approval') && !teamScoped) {
-    const approvals = await TDBooking.find({
-      approvalStatus: 'PENDING',
+  if (wantType(types, 'stage_activity')) {
+    const histQuery = {
+      createdAt: { $gte: start, $lte: end },
+      reason: { $not: /Assignment/i },
+    };
+    let histories = await LeadStageHistory.find(histQuery)
+      .populate({
+        path: 'leadId',
+        select: 'name mobile model status assignedTo assignedToEmail',
+        populate: {
+          path: 'assignedTo',
+          select: 'name email designation reportsTo',
+          populate: { path: 'reportsTo', select: 'name email' },
+        },
+      })
+      .select('leadId fromStage toStage reason createdAt')
+      .limit(QUERY_LIMIT)
+      .lean()
+      .catch(() => []);
+
+    histories = await filterHistoryByLeadScope(histories, teamScoped, req.admin, assigneeParam);
+
+    if (modelFilter) {
+      histories = histories.filter((h) =>
+        String(h.leadId?.model || '')
+          .toLowerCase()
+          .includes(modelFilter.toLowerCase()),
+      );
+    }
+
+    for (const h of histories) {
+      const ev = formatStageActivityEvent(h);
+      if (ev) events.push(ev);
+    }
+  }
+
+  if (wantType(types, 'booking_update')) {
+    const seen = new Set();
+
+    const bookingLeadQuery = applyLeadScope(
+      {
+        status: 'Booking',
+        $or: [
+          { convertedAt: { $gte: start, $lte: end } },
+          { updatedAt: { $gte: start, $lte: end } },
+        ],
+      },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (modelFilter) bookingLeadQuery.model = new RegExp(modelFilter, 'i');
+
+    const bookingLeads = await Lead.find(bookingLeadQuery)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status convertedAt updatedAt remarks assignedTo')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of bookingLeads) {
+      const dateVal =
+        lead.convertedAt && dateInRange(new Date(lead.convertedAt), start, end)
+          ? lead.convertedAt
+          : lead.updatedAt;
+      const ev = formatBookingUpdateEvent(lead, dateVal);
+      if (ev && !seen.has(String(lead._id))) {
+        seen.add(String(lead._id));
+        events.push(ev);
+      }
+    }
+
+    // Stage history transitions into Booking
+    let bookingHistories = await LeadStageHistory.find({
+      toStage: 'Booking',
       createdAt: { $gte: start, $lte: end },
     })
-      .select('bookingId customerName createdAt')
-      .limit(200)
+      .populate({
+        path: 'leadId',
+        select: 'name mobile model status convertedAt updatedAt remarks assignedTo assignedToEmail',
+        populate: LEAD_POPULATE,
+      })
+      .select('leadId createdAt toStage')
+      .limit(QUERY_LIMIT)
+      .lean()
+      .catch(() => []);
+
+    bookingHistories = await filterHistoryByLeadScope(bookingHistories, teamScoped, req.admin, assigneeParam);
+
+    for (const h of bookingHistories) {
+      const lead = h.leadId;
+      if (!lead) continue;
+      const id = String(lead._id);
+      if (seen.has(id)) continue;
+      if (modelFilter && !String(lead.model || '').toLowerCase().includes(modelFilter.toLowerCase())) continue;
+      const ev = formatBookingUpdateEvent(lead, h.createdAt || lead.updatedAt);
+      if (ev) {
+        seen.add(id);
+        events.push(ev);
+      }
+    }
+  }
+
+  if (wantType(types, 'delivery')) {
+    const query = applyLeadScope({ status: 'Delivered' }, leadScope, assigneeLeadFilter);
+    if (modelFilter) query.model = new RegExp(modelFilter, 'i');
+
+    const leads = await Lead.find(query)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status convertedAt updatedAt remarks assignedTo creSheet')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of leads) {
+      const d = deliveryDateForLead(lead);
+      if (!dateInRange(d, start, end)) continue;
+      const ev = formatDeliveryEvent(lead, d);
+      if (ev) events.push(ev);
+    }
+  }
+
+  if (wantType(types, 'sales_activity')) {
+    const assignmentLeadIds = new Set();
+
+    let assignmentHistories = await LeadStageHistory.find({
+      createdAt: { $gte: start, $lte: end },
+      reason: /Assignment/i,
+    })
+      .populate({
+        path: 'leadId',
+        select: 'name mobile model status assignedTo assignedToEmail remarks',
+        populate: LEAD_POPULATE,
+      })
+      .select('leadId fromStage toStage reason createdAt')
+      .limit(QUERY_LIMIT)
+      .lean()
+      .catch(() => []);
+
+    assignmentHistories = await filterHistoryByLeadScope(
+      assignmentHistories,
+      teamScoped,
+      req.admin,
+      assigneeParam,
+    );
+
+    for (const h of assignmentHistories) {
+      if (modelFilter && !String(h.leadId?.model || '').toLowerCase().includes(modelFilter.toLowerCase())) {
+        continue;
+      }
+      const ev = formatSalesActivityEvent(h, 'history');
+      if (ev) {
+        events.push(ev);
+        if (ev.leadId) assignmentLeadIds.add(ev.leadId);
+      }
+    }
+
+    // Fallback: lastActivityAt in range for leads without assignment history that day
+    const activityQuery = applyLeadScope(
+      { lastActivityAt: { $gte: start, $lte: end } },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (statusFilter) activityQuery.status = statusFilter;
+    if (modelFilter) activityQuery.model = new RegExp(modelFilter, 'i');
+
+    const activityLeads = await Lead.find(activityQuery)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status lastActivityAt remarks assignedTo')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of activityLeads) {
+      if (assignmentLeadIds.has(String(lead._id))) continue;
+      const ev = formatSalesActivityEvent(lead, 'activity');
+      if (ev) events.push(ev);
+    }
+  }
+
+  if (wantType(types, 'awaiting_vehicle')) {
+    const query = applyLeadScope(
+      {
+        status: 'Booking',
+        $and: [
+          { $or: [{ convertedAt: null }, { convertedAt: { $exists: false } }] },
+          {
+            $or: [
+              { updatedAt: { $gte: start, $lte: end } },
+              { 'creSheet.bookingDate': { $gte: start, $lte: end } },
+              { createdAt: { $gte: start, $lte: end } },
+            ],
+          },
+        ],
+      },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (modelFilter) query.model = new RegExp(modelFilter, 'i');
+
+    const leads = await Lead.find(query)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status convertedAt updatedAt createdAt remarks assignedTo creSheet')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of leads) {
+      if (!isAwaitingVehicleLead(lead)) continue;
+      const ev = formatAwaitingVehicleEvent(lead);
+      if (ev && dateInRange(new Date(ev.start), start, end)) events.push(ev);
+    }
+  }
+
+  if (wantType(types, 'pending_approval')) {
+    const apQuery = {
+      approvalStatus: 'PENDING',
+      createdAt: { $gte: start, $lte: end },
+    };
+    if (tdScope) apQuery.$and = [tdScope];
+
+    const approvals = await TDBooking.find(apQuery)
+      .select('bookingId customerName createdAt assignedExecutive')
+      .limit(QUERY_LIMIT)
       .lean();
     for (const b of approvals) {
       events.push({
         id: `ap-${b._id}`,
         type: 'pending_approval',
-        title: `Repeat TD approval · ${b.bookingId}`,
+        title: `Approval · ${b.bookingId || b.customerName || 'TD'}`,
         start: new Date(b.createdAt).toISOString(),
         end: new Date(new Date(b.createdAt).getTime() + TD_DURATION_MS).toISOString(),
         allDay: true,
@@ -407,19 +931,42 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
     }
   }
 
-  if (wantType(types, 'reschedule') && !teamScoped) {
-    const reschedules = await TDRescheduleRequest.find({
+  if (wantType(types, 'customer_appointment') || wantType(types, 'reschedule')) {
+    const rsQuery = {
       status: 'PENDING',
       createdAt: { $gte: start, $lte: end },
-    })
-      .select('bookingCode createdAt requestedByName')
-      .limit(200)
+    };
+    const reschedules = await TDRescheduleRequest.find(rsQuery)
+      .select('bookingCode createdAt requestedByName bookingId')
+      .limit(QUERY_LIMIT)
       .lean();
-    for (const r of reschedules) {
+
+    let filtered = reschedules || [];
+    if (teamScoped && filtered.length) {
+      // Soft team filter: keep requests whose booking is in team scope when we can resolve it
+      const codes = filtered.map((r) => r.bookingCode).filter(Boolean);
+      const bookingIds = filtered.map((r) => r.bookingId).filter(Boolean);
+      const tdQuery = { $or: [] };
+      if (codes.length) tdQuery.$or.push({ bookingId: { $in: codes } });
+      if (bookingIds.length) tdQuery.$or.push({ _id: { $in: bookingIds } });
+      if (tdQuery.$or.length && tdScope) {
+        tdQuery.$and = [tdScope];
+        const scopedBookings = await TDBooking.find(tdQuery).select('_id bookingId').lean();
+        const allowedCodes = new Set(scopedBookings.map((b) => b.bookingId).filter(Boolean));
+        const allowedIds = new Set(scopedBookings.map((b) => String(b._id)));
+        filtered = filtered.filter(
+          (r) =>
+            (r.bookingCode && allowedCodes.has(r.bookingCode)) ||
+            (r.bookingId && allowedIds.has(String(r.bookingId))),
+        );
+      }
+    }
+
+    for (const r of filtered) {
       events.push({
         id: `rs-${r._id}`,
         type: 'customer_appointment',
-        title: `Reschedule request · ${r.bookingCode}`,
+        title: `Reschedule · ${r.bookingCode || 'TD'}`,
         start: new Date(r.createdAt).toISOString(),
         end: new Date(new Date(r.createdAt).getTime() + TD_DURATION_MS).toISOString(),
         allDay: true,

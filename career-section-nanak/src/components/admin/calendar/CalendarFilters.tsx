@@ -10,10 +10,27 @@ export type CalendarFilterState = {
   model: string;
 };
 
+export const DEFAULT_CALENDAR_TYPES = [
+  "new_lead",
+  "test_drive",
+  "lead_follow_up",
+  "stage_activity",
+  "booking_update",
+  "delivery",
+  "customer_appointment",
+] as const;
+
 const TYPE_OPTIONS = [
-  { key: "lead", label: "Leads" },
+  { key: "new_lead", label: "New Leads" },
   { key: "test_drive", label: "Test Drives" },
   { key: "lead_follow_up", label: "Follow-ups" },
+  { key: "stage_activity", label: "Stage Activities" },
+  { key: "booking_update", label: "Bookings" },
+  { key: "delivery", label: "Deliveries" },
+  { key: "customer_appointment", label: "Meetings" },
+  { key: "pending_approval", label: "Approvals" },
+  { key: "awaiting_vehicle", label: "Awaiting Vehicle" },
+  { key: "sales_activity", label: "Sales" },
 ] as const;
 
 type Props = {
@@ -34,7 +51,10 @@ export function CalendarFilters({
   const toggleType = (key: string) => {
     const has = filters.types.includes(key);
     const next = has ? filters.types.filter((t) => t !== key) : [...filters.types, key];
-    onChange({ ...filters, types: next.length ? next : ["lead", "test_drive", "lead_follow_up"] });
+    onChange({
+      ...filters,
+      types: next.length ? next : [...DEFAULT_CALENDAR_TYPES],
+    });
   };
 
   return (
@@ -71,6 +91,8 @@ export function CalendarFilters({
             <SelectItem value="Enquiry">Enquiry</SelectItem>
             <SelectItem value="Interested">Interested</SelectItem>
             <SelectItem value="Follow Up">Follow Up</SelectItem>
+            <SelectItem value="Booking">Booking</SelectItem>
+            <SelectItem value="Delivered">Delivered</SelectItem>
             <SelectItem value="PENDING">TD Pending</SelectItem>
             <SelectItem value="CONFIRMED">TD Confirmed</SelectItem>
             <SelectItem value="IN_PROGRESS">TD In progress</SelectItem>

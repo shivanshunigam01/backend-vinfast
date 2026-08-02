@@ -22,6 +22,7 @@ import vf6GalDetail03 from "@/assets/vf6-gallery/vf6-gallery-detail-03.png";
 import vf6GalDetail04 from "@/assets/vf6-gallery/vf6-gallery-detail-04.png";
 import vf6GalDetail05 from "@/assets/vf6-gallery/vf6-gallery-detail-05.png";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePublicPricing } from "@/hooks/usePublicPricing";
 import { usePageSeo } from "@/hooks/usePageSeo";
 import { VF6_TRIM_0_100_KMH } from "@/data/vinfastCompareSpecAnchors";
 
@@ -343,6 +344,7 @@ function SpecTable({ title, rows }: { title: string; rows: [string, string, stri
 
 const ModelVF6 = () => {
   const { siteConfig } = usePublicSite();
+  const { variantPrice, bySlug } = usePublicPricing();
   const [selectedColor, setSelectedColor] = useState(0);
   const [variant, setVariant] = useState<VariantId>("earth");
 
@@ -365,7 +367,9 @@ const ModelVF6 = () => {
   const stats = variantHeroStats[variant];
   const vMeta = vf6Variants.find((v) => v.id === variant)!;
   const displayExShowroom =
-    variant === "earth" ? siteConfig.vf6Price : variantExShowroomPrice[variant];
+    variant === "earth"
+      ? bySlug("vf6")?.priceFrom || siteConfig.vf6Price || variantExShowroomPrice.earth
+      : variantPrice("vf6", variant, variantExShowroomPrice[variant]);
 
   return (
     <div className="min-h-screen bg-background pb-36 lg:pb-0">

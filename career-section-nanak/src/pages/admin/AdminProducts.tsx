@@ -187,7 +187,7 @@ const AdminProducts = () => {
             <div className="aspect-[16/9] bg-secondary/20 relative">
               {p.heroImage
                 ? <img src={p.heroImage} alt={p.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-muted-foreground/30 text-sm">No hero image</div>
+                : <div className="w-full h-full flex items-center justify-center text-muted-foreground/30 text-sm">No homepage card image</div>
               }
               {(canUpdate || canDelete) ? (
                 <div className="absolute top-2 right-2 flex gap-1">
@@ -332,9 +332,39 @@ const ProductForm = ({ product, onSave, onCancel }: { product: Product; onSave: 
 
       {/* Images */}
       <TabsContent value="images" className="space-y-5">
-        <div className="space-y-2">
-          <Label className="text-xs font-semibold">Hero Image (main product page banner)</Label>
-          <CloudinaryUpload value={form.heroImage} onUpload={(url) => update("heroImage", url)} label="Upload Hero Image" aspectRatio="16/9" />
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs font-semibold">Homepage card image</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Shown on the homepage Model Discovery cards. Leave empty to keep the bundled fallback asset.
+            </p>
+          </div>
+          <CloudinaryUpload
+            value={form.heroImage}
+            onUpload={(url) => update("heroImage", url)}
+            label="Upload homepage card image"
+            aspectRatio="16/9"
+          />
+          <div className="rounded-xl border border-border/50 bg-secondary/20 p-3 max-w-[220px]">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Card preview
+            </p>
+            <div className="aspect-[16/10] rounded-lg overflow-hidden bg-secondary/40 mb-2.5">
+              {form.heroImage ? (
+                <img src={form.heroImage} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 text-[11px] px-2 text-center">
+                  No image — bundled asset used
+                </div>
+              )}
+            </div>
+            <p className="font-display font-bold text-sm text-foreground leading-tight truncate">
+              {form.name || "Model name"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+              {form.priceFrom || "Price from —"}
+            </p>
+          </div>
         </div>
         <div className="space-y-3">
           <Label className="text-xs font-semibold">Gallery Images</Label>

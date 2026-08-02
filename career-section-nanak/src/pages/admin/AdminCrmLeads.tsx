@@ -36,6 +36,7 @@ import {
   downloadPvCrmLeadImportTemplate,
   downloadCrmImportErrors,
   fetchOpportunityDuplicates,
+  CRM_IMPORT_MODEL_OPTIONS,
   type AssignableStaffUser,
   type PvCrmLead,
   type PvCrmLeadDetail,
@@ -48,6 +49,7 @@ import {
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
 import { CRM_LEAD_STAGES, normalizeCrmStage, STAGE_COLORS } from "@/lib/leadStages";
+import { useCrmLeadStages } from "@/hooks/useCrmLeadStages";
 import { cn } from "@/lib/utils";
 import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
@@ -92,6 +94,9 @@ export default function AdminCrmLeads() {
     canAssignLeads;
   const canImportExcel =
     canCreate && (isAdminPortal || isCre || adminUser?.role === "manager" || canAssignLeads);
+
+  const { stages: crmStages } = useCrmLeadStages();
+  const stageList = crmStages.length ? crmStages : [...CRM_LEAD_STAGES];
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -161,7 +166,14 @@ export default function AdminCrmLeads() {
     followUps: number;
     failed: number;
     total: number;
+    needsModel?: number;
+    dryRun?: boolean;
   } | null>(null);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
+  const [modelMapOpen, setModelMapOpen] = useState(false);
+  const [modelMapRows, setModelMapRows] = useState<CrmLeadImportRow[]>([]);
+  const [modelCorrections, setModelCorrections] = useState<Record<string, string>>({});
+  const [committingImport, setCommittingImport] = useState(false);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
     setEditName(lead.name ?? "");
@@ -169,8 +181,9 @@ export default function AdminCrmLeads() {
     setEditEmail(lead.email ?? "");
     setEditCity(lead.city ?? "");
     const parsed = parseStoredModelLine(lead.model ?? "");
-    setEditModel(parsed.model);
-    setEditVariant(parsed.variant);
+    // Ambiguous "Both" cannot be saved — default to a concrete model for the editor.
+    setEditModel(parsed.model === "Both" ? "VF 7" : parsed.model);
+    setEditVariant(parsed.model === "Both" ? "" : parsed.variant);
     setEditSource(lead.source ?? "");
   };
 
@@ -239,14 +252,14 @@ export default function AdminCrmLeads() {
 
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const s of CRM_LEAD_STAGES) counts[s] = 0;
+    for (const s of stageList) counts[s] = 0;
     const rows = Array.isArray(leads) ? leads : [];
     for (const l of rows) {
       const key = normalizeCrmStage(l.status);
       counts[key] = (counts[key] ?? 0) + 1;
     }
     return counts;
-  }, [leads]);
+  }, [leads, stageList]);
 
   const safeLeads = Array.isArray(leads) ? leads : [];
   const staffUsers = Array.isArray(executives) ? executives : [];
@@ -557,48 +570,112 @@ export default function AdminCrmLeads() {
     }
   };
 
+  const applyImportCommitResult = (result: {
+    created?: number;
+    updated?: number;
+    followUpsCreated?: number;
+    failed?: CrmLeadImportFailure[];
+    rows?: CrmLeadImportRow[];
+  }) => {
+    const failedRows = result.failed ?? [];
+    const failed = failedRows.length;
+    const followUps = result.followUpsCreated ?? 0;
+    const updated = result.updated ?? 0;
+    const created = result.created ?? 0;
+    const uploaded = created + updated + failed;
+    const detailRows: CrmLeadImportRow[] =
+      Array.isArray(result.rows) && result.rows.length
+        ? result.rows
+        : failedRows.map((f) => ({
+            row: f.row,
+            status: "failed" as const,
+            name: f.name,
+            mobile: f.mobile,
+            message: f.message,
+          }));
+    setImportRows(detailRows);
+    setImportFailures(failedRows);
+    setImportSummary({ created, updated, followUps, failed, total: uploaded });
+    setImportListFilter(failed > 0 ? "failed" : "all");
+    setImportResultOpen(true);
+    setPendingImportFile(null);
+    setModelMapOpen(false);
+    setModelMapRows([]);
+    setModelCorrections({});
+    if (failed > 0) {
+      toast.warning(
+        `Uploaded ${uploaded}: ${created} created, ${updated} updated, ${failed} failed.`,
+      );
+    } else {
+      toast.success(
+        `Uploaded ${uploaded}: ${created} created` +
+          (updated ? `, ${updated} updated` : "") +
+          (followUps ? `, ${followUps} follow-up(s)` : ""),
+      );
+    }
+    void loadLeads();
+  };
+
   const handleImportFile = async (file: File) => {
     if (!canImportExcel) return;
     setImporting(true);
     try {
-      const result = await importPvCrmLeadsFile(file);
-      const failedRows = result.failed ?? [];
-      const failed = failedRows.length;
-      const followUps = result.followUpsCreated ?? 0;
-      const updated = result.updated ?? 0;
-      const created = result.created ?? 0;
-      const uploaded = created + updated + failed;
-      const detailRows: CrmLeadImportRow[] =
-        Array.isArray(result.rows) && result.rows.length
-          ? result.rows
-          : failedRows.map((f) => ({
-              row: f.row,
-              status: "failed" as const,
-              name: f.name,
-              mobile: f.mobile,
-              message: f.message,
-            }));
-      setImportRows(detailRows);
-      setImportFailures(failedRows);
-      setImportSummary({ created, updated, followUps, failed, total: uploaded });
-      setImportListFilter(failed > 0 ? "failed" : "all");
-      setImportResultOpen(true);
-      if (failed > 0) {
-        toast.warning(
-          `Uploaded ${uploaded}: ${created} created, ${updated} updated, ${failed} failed.`,
+      const preview = await importPvCrmLeadsFile(file, { dryRun: true });
+      const rows = Array.isArray(preview.rows) ? preview.rows : [];
+      const needsModelRows = rows.filter((r) => r.status === "needs_model");
+      if (needsModelRows.length > 0) {
+        setPendingImportFile(file);
+        setModelMapRows(needsModelRows);
+        const initial: Record<string, string> = {};
+        for (const r of needsModelRows) {
+          initial[String(r.row)] = "VF 7";
+        }
+        setModelCorrections(initial);
+        setModelMapOpen(true);
+        setImportRows(rows);
+        setImportFailures(preview.failed ?? []);
+        setImportSummary({
+          created: 0,
+          updated: 0,
+          followUps: 0,
+          failed: (preview.failed ?? []).length,
+          total: rows.length,
+          needsModel: needsModelRows.length,
+          dryRun: true,
+        });
+        toast.info(
+          `${needsModelRows.length} row(s) have an ambiguous model — map each to a single model before importing.`,
         );
-      } else {
-        toast.success(
-          `Uploaded ${uploaded}: ${created} created` +
-            (updated ? `, ${updated} updated` : "") +
-            (followUps ? `, ${followUps} follow-up(s)` : ""),
-        );
+        return;
       }
-      void loadLeads();
+
+      // No ambiguous models — commit immediately with the same file
+      const result = await importPvCrmLeadsFile(file);
+      applyImportCommitResult(result);
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {
       setImporting(false);
+    }
+  };
+
+  const commitImportWithCorrections = async () => {
+    if (!pendingImportFile || !canImportExcel) return;
+    const missing = modelMapRows.filter((r) => !modelCorrections[String(r.row)]?.trim());
+    if (missing.length) {
+      toast.error("Select a model for every ambiguous row");
+      return;
+    }
+    setCommittingImport(true);
+    try {
+      const result = await importPvCrmLeadsFile(pendingImportFile, {
+        modelCorrections,
+      });
+      applyImportCommitResult(result);
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setCommittingImport(false);
     }
   };
 
@@ -608,6 +685,13 @@ export default function AdminCrmLeads() {
     setImportFailures([]);
     setImportSummary(null);
     setImportListFilter("all");
+  };
+
+  const closeModelMap = () => {
+    setModelMapOpen(false);
+    setPendingImportFile(null);
+    setModelMapRows([]);
+    setModelCorrections({});
   };
 
   const filteredImportRows = useMemo(() => {
@@ -706,7 +790,7 @@ export default function AdminCrmLeads() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {CRM_LEAD_STAGES.map((s) => (
+        {stageList.map((s) => (
           <Badge key={s} variant="outline" className={cn("text-xs", stageBadgeClass(s))}>
             {s}: {stageCounts[s] ?? 0}
           </Badge>
@@ -738,7 +822,7 @@ export default function AdminCrmLeads() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All stages</SelectItem>
-            {CRM_LEAD_STAGES.map((s) => (
+            {stageList.map((s) => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
             ))}
           </SelectContent>
@@ -1136,7 +1220,7 @@ export default function AdminCrmLeads() {
                       <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {/* Once the drive is done, executives can't re-select the test drive stages (repeat drives need admin approval). */}
-                        {CRM_LEAD_STAGES.filter(
+                        {stageList.filter(
                           (s) =>
                             canAssignLeads ||
                             normalizeCrmStage(detail.lead.status) !== "Test Drive Completed" ||
@@ -1562,6 +1646,82 @@ export default function AdminCrmLeads() {
               </Button>
               <Button variant="outline" className="flex-1" onClick={() => setBulkDeleteOpen(false)}>
                 Keep
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={modelMapOpen}
+        onOpenChange={(o) => {
+          if (!o) closeModelMap();
+        }}
+      >
+        <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-500" />
+              Map ambiguous models
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              These rows use &quot;Both&quot; or multi-model values (slash/comma). Choose a single model
+              for each, then import. Valid rows import together in the same pass.
+            </p>
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+              {modelMapRows.map((row) => (
+                <div
+                  key={String(row.row)}
+                  className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 space-y-2"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">
+                      Row {row.row}
+                      {row.name ? ` · ${row.name}` : ""}
+                      {row.mobile ? (
+                        <span className="ml-1 font-mono text-xs text-muted-foreground">{row.mobile}</span>
+                      ) : null}
+                    </p>
+                    <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400">
+                      {row.modelRaw || row.model || "Both"}
+                    </Badge>
+                  </div>
+                  <Select
+                    value={modelCorrections[String(row.row)] || "VF 7"}
+                    onValueChange={(v) =>
+                      setModelCorrections((prev) => ({ ...prev, [String(row.row)]: v }))
+                    }
+                  >
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CRM_IMPORT_MODEL_OPTIONS.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <Button variant="outline" onClick={closeModelMap} disabled={committingImport}>
+                Cancel
+              </Button>
+              <Button
+                disabled={committingImport || importing}
+                onClick={() => void commitImportWithCorrections()}
+              >
+                {committingImport ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Upload className="w-4 h-4 mr-2" />
+                )}
+                Import with mapped models
               </Button>
             </div>
           </div>

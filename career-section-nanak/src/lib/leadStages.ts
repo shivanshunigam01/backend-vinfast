@@ -1,4 +1,4 @@
-/** CRM pipeline stages — keep in sync with backend/constants/leadStages.js */
+/** CRM pipeline stages — defaults kept in sync with backend seed; live list from API. */
 export const CRM_LEAD_STAGES = [
   "Enquiry",
   "Interested",
@@ -12,7 +12,19 @@ export const CRM_LEAD_STAGES = [
 
 export type CrmLeadStage = (typeof CRM_LEAD_STAGES)[number];
 
-const LEGACY_TO_CRM: Record<string, CrmLeadStage> = {
+export type LeadStageDoc = {
+  _id: string;
+  key: string;
+  label: string;
+  order: number;
+  color?: string;
+  active: boolean;
+  isTerminal?: boolean;
+  isLost?: boolean;
+  systemProtected?: boolean;
+};
+
+const LEGACY_TO_CRM: Record<string, string> = {
   "New Lead": "Enquiry",
   "Contact Attempted": "Enquiry",
   "Test Drive Scheduled": "Test Drive Booked",
@@ -36,3 +48,32 @@ export const STAGE_COLORS: Record<string, string> = {
   Delivered: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   Lost: "bg-red-500/15 text-red-700 dark:text-red-300",
 };
+
+export function colorForStage(label: string, docs?: LeadStageDoc[]): string {
+  const fromDoc = docs?.find((d) => d.label === label)?.color;
+  if (fromDoc) return fromDoc;
+  return STAGE_COLORS[label] || "bg-slate-500/15 text-slate-700 dark:text-slate-300";
+}
+
+let cachedLabels: string[] = [...CRM_LEAD_STAGES];
+let cachedDocs: LeadStageDoc[] = [];
+let cacheAt = 0;
+const CACHE_MS = 30_000;
+
+export function getCachedStageLabels(): string[] {
+  return cachedLabels.length ? cachedLabels : [...CRM_LEAD_STAGES];
+}
+
+export function getCachedStageDocs(): LeadStageDoc[] {
+  return cachedDocs;
+}
+
+export function setCachedStages(labels: string[], docs?: LeadStageDoc[]) {
+  cachedLabels = labels.length ? labels : [...CRM_LEAD_STAGES];
+  if (docs) cachedDocs = docs;
+  cacheAt = Date.now();
+}
+
+export function stagesCacheFresh(): boolean {
+  return Boolean(cachedLabels.length && Date.now() - cacheAt < CACHE_MS);
+}

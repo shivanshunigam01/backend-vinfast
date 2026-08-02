@@ -20,7 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff
+  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff, KeyRound, Copy
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -95,6 +95,7 @@ export default function AdminTDUsers() {
   const canUpdate = canPerformManagerAction(adminUser, "td_users", "update");
   const canDelete = canPerformManagerAction(adminUser, "td_users", "delete");
   const canViewPassword = canPerformManagerAction(adminUser, "td_users", "view_password");
+  const canResetPassword = canUpdate || canViewPassword;
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [managerOptions, setManagerOptions] = useState<StaffUser[]>([]);
   const [roleTemplates, setRoleTemplates] = useState<StaffRoleOption[]>([]);
@@ -108,6 +109,12 @@ export default function AdminTDUsers() {
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [revealLoadingId, setRevealLoadingId] = useState<string | null>(null);
   const [showFormPassword, setShowFormPassword] = useState(false);
+  const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
+  const [resetCustomPassword, setResetCustomPassword] = useState("");
+  const [resetUseCustom, setResetUseCustom] = useState(false);
+  const [resetResultPassword, setResetResultPassword] = useState<string | null>(null);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(true);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -359,6 +366,49 @@ export default function AdminTDUsers() {
     }
   };
 
+  const openResetPassword = (user: StaffUser) => {
+    setResetTarget(user);
+    setResetCustomPassword("");
+    setResetUseCustom(false);
+    setResetResultPassword(null);
+    setShowResetPassword(true);
+  };
+
+  const closeResetPassword = () => {
+    setResetTarget(null);
+    setResetCustomPassword("");
+    setResetUseCustom(false);
+    setResetResultPassword(null);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    if (resetUseCustom && resetCustomPassword.trim().length < 8) {
+      toast.error("Custom password must be at least 8 characters");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const body = resetUseCustom ? { newPassword: resetCustomPassword.trim() } : {};
+      const data = await adminPostJson<{ password: string }>(
+        `/admin/td/users/${resetTarget._id}/reset-password`,
+        body,
+      );
+      const nextPassword = String(data?.password || "");
+      if (!nextPassword) {
+        toast.error("Password reset succeeded but no password was returned");
+        return;
+      }
+      setResetResultPassword(nextPassword);
+      setRevealedPasswords((prev) => ({ ...prev, [resetTarget._id]: nextPassword }));
+      toast.success("Password reset — copy it now; it is shown only once");
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setActionLoading(true);
@@ -509,6 +559,16 @@ export default function AdminTDUsers() {
                       ) : (
                         <Eye className="w-4 h-4" />
                       )}
+                    </Button>
+                  ) : null}
+                  {canResetPassword ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      title="Reset password"
+                      onClick={() => openResetPassword(user)}
+                    >
+                      <KeyRound className="w-4 h-4 mr-1" /> Reset Password
                     </Button>
                   ) : null}
                   {canUpdate ? (
@@ -740,6 +800,99 @@ export default function AdminTDUsers() {
               {form._id ? "Save changes" : "Create user"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(resetTarget)}
+        onOpenChange={(open) => {
+          if (!open) closeResetPassword();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+          </DialogHeader>
+          {resetTarget ? (
+            <div className="space-y-4 pt-1">
+              <p className="text-sm text-muted-foreground">
+                Reset login credentials for{" "}
+                <span className="font-medium text-foreground">{resetTarget.name}</span>{" "}
+                (<span className="font-mono text-xs">{resetTarget.email}</span>).
+              </p>
+              {resetResultPassword ? (
+                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    New password (shown once). Copy and share with the employee securely.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded bg-secondary/60 px-2 py-1.5 font-mono text-sm">
+                      {showResetPassword ? resetResultPassword : "••••••••••••"}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowResetPassword((v) => !v)}
+                      aria-label={showResetPassword ? "Hide password" : "Show password"}
+                    >
+                      {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(resetResultPassword);
+                        toast.success("Password copied");
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-1" /> Copy
+                    </Button>
+                  </div>
+                  <Button className="w-full" variant="secondary" onClick={closeResetPassword}>
+                    Done
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={resetUseCustom}
+                      onCheckedChange={(v) => setResetUseCustom(v === true)}
+                    />
+                    Set a custom password
+                  </label>
+                  {resetUseCustom ? (
+                    <div className="space-y-2">
+                      <Label>New password</Label>
+                      <Input
+                        type="text"
+                        value={resetCustomPassword}
+                        onChange={(e) => setResetCustomPassword(e.target.value)}
+                        placeholder="Min 8 characters"
+                        autoComplete="new-password"
+                        className="font-mono"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Leave unchecked to auto-generate a secure password.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={closeResetPassword} disabled={resetLoading}>
+                      Cancel
+                    </Button>
+                    <Button className="flex-1" disabled={resetLoading} onClick={() => void handleResetPassword()}>
+                      {resetLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <KeyRound className="w-4 h-4 mr-2" />}
+                      Reset
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 

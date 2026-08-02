@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ExternalLink, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,20 @@ type Props = {
 
 const TD_STATUSES = ["PENDING", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "MISSED", "RESCHEDULED"];
 
+const TYPE_LABELS: Record<string, string> = {
+  new_lead: "New Lead",
+  lead: "Lead",
+  test_drive: "Test Drive",
+  lead_follow_up: "Follow-up",
+  stage_activity: "Stage Activity",
+  booking_update: "Booking",
+  delivery: "Delivery",
+  sales_activity: "Sales",
+  awaiting_vehicle: "Awaiting Vehicle",
+  pending_approval: "Approval",
+  customer_appointment: "Meeting",
+};
+
 function toLocalInputValue(iso?: string, allDay?: boolean) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -42,6 +57,13 @@ function toLocalInputValue(iso?: string, allDay?: boolean) {
   if (allDay) return d.toISOString().slice(0, 10);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function resolveOpenHref(event: CalendarEvent): string | null {
+  if (event.href) return event.href;
+  if (event.leadId) return `/admin/crm/leads?leadId=${event.leadId}`;
+  if (event.bookingId) return `/admin/td/bookings?highlight=${event.bookingId}`;
+  return null;
 }
 
 export function CalendarEventPanel({
@@ -68,21 +90,17 @@ export function CalendarEventPanel({
 
   if (!event) return null;
 
-  const typeLabel =
-    event.type === "test_drive"
-      ? "Test Drive"
-      : event.type === "lead"
-        ? "Lead"
-        : event.type === "lead_follow_up"
-          ? "Follow-up"
-          : event.type;
+  const typeLabel = TYPE_LABELS[event.type] || event.type;
+  const openHref = resolveOpenHref(event);
+  const canEditFields =
+    canEdit && (event.type === "lead" || event.type === "test_drive" || event.type === "lead_follow_up");
 
   const handleSave = async () => {
     if (!canEdit) return;
     setSaving(true);
     try {
       // Reschedule
-      if (when) {
+      if (when && (event.type === "lead" || event.type === "test_drive" || event.type === "lead_follow_up")) {
         if (event.allDay || when.length === 10) {
           await patchCalendarEvent(event.id, { date: when.slice(0, 10), time: "10:00", allDay: true });
         } else {
@@ -118,10 +136,6 @@ export function CalendarEventPanel({
         }
       }
 
-      if (event.type === "lead_follow_up") {
-        // Date already patched; notes live on follow-up — skip if no dedicated API from panel
-      }
-
       toast.success("Calendar event updated");
       onSaved();
       onOpenChange(false);
@@ -148,6 +162,15 @@ export function CalendarEventPanel({
         </SheetHeader>
 
         <div className="mt-6 space-y-4">
+          {openHref ? (
+            <Button asChild variant="outline" className="w-full">
+              <Link to={openHref} onClick={() => onOpenChange(false)}>
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open record
+              </Link>
+            </Button>
+          ) : null}
+
           <div className="rounded-lg border border-border/50 bg-muted/20 p-3 text-xs space-y-1.5">
             <p>
               <span className="text-muted-foreground">Assigned executive: </span>
@@ -165,18 +188,26 @@ export function CalendarEventPanel({
                 {event.bookingCode}
               </p>
             ) : null}
+            {event.leadId ? (
+              <p>
+                <span className="text-muted-foreground">Lead: </span>
+                <span className="font-mono">{event.leadId}</span>
+              </p>
+            ) : null}
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Date & time</Label>
-            <Input
-              type={event.allDay ? "date" : "datetime-local"}
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              disabled={!canEdit || saving}
-              className="bg-secondary/40"
-            />
-          </div>
+          {canEditFields ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Date & time</Label>
+              <Input
+                type={event.allDay ? "date" : "datetime-local"}
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                disabled={!canEdit || saving}
+                className="bg-secondary/40"
+              />
+            </div>
+          ) : null}
 
           {(event.type === "lead" || event.type === "test_drive") && (
             <div className="space-y-1.5">
@@ -234,13 +265,24 @@ export function CalendarEventPanel({
             </div>
           )}
 
-          {canEdit ? (
+          {event.remarks && event.type !== "lead" && event.type !== "test_drive" ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notes</Label>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap rounded-md border border-border/40 bg-muted/20 p-3">
+                {event.remarks}
+              </p>
+            </div>
+          ) : null}
+
+          {canEditFields ? (
             <Button className="w-full" disabled={saving} onClick={() => void handleSave()}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
               Save changes
             </Button>
           ) : (
-            <p className="text-xs text-muted-foreground text-center">View only — you cannot edit this event.</p>
+            <p className="text-xs text-muted-foreground text-center">
+              {openHref ? "Use Open record to view full details." : "View only — you cannot edit this event."}
+            </p>
           )}
         </div>
       </SheetContent>

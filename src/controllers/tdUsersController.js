@@ -1,5 +1,6 @@
 require('../models/tdModels');
 
+const crypto = require('crypto');
 const TDStaff = require('../models/TDStaff');
 const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const asyncHandler = require('../utils/asyncHandler');
@@ -10,6 +11,18 @@ const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 const { isTeamScopedUser, resolveStaffIdsForUser, isCreUser, isCreAssignableDesignation } = require('../utils/leadAssignment');
+
+const PASSWORD_ALPHABET =
+  'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
+
+function generateSecurePassword(length = 12) {
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += PASSWORD_ALPHABET[bytes[i] % PASSWORD_ALPHABET.length];
+  }
+  return out;
+}
 
 const STAFF_ROLES = ['executive', 'manager'];
 const StaffRole = require('../models/StaffRole');
@@ -315,6 +328,31 @@ exports.getUserPassword = asyncHandler(async (req, res) => {
     password: doc.passwordPlain || null,
     available: Boolean(doc.passwordPlain),
   });
+});
+
+/**
+ * Reset a staff member's password. Optional body.newPassword (min 8),
+ * otherwise a secure password is generated. Returns the plain password once.
+ * bcrypt hash + passwordPlain are set via the TDStaff pre-save hook.
+ */
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const doc = await TDStaff.findById(req.params.id).select('+password +passwordPlain');
+  if (!doc) throw new ApiError(404, 'User not found');
+
+  const requested =
+    req.body?.newPassword !== undefined && req.body?.newPassword !== null
+      ? String(req.body.newPassword).trim()
+      : '';
+  const plainText = requested || generateSecurePassword(12);
+  if (plainText.length < 8) {
+    throw new ApiError(400, 'Password must be at least 8 characters');
+  }
+
+  doc.password = plainText;
+  doc.markModified('password');
+  await doc.save();
+
+  return successResponse(res, { password: plainText }, 'Password reset');
 });
 
 exports.patchUser = asyncHandler(async (req, res) => {

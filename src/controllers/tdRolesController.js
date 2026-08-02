@@ -12,6 +12,7 @@ const MANAGER_DEFAULT_MODULES = [
   'dashboard',
   'calendar',
   'crm_leads',
+  'crm_lead_stages',
   'my_dashboard',
   'td_my_bookings',
   'td_bookings',
@@ -19,6 +20,7 @@ const MANAGER_DEFAULT_MODULES = [
   'td_fleet_health',
   'td_lead_reports',
   'td_reports',
+  'delivery_reports',
 ];
 
 function allActionTokensForModules(modules) {

@@ -20,7 +20,11 @@ import {
   patchCalendarEvent,
   type CalendarEvent,
 } from "@/lib/calendarApi";
-import { CalendarFilters, type CalendarFilterState } from "@/components/admin/calendar/CalendarFilters";
+import {
+  CalendarFilters,
+  DEFAULT_CALENDAR_TYPES,
+  type CalendarFilterState,
+} from "@/components/admin/calendar/CalendarFilters";
 import { CalendarEventPanel } from "@/components/admin/calendar/CalendarEventPanel";
 import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
@@ -48,17 +52,16 @@ export default function AdminCalendar() {
     canPerformManagerAction(adminUser, "crm_leads", "update");
 
   const calendarRef = useRef<FullCalendar | null>(null);
-  const [view, setView] = useState<CalView>("timeGridWeek");
+  const [view, setView] = useState<CalView>("dayGridMonth");
   const [title, setTitle] = useState("");
   const [range, setRange] = useState(() => {
     const from = new Date();
-    from.setDate(from.getDate() - 7);
-    const to = new Date();
-    to.setDate(to.getDate() + 21);
+    from.setDate(1);
+    const to = new Date(from.getFullYear(), from.getMonth() + 1, 0);
     return { from: isoDate(from), to: isoDate(to) };
   });
   const [filters, setFilters] = useState<CalendarFilterState>({
-    types: ["lead", "test_drive", "lead_follow_up"],
+    types: [...DEFAULT_CALENDAR_TYPES],
     status: "all",
     assignedTo: "all",
     model: "all",
@@ -132,7 +135,13 @@ export default function AdminCalendar() {
 
   const onEventClick = (arg: EventClickArg) => {
     const ev = arg.event.extendedProps as CalendarEvent;
-    setSelected({ ...ev, id: arg.event.id, title: arg.event.title });
+    const full: CalendarEvent = {
+      ...ev,
+      id: arg.event.id,
+      title: arg.event.title,
+      href: ev.href,
+    };
+    setSelected(full);
     setPanelOpen(true);
   };
 
@@ -260,13 +269,34 @@ export default function AdminCalendar() {
 
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[#f59e0b]" /> Leads
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#0ea5e9]" /> New leads
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-[#3b82f6]" /> Test drives
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-[#10b981]" /> Follow-ups
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#6366f1]" /> Stage
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#d97706]" /> Bookings
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#059669]" /> Deliveries
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#ec4899]" /> Meetings
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#8b5cf6]" /> Approvals
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#f97316]" /> Awaiting vehicle
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" /> Sales
         </span>
       </div>
 

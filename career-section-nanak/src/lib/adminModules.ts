@@ -9,6 +9,9 @@ export type AdminModuleKey =
   | "dashboard"
   | "homepage"
   | "crm_leads"
+  | "crm_lead_stages"
+  | "pricing"
+  | "delivery_reports"
   | "products"
   | "offers"
   | "content"
@@ -53,7 +56,7 @@ export type AdminModule = {
   key: AdminModuleKey;
   label: string;
   path: string;
-  group: "Core" | "Employee portal" | "Feedback" | "TD Management";
+  group: "Core" | "Employee portal" | "Feedback" | "TD Management" | "Reports";
   actions: AdminModuleAction[];
 };
 
@@ -82,6 +85,8 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "calendar", label: "Calendar", path: "/admin/calendar", group: "Core", actions: ["view", "update"] },
   { key: "homepage", label: "Homepage", path: "/admin/homepage", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "crm_leads", label: "Lead CRM", path: "/admin/crm/leads", group: "Core", actions: ["view", "create", "update", "delete", "assign", "export"] },
+  { key: "crm_lead_stages", label: "Lead Stages", path: "/admin/crm/lead-stages", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "pricing", label: "Pricing", path: "/admin/pricing", group: "Core", actions: ["view", "update"] },
   { key: "products", label: "Products", path: "/admin/products", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "offers", label: "Offers", path: "/admin/offers", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "content", label: "Content", path: "/admin/content", group: "Core", actions: ["view", "create", "update", "delete"] },
@@ -91,7 +96,9 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_my_bookings", label: "My Test Drives", path: "/admin/td/my-bookings", group: "Employee portal", actions: ["view", "update", "verify_dl", "start_drive", "reschedule", "cancel", "complete"] },
   { key: "feedback_test_drive", label: "TD Feedback Forms", path: "/admin/feedback/test-drive", group: "Feedback", actions: ["view", "delete"] },
   { key: "feedback_post_delivery", label: "Delivery Feedback Forms", path: "/admin/feedback/post-delivery", group: "Feedback", actions: ["view", "delete"] },
-  { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "TD Management", actions: ["view", "export"] },
+  { key: "td_lead_reports", label: "Lead Reports", path: "/admin/td/leads/reports", group: "Reports", actions: ["view", "export"] },
+  { key: "td_reports", label: "TD Reports", path: "/admin/td/reports", group: "Reports", actions: ["view", "export"] },
+  { key: "delivery_reports", label: "Delivery Reports", path: "/admin/reports/deliveries", group: "Reports", actions: ["view", "export"] },
   { key: "td_bookings", label: "TD Bookings", path: "/admin/td/bookings", group: "TD Management", actions: ["view", "create", "update", "assign", "reschedule_approve", "verify_dl", "start_drive", "cancel"] },
   { key: "td_reschedule_history", label: "Reschedule History", path: "/admin/td/reschedule-history", group: "TD Management", actions: ["view", "approve"] },
   { key: "td_fleet_health", label: "Fleet Charging & Health", path: "/admin/td/fleet-health", group: "TD Management", actions: ["view", "schedule_charge", "log_maintenance"] },
@@ -99,7 +106,6 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "TD Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
-  { key: "td_reports", label: "TD Reports", path: "/admin/td/reports", group: "TD Management", actions: ["view", "export"] },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
@@ -110,7 +116,7 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
 /** Roles UI shares User Master ACL (td_users). */
 MODULE_BY_PATH["/admin/td/roles"] = "td_users";
 
-export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "TD Management"] as const;
+export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "Reports", "TD Management"] as const;
 
 export function modulesForGroup(group: AdminModule["group"]) {
   return ADMIN_MODULES.filter((m) => m.group === group);
@@ -156,6 +162,7 @@ export const MANAGER_DEFAULT_MODULES: AdminModuleKey[] = [
   "dashboard",
   "calendar",
   "crm_leads",
+  "crm_lead_stages",
   "my_dashboard",
   "td_my_bookings",
   "td_bookings",
@@ -163,4 +170,5 @@ export const MANAGER_DEFAULT_MODULES: AdminModuleKey[] = [
   "td_fleet_health",
   "td_lead_reports",
   "td_reports",
+  "delivery_reports",
 ];

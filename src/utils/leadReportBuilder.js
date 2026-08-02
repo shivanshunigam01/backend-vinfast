@@ -8,6 +8,7 @@ const TDLog = require('../models/TDLog');
 const TDStaff = require('../models/TDStaff');
 const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
+const { getActiveStageLabels } = require('./leadStageService');
 const { assignedToStaffFilter } = require('./leadAssignment');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
@@ -204,7 +205,8 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
   ).length;
 
   const pipeline = {};
-  for (const stage of CRM_LEAD_STAGES) pipeline[stage] = 0;
+  const stageLabels = await getActiveStageLabels();
+  for (const stage of stageLabels) pipeline[stage] = 0;
   for (const row of leadsByStatus) {
     const key = normalizeStageLabel(row._id || 'Enquiry');
     pipeline[key] = (pipeline[key] || 0) + row.count;
@@ -592,7 +594,7 @@ async function buildLeadAdminReport({ from, to, executiveId } = {}) {
     feedbackRows,
     leadDetailRows,
     leadAgeing,
-    stages: CRM_LEAD_STAGES
+    stages: stageLabels
   };
 }
 

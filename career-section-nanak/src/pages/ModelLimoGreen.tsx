@@ -17,6 +17,7 @@ import { FormCaptcha } from "@/components/FormCaptcha";
 import { BIHAR_DEFAULT_DISTRICT, DISTRICT_OTHER } from "@/data/biharDistricts";
 import { usePublicFormRecaptcha } from "@/context/PublicRecaptchaContext";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePublicPricing } from "@/hooks/usePublicPricing";
 import { usePageSeo } from "@/hooks/usePageSeo";
 import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import limoGreenHeroDesktop from "@/assets/limo-green/hero-desktop.jpg";
@@ -71,6 +72,8 @@ const inputClass =
 
 const ModelLimoGreen = () => {
   const { siteConfig } = usePublicSite();
+  const { bySlug } = usePublicPricing();
+  const displayPrice = bySlug("limo-green")?.priceFrom || siteConfig.limoGreenPrice || "₹22.99 Lakh*";
   const { getToken } = usePublicFormRecaptcha();
   const location = useLocation();
   usePageSeo({
@@ -96,8 +99,6 @@ const ModelLimoGreen = () => {
   const [waToken, setWaToken] = useState<string | null>(null);
   const onWaTokenChange = useCallback((t: string | null) => setWaToken(t), []);
   const todayStr = getLocalISODate();
-
-  const displayPrice = siteConfig.limoGreenPrice || "₹22.99 Lakh*";
 
   useEffect(() => {
     if (location.hash !== "#limo-green-prebook") return;

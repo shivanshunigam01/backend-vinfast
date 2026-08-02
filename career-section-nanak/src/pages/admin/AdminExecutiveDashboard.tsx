@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
 import { formatApiErrors, adminGet } from "@/lib/api";
 import { getAdminUser } from "@/lib/adminAuth";
 import {
@@ -38,7 +39,14 @@ const YEAR_OPTIONS = [2024, 2025, 2026, 2027];
 
 const CLOSED_LEAD_STAGES = new Set(["Lost", "Delivered", "Not Interested"]);
 
-type TeamMetricKey = "leads" | "openLeads" | "testDrives" | "completedTestDrives";
+type TeamMetricKey =
+  | "leadsCount"
+  | "tdCompleted"
+  | "converted"
+  | "delivered"
+  | "followUpsDue"
+  | "openLeads"
+  | "testDrives";
 
 type DetailMode = "leads" | "tds";
 
@@ -71,11 +79,20 @@ type TeamTdRow = {
 };
 
 const TEAM_METRIC_LABELS: Record<TeamMetricKey, string> = {
-  leads: "Leads",
+  leadsCount: "Leads",
+  tdCompleted: "TD completed",
+  converted: "Converted",
+  delivered: "Delivered",
+  followUpsDue: "Follow-ups due",
   openLeads: "Open leads",
   testDrives: "Test drives",
-  completedTestDrives: "Completed TDs",
 };
+
+function memberMetric(m: ManagerTeamMemberStats, key: TeamMetricKey): number {
+  if (key === "leadsCount") return m.leadsCount ?? m.leads ?? 0;
+  if (key === "tdCompleted") return m.tdCompleted ?? m.completedTestDrives ?? 0;
+  return Number(m[key] ?? 0);
+}
 
 const DASHBOARD_CARD_META: Record<DashboardCardKey, { title: string; mode: DetailMode }> = {
   my_leads: { title: "My Assigned Leads", mode: "leads" },
@@ -307,6 +324,10 @@ export default function AdminExecutiveDashboard() {
   const adminUser = getAdminUser();
   const selfId = String(adminUser?._id || "");
   const [year, setYear] = useState(new Date().getFullYear());
+  const [period, setPeriod] = useState<ReportPeriod>("monthly");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [managerTab, setManagerTab] = useState("team");
   const [data, setData] = useState<MyDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -322,7 +343,12 @@ export default function AdminExecutiveDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const report = await fetchExecutiveDashboard(year);
+      const report = await fetchExecutiveDashboard({
+        period,
+        from: from || undefined,
+        to: to || undefined,
+        year,
+      });
       setData(report);
     } catch (e) {
       setData(null);
@@ -330,7 +356,7 @@ export default function AdminExecutiveDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [year]);
+  }, [period, from, to, year]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -377,7 +403,9 @@ export default function AdminExecutiveDashboard() {
   };
 
   const fetchTeamTds = async (status?: string) => {
-    const members = !isCreDashboard(data) ? data?.teamStats?.byMember ?? [] : [];
+    const members = !isCreDashboard(data)
+      ? data?.team?.byMember ?? data?.teamStats?.byMember ?? []
+      : [];
     if (!members.length) return [] as TeamTdRow[];
     const chunks = await Promise.all(
       members.map(async (m) => {
@@ -394,24 +422,43 @@ export default function AdminExecutiveDashboard() {
   };
 
   const openTeamMetric = (member: ManagerTeamMemberStats, metric: TeamMetricKey) => {
+    const leadMetrics: TeamMetricKey[] = ["leadsCount", "openLeads", "converted", "delivered", "followUpsDue"];
     void showDetail({
       title: `${member.name} · ${TEAM_METRIC_LABELS[metric]}`,
       subtitle: `${member.designation || member.email || "—"} · cover this list if they are on leave.`,
-      mode: metric === "leads" || metric === "openLeads" ? "leads" : "tds",
+      mode: leadMetrics.includes(metric) ? "leads" : "tds",
       crmLink: `/admin/crm/leads?assignedTo=${member._id}`,
       loader: async () => {
-        if (metric === "leads" || metric === "openLeads") {
+        if (leadMetrics.includes(metric)) {
           const { leads } = await fetchPvCrmLeads({ assignedTo: member._id, limit: 100 });
-          return {
-            leads:
-              metric === "openLeads" ? leads.filter((l) => isOpenLead(l.status)) : leads,
-          };
+          if (metric === "openLeads") return { leads: leads.filter((l) => isOpenLead(l.status)) };
+          if (metric === "converted") {
+            return {
+              leads: leads.filter((l) =>
+                ["Interested", "Negotiation", "Booking", "Delivered", "Booked"].includes(
+                  normalizeCrmStage(l.status || ""),
+                ),
+              ),
+            };
+          }
+          if (metric === "delivered") {
+            return { leads: leads.filter((l) => normalizeCrmStage(l.status || "") === "Delivered") };
+          }
+          if (metric === "followUpsDue") {
+            const now = Date.now();
+            return {
+              leads: leads.filter(
+                (l) => isOpenLead(l.status) && l.nextFollowUp && new Date(l.nextFollowUp).getTime() <= now,
+              ),
+            };
+          }
+          return { leads };
         }
         const params = new URLSearchParams({
           limit: "100",
           assignedExecutive: member._id,
         });
-        if (metric === "completedTestDrives") params.set("status", "COMPLETED");
+        if (metric === "tdCompleted") params.set("status", "COMPLETED");
         const { data: bookings } = await adminGet<TeamTdRow[]>(`/admin/td/bookings?${params}`);
         return { tds: bookings ?? [] };
       },
@@ -420,8 +467,8 @@ export default function AdminExecutiveDashboard() {
 
   const openDashboardCard = (key: DashboardCardKey) => {
     const meta = DASHBOARD_CARD_META[key];
-    const yearFrom = `${year}-01-01`;
-    const yearTo = `${year}-12-31`;
+    const rangeFrom = (!isCreDashboard(data) && data?.period?.from) || from || `${year}-01-01`;
+    const rangeTo = (!isCreDashboard(data) && data?.period?.to) || to || `${year}-12-31`;
 
     void showDetail({
       title: key.startsWith("year_") ? `${meta.title.replace("(year)", String(year))}` : meta.title,
@@ -441,7 +488,10 @@ export default function AdminExecutiveDashboard() {
           case "my_tds":
             return { tds: await fetchMyTds() };
           case "team_leads": {
-            const members = data && !isCreDashboard(data) ? data.teamStats?.byMember ?? [] : [];
+            const members =
+              data && !isCreDashboard(data)
+                ? data.team?.byMember ?? data.teamStats?.byMember ?? []
+                : [];
             if (!members.length) return { leads: [] };
             const chunks = await Promise.all(
               members.map(async (m) => {
@@ -473,8 +523,8 @@ export default function AdminExecutiveDashboard() {
             }
             const { leads } = await fetchPvCrmLeads({
               assignedTo: "me",
-              from: yearFrom,
-              to: yearTo,
+              from: rangeFrom,
+              to: rangeTo,
               limit: 100,
             });
             return { leads };
@@ -495,8 +545,8 @@ export default function AdminExecutiveDashboard() {
           case "active_leads": {
             const { leads } = await fetchPvCrmLeads({
               assignedTo: "me",
-              from: yearFrom,
-              to: yearTo,
+              from: rangeFrom,
+              to: rangeTo,
               limit: 100,
             });
             return { leads: leads.filter((l) => isOpenLead(l.status)) };
@@ -646,10 +696,11 @@ export default function AdminExecutiveDashboard() {
   }
 
   const execData = data as ExecutiveDashboard;
-  const leads = execData.leads;
-  const leadsCompare = execData.leadsCompare;
-  const testDrives = execData.testDrives;
-  const testDrivesCompare = execData.testDrivesCompare;
+  const selfBlock = execData.self || execData;
+  const leads = selfBlock.leads;
+  const leadsCompare = selfBlock.leadsCompare;
+  const testDrives = selfBlock.testDrives;
+  const testDrivesCompare = selfBlock.testDrivesCompare;
 
   if (!leads?.overview || !testDrives || !leadsCompare?.overview || !testDrivesCompare) {
     return (
@@ -660,174 +711,19 @@ export default function AdminExecutiveDashboard() {
     );
   }
 
-  const team = execData.teamStats;
-  const isManagerView = execData.reportType === "manager" && !!team;
+  const team = execData.team || execData.teamStats;
+  const teamMembers = team?.byMember ?? [];
+  const isManagerView =
+    (execData.view === "manager" || execData.reportType === "manager") && !!team;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
-            <BarChart3 className="w-7 h-7 text-primary" />
-            My Dashboard
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {adminUser?.name ?? "Executive"} ·{" "}
-            {isManagerView
-              ? "Your assigned work and your reporting team's leads & test drives"
-              : "Leads & test drives assigned to you"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-            <SelectTrigger className="w-[120px] bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {YEAR_OPTIONS.map((y) => (
-                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-          </Button>
-        </div>
-      </div>
-
-      {isManagerView ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <CountCard
-            label="My Assigned Leads"
-            value={team.myAssignedLeads}
-            onClick={() => openDashboardCard("my_leads")}
-          >
-            <Link
-              to="/admin/crm/leads?assignedTo=me"
-              className="text-[11px] text-primary hover:underline mt-1 inline-block"
-              onClick={(e) => e.stopPropagation()}
-            >
-              View in Lead CRM
-            </Link>
-          </CountCard>
-          <CountCard
-            label="My Assigned Test Drives"
-            value={team.myAssignedTestDrives}
-            onClick={() => openDashboardCard("my_tds")}
-          >
-            <Link
-              to="/admin/td/bookings"
-              className="text-[11px] text-primary hover:underline mt-1 inline-block"
-              onClick={(e) => e.stopPropagation()}
-            >
-              View TD Bookings
-            </Link>
-          </CountCard>
-          <CountCard
-            label="Team Leads"
-            value={team.teamLeads}
-            hint={`${team.teamSize} team member(s)`}
-            onClick={() => openDashboardCard("team_leads")}
-          />
-          <CountCard
-            label="Team Test Drives"
-            value={team.teamTestDrives}
-            onClick={() => openDashboardCard("team_tds")}
-          />
-          <CountCard
-            label="Pending Leads"
-            value={team.pendingLeads}
-            hint="Open leads (you + team)"
-            icon={Target}
-            onClick={() => openDashboardCard("pending_leads")}
-          />
-          <CountCard
-            label="Follow-ups Due"
-            value={team.followUpsDue}
-            hint="Due today or overdue"
-            icon={Clock}
-            iconClass="text-amber-500"
-            onClick={() => openDashboardCard("followups_due")}
-          />
-          <CountCard
-            label="Completed Test Drives"
-            value={team.completedTestDrives}
-            hint={`Yours · team total ${team.teamCompletedTestDrives}`}
-            icon={CheckCircle2}
-            iconClass="text-green-500"
-            onClick={() => openDashboardCard("completed_tds")}
-          />
-          <CountCard
-            label="Team Performance"
-            value={team.myAssignedLeads + team.teamLeads}
-            hint="Total leads across you + team"
-            onClick={() => openDashboardCard("team_performance")}
-          />
-        </div>
-      ) : null}
-
-      {isManagerView && team.byMember.length > 0 ? (
-        <Card className="bg-card border-border/50 p-4">
-          <h2 className="font-display text-lg font-semibold text-foreground mb-1">Team Performance Summary</h2>
-          <p className="text-xs text-muted-foreground mb-3">
-            Click any count to see the detailed list — useful when a team member is on leave.
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-border/50">
-                  <th className="pb-2 pr-3 font-medium">Team member</th>
-                  <th className="pb-2 pr-3 font-medium">Leads</th>
-                  <th className="pb-2 pr-3 font-medium">Open</th>
-                  <th className="pb-2 pr-3 font-medium">Test drives</th>
-                  <th className="pb-2 font-medium">Completed TDs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {team.byMember.map((m) => (
-                  <tr key={m._id} className="border-b border-border/30">
-                    <td className="py-2.5 pr-3">
-                      <p className="font-medium text-foreground">{m.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{m.designation || m.email}</p>
-                    </td>
-                    {(
-                      [
-                        ["leads", m.leads],
-                        ["openLeads", m.openLeads],
-                        ["testDrives", m.testDrives],
-                        ["completedTestDrives", m.completedTestDrives],
-                      ] as const
-                    ).map(([metric, value]) => (
-                      <td key={metric} className="py-2.5 pr-3 last:pr-0">
-                        <button
-                          type="button"
-                          disabled={value <= 0}
-                          onClick={() => void openTeamMetric(m, metric)}
-                          className={cn(
-                            "tabular-nums font-semibold rounded px-1.5 py-0.5 transition-colors",
-                            value > 0
-                              ? "text-primary hover:bg-primary/10 underline-offset-2 hover:underline"
-                              : "text-muted-foreground cursor-default",
-                          )}
-                        >
-                          {value}
-                        </button>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ) : null}
-
+  const selfPerformance = (
+    <>
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline" className="text-xs">
-          {execData.year}: {fmtDate(execData.period?.from)} – {fmtDate(execData.period?.to)}
+          {execData.period?.period || period}: {fmtDate(execData.period?.from)} – {fmtDate(execData.period?.to)}
         </Badge>
         <Badge variant="secondary" className="text-xs">
-          All-time (you): {execData.allTime?.totalLeads ?? 0} leads · {execData.allTime?.totalTestDrives ?? 0} test drives
+          All-time (you): {selfBlock.allTime?.totalLeads ?? 0} leads · {selfBlock.allTime?.totalTestDrives ?? 0} test drives
         </Badge>
       </div>
 
@@ -903,7 +799,7 @@ export default function AdminExecutiveDashboard() {
       <Card className="p-4 border-border/50">
         <h3 className="font-semibold text-sm mb-4">{execData.year} monthly performance</h3>
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={execData.monthly ?? []}>
+          <LineChart data={selfBlock.monthly ?? []}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
@@ -920,7 +816,7 @@ export default function AdminExecutiveDashboard() {
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="leads">My Leads ({leads.leadDetailRows?.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="test-drives">Test Drives ({(execData.recentBookings?.length ?? 0)})</TabsTrigger>
+          <TabsTrigger value="test-drives">Test Drives ({(selfBlock.recentBookings?.length ?? 0)})</TabsTrigger>
           <TabsTrigger value="compare">Year compare</TabsTrigger>
         </TabsList>
 
@@ -1086,7 +982,7 @@ export default function AdminExecutiveDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(execData.recentBookings?.length ?? 0) ? execData.recentBookings!.map((b) => (
+                  {(selfBlock.recentBookings?.length ?? 0) ? selfBlock.recentBookings!.map((b) => (
                     <tr key={b.bookingId} className="border-b border-border/30 hover:bg-muted/20">
                       <td className="p-3 font-mono">{b.bookingId}</td>
                       <td className="p-3">{b.customerName}</td>
@@ -1195,6 +1091,186 @@ export default function AdminExecutiveDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+    </>
+  );
+
+  const teamBlock = execData.team;
+  const legacyTeam = execData.teamStats;
+  const teamPerformance = isManagerView ? (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <CountCard
+          label="Team leads"
+          value={teamBlock?.leadsCount ?? legacyTeam?.teamLeads ?? 0}
+          hint={`${teamBlock?.teamSize ?? legacyTeam?.teamSize ?? 0} member(s)`}
+          onClick={() => openDashboardCard("team_leads")}
+        />
+        <CountCard
+          label="TD completed"
+          value={teamBlock?.tdCompleted ?? legacyTeam?.teamCompletedTestDrives ?? 0}
+          icon={CheckCircle2}
+          iconClass="text-green-500"
+          onClick={() => openDashboardCard("team_tds")}
+        />
+        <CountCard
+          label="Converted"
+          value={teamBlock?.converted ?? 0}
+          icon={Target}
+          onClick={() => openDashboardCard("team_performance")}
+        />
+        <CountCard
+          label="Delivered"
+          value={teamBlock?.delivered ?? 0}
+          icon={CheckCircle2}
+        />
+        <CountCard
+          label="Follow-ups due"
+          value={teamBlock?.followUpsDue ?? legacyTeam?.followUpsDue ?? 0}
+          icon={Clock}
+          iconClass="text-amber-500"
+          onClick={() => openDashboardCard("followups_due")}
+        />
+        <CountCard
+          label="Conversion rate"
+          value={teamBlock?.conversionRate ?? 0}
+          hint="Team converted / leads %"
+        />
+        <CountCard
+          label="Pending leads"
+          value={teamBlock?.pendingLeads ?? legacyTeam?.pendingLeads ?? 0}
+          onClick={() => openDashboardCard("pending_leads")}
+        />
+        <CountCard
+          label="Team test drives"
+          value={teamBlock?.teamTestDrives ?? legacyTeam?.teamTestDrives ?? 0}
+          onClick={() => openDashboardCard("team_tds")}
+        />
+      </div>
+
+      {teamMembers.length > 0 ? (
+        <Card className="bg-card border-border/50 p-4">
+          <h2 className="font-display text-lg font-semibold text-foreground mb-1">By team member</h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            Click any count to see the detailed list — useful when a team member is on leave.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground border-b border-border/50">
+                  <th className="pb-2 pr-3 font-medium">Team member</th>
+                  <th className="pb-2 pr-3 font-medium">Leads</th>
+                  <th className="pb-2 pr-3 font-medium">TD done</th>
+                  <th className="pb-2 pr-3 font-medium">Converted</th>
+                  <th className="pb-2 pr-3 font-medium">Delivered</th>
+                  <th className="pb-2 pr-3 font-medium">Follow-ups</th>
+                  <th className="pb-2 font-medium">Conv. %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamMembers.map((m) => (
+                  <tr key={m._id} className="border-b border-border/30">
+                    <td className="py-2.5 pr-3">
+                      <p className="font-medium text-foreground">{m.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{m.designation || m.email}</p>
+                    </td>
+                    {(
+                      [
+                        "leadsCount",
+                        "tdCompleted",
+                        "converted",
+                        "delivered",
+                        "followUpsDue",
+                      ] as const
+                    ).map((metric) => {
+                      const value = memberMetric(m, metric);
+                      return (
+                        <td key={metric} className="py-2.5 pr-3">
+                          <button
+                            type="button"
+                            disabled={value <= 0}
+                            onClick={() => void openTeamMetric(m, metric)}
+                            className={cn(
+                              "tabular-nums font-semibold rounded px-1.5 py-0.5 transition-colors",
+                              value > 0
+                                ? "text-primary hover:bg-primary/10 underline-offset-2 hover:underline"
+                                : "text-muted-foreground cursor-default",
+                            )}
+                          >
+                            {value}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="py-2.5 tabular-nums font-semibold">
+                      {m.conversionRate ?? 0}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 text-center text-sm text-muted-foreground border-border/50">
+          No reporting team members found for this period.
+        </Card>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
+            <BarChart3 className="w-7 h-7 text-primary" />
+            My Dashboard
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {adminUser?.name ?? "Executive"} ·{" "}
+            {isManagerView
+              ? "Team and personal performance"
+              : "Leads & test drives assigned to you"}
+          </p>
+        </div>
+        <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading}>
+          <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+        </Button>
+      </div>
+
+      <Card className="bg-card border-border/50 p-4">
+        <ReportPeriodPresets
+          value={period}
+          onChange={(p) => {
+            setPeriod(p);
+            setFrom("");
+            setTo("");
+          }}
+          from={from}
+          to={to}
+          onRangeChange={({ from: f, to: t }) => {
+            setFrom(f);
+            setTo(t);
+          }}
+        />
+      </Card>
+
+      {isManagerView ? (
+        <Tabs value={managerTab} onValueChange={setManagerTab}>
+          <TabsList>
+            <TabsTrigger value="team">Team Performance</TabsTrigger>
+            <TabsTrigger value="self">Self Performance</TabsTrigger>
+          </TabsList>
+          <TabsContent value="team" className="mt-4 space-y-4">
+            {teamPerformance}
+          </TabsContent>
+          <TabsContent value="self" className="mt-4 space-y-4">
+            {selfPerformance}
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <div className="space-y-4">{selfPerformance}</div>
+      )}
 
       <Dialog
         open={detailOpen}

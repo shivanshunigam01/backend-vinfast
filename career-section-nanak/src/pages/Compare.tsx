@@ -18,6 +18,8 @@ import LeadCaptureStrip from "@/components/LeadCaptureStrip";
 import StickyMobileCTA from "@/components/StickyMobileCTA";
 import { BrochureDownloadButton } from "@/components/BrochureDownloadButton";
 import {
+  COMPARE_MODEL_LABELS,
+  COMPARE_MODEL_ORDER,
   compareModels,
   compareRowLabels,
   compareSectionDefinitions,
@@ -27,6 +29,7 @@ import {
 } from "@/data/compareCatalog";
 import { hasApi } from "@/lib/apiConfig";
 import { usePublicOffers } from "@/hooks/usePublicOffers";
+import { priceFromSlugMap, usePublicPricing } from "@/hooks/usePublicPricing";
 import { usePageSeo } from "@/hooks/usePageSeo";
 
 type Slot = CompareSelection | null;
@@ -36,6 +39,18 @@ const defaultSlots: [Slot, Slot, Slot] = [
   { modelKey: "vf7", variantId: "skyInfinity" },
   null,
 ];
+
+function ModelSelectItems() {
+  return (
+    <>
+      {COMPARE_MODEL_ORDER.map((key) => (
+        <SelectItem key={key} value={key}>
+          {COMPARE_MODEL_LABELS[key]}
+        </SelectItem>
+      ))}
+    </>
+  );
+}
 
 function VsBadge() {
   return (
@@ -57,11 +72,18 @@ const ComparePage = () => {
     canonical: "/compare",
   });
   const { loaded: offersLoaded, hasOffers } = usePublicOffers();
+  const { pricing, variantPrice } = usePublicPricing();
   const [slots, setSlots] = useState<[Slot, Slot, Slot]>(defaultSlots);
   const [hideCommon, setHideCommon] = useState(false);
   const [thirdModelDraft, setThirdModelDraft] = useState<CompareModelKey>("vf6");
   const [thirdVariantDraft, setThirdVariantDraft] = useState<string>(
     compareModels.vf6.variants[0]?.id ?? "earth",
+  );
+
+  const resolvePrice = useCallback(
+    (modelKey: CompareModelKey, variantId: string, fallback: string) =>
+      variantPrice(modelKey, variantId, fallback) || fallback,
+    [variantPrice],
   );
 
   const activeSelections = useMemo(() => slots.filter((s): s is CompareSelection => s !== null), [slots]);
@@ -70,9 +92,14 @@ const ComparePage = () => {
     return activeSelections.map((sel) => {
       const model = compareModels[sel.modelKey];
       const variant = getVariantEntry(sel);
-      return { sel, model, variant };
+      const price = resolvePrice(sel.modelKey, sel.variantId, variant?.price ?? "");
+      return {
+        sel,
+        model,
+        variant: variant ? { ...variant, price } : undefined,
+      };
     });
-  }, [activeSelections]);
+  }, [activeSelections, resolvePrice]);
 
   const tableSections = useMemo(() => {
     return compareSectionDefinitions
@@ -82,6 +109,9 @@ const ComparePage = () => {
             const label = compareRowLabels[key] ?? key;
             const values = activeSelections.map((sel) => {
               const v = getVariantEntry(sel);
+              if (key === "ex_showroom") {
+                return resolvePrice(sel.modelKey, sel.variantId, (v?.specs.ex_showroom ?? v?.price ?? "—").trim());
+              }
               return (v?.specs[key] ?? "—").trim();
             });
             if (values.every((v) => v === "—" || v === "")) return null;
@@ -93,7 +123,7 @@ const ComparePage = () => {
         return { title: section.title, rows };
       })
       .filter((s) => s.rows.length > 0);
-  }, [activeSelections, hideCommon]);
+  }, [activeSelections, hideCommon, resolvePrice]);
 
   const colCount = comparisonColumns.length;
   const gridTemplate = `minmax(140px,1.1fr) repeat(${colCount}, minmax(120px,1fr))`;
@@ -235,30 +265,30 @@ const ComparePage = () => {
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-2xl mx-auto mb-10">
             <p className="text-primary font-display font-semibold text-sm uppercase tracking-[0.2em] mb-2">Compare</p>
             <h1 className="font-display font-bold text-2xl sm:text-3xl md:text-4xl lg:text-5xl mb-3 leading-tight px-1">
-              VinFast VF 6 &amp; VF 7
+              VinFast model comparison
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
-              Pick up to three trims, hide identical lines, and scroll the full spec stack — Patliputra VinFast Patna.
+              Pick up to three vehicles across VF 6, VF 7, MPV 7 and Limo Green — hide identical lines and scroll the full spec stack.
             </p>
           </motion.div>
 
           {/* Quick summary — lineup */}
           <div className="max-w-5xl mx-auto mb-10 sm:mb-12 rounded-2xl border border-border/70 bg-card shadow-sm overflow-hidden">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 bg-muted/40 px-3 py-5 sm:px-6 sm:py-8 divide-y sm:divide-y-0 sm:divide-x divide-border/50 max-w-3xl mx-auto">
-              {(["vf7", "vf6"] as const).map((key) => {
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 bg-muted/40 px-3 py-5 sm:px-4 sm:py-6 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-border/50">
+              {COMPARE_MODEL_ORDER.map((key) => {
                 const m = compareModels[key];
+                const fromPrice = priceFromSlugMap(pricing, key, m.variants[0]?.price ?? "");
                 return (
-                  <div key={key} className="flex flex-col items-center justify-center py-4 sm:py-0 px-2 min-w-0">
+                  <div key={key} className="flex flex-col items-center justify-center py-4 sm:py-2 px-2 min-w-0">
                     <img
                       src={m.image}
                       alt={`VinFast ${m.name}`}
-                      className="max-h-24 sm:max-h-28 md:max-h-32 w-full max-w-[min(100%,180px)] object-contain mb-3"
+                      className="max-h-20 sm:max-h-24 md:max-h-28 w-full max-w-[min(100%,160px)] object-contain mb-3"
                     />
                     <p className="text-[10px] sm:text-xs text-muted-foreground mb-0.5">{m.brand}</p>
-                    <p className="font-display font-bold text-base sm:text-lg leading-tight text-center">{m.name}</p>
-                    <p className="text-xs sm:text-sm text-foreground/90 mt-2 tabular-nums leading-snug text-center px-1">
-                      {key === "vf7" && "₹21,89,000* – ₹26,79,000*"}
-                      {key === "vf6" && "₹17,29,000* – ₹19,19,000*"}
+                    <p className="font-display font-bold text-sm sm:text-base leading-tight text-center">{m.name}</p>
+                    <p className="text-[11px] sm:text-xs text-foreground/90 mt-2 tabular-nums leading-snug text-center px-1">
+                      From {fromPrice}
                     </p>
                   </div>
                 );
@@ -339,8 +369,7 @@ const ComparePage = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="vf6">VinFast VF 6</SelectItem>
-                          <SelectItem value="vf7">VinFast VF 7</SelectItem>
+                          <ModelSelectItems />
                         </SelectContent>
                       </Select>
                     </div>
@@ -399,7 +428,7 @@ const ComparePage = () => {
                     </div>
                     <p className="font-display font-semibold text-sm">Add a third vehicle</p>
                     <p className="text-xs text-muted-foreground max-w-xs">
-                      Add another VF 6 or VF 7 trim — for example two VF 7 variants side by side.
+                      Add another trim or model — for example two VF 7 variants, or MPV 7 vs Limo Green.
                     </p>
                     <div className="w-full space-y-2 text-left">
                       <Label className="text-xs text-muted-foreground">Model</Label>
@@ -415,8 +444,7 @@ const ComparePage = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="vf6">VinFast VF 6</SelectItem>
-                          <SelectItem value="vf7">VinFast VF 7</SelectItem>
+                          <ModelSelectItems />
                         </SelectContent>
                       </Select>
                       <Label className="text-xs text-muted-foreground mt-2 block">

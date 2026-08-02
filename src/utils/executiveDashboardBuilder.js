@@ -7,9 +7,11 @@ const TDFeedback = require('../models/TDFeedback');
 const { buildLeadAdminReport } = require('./leadReportBuilder');
 const { normalizeStageLabel } = require('../constants/leadStages');
 const { toObjectId, assignedToStaffFilter, assignedToIdsFilter, assignedExecutiveIdsFilter, resolveStaffIdsForUser, resolveStaffEmailsForIds, normalizeEmail, isTeamScopedUser, isExecutiveScopedUser } = require('./leadAssignment');
+const { resolvePeriodRange } = require('./reportPeriod');
 const TDStaff = require('../models/TDStaff');
 
 const CLOSED_LEAD_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
+const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -20,6 +22,14 @@ function yearBounds(year) {
     from: `${y}-01-01`,
     to: `${y}-12-31`,
   };
+}
+
+function isConvertedStatus(status) {
+  return CONVERTED_STATUSES.includes(normalizeStageLabel(status));
+}
+
+function isDeliveredStatus(status) {
+  return normalizeStageLabel(status) === 'Delivered';
 }
 
 function slotDateFilter(from, to) {
@@ -177,12 +187,12 @@ async function fetchRecentBookings(executiveId, limit = 15) {
   }));
 }
 
-async function buildExecutiveDashboard({ executiveId, year } = {}) {
+async function buildExecutiveDashboard({ executiveId, year, period, from, to } = {}) {
   if (!executiveId) throw new Error('executiveId is required');
 
   const execId = toObjectId(executiveId);
-  const current = yearBounds(year);
-  const previous = yearBounds(current.year - 1);
+  const range = resolvePeriodRange({ period, from, to, year });
+  const previous = yearBounds(range.year - 1);
 
   const [
     leadReport,
@@ -196,15 +206,15 @@ async function buildExecutiveDashboard({ executiveId, year } = {}) {
     accurateLeadCount,
     accurateLeadCountPrev,
   ] = await Promise.all([
-    buildLeadAdminReport({ from: current.from, to: current.to, executiveId }),
+    buildLeadAdminReport({ from: range.from, to: range.to, executiveId }),
     buildLeadAdminReport({ from: previous.from, to: previous.to, executiveId }),
-    buildExecutiveTdStats({ executiveId, from: current.from, to: current.to }),
+    buildExecutiveTdStats({ executiveId, from: range.from, to: range.to }),
     buildExecutiveTdStats({ executiveId, from: previous.from, to: previous.to }),
-    buildMonthlyBreakdown(executiveId, current.year),
+    buildMonthlyBreakdown(executiveId, range.year),
     fetchRecentBookings(executiveId),
     Lead.countDocuments(assignedToStaffFilter(executiveId)),
     execId ? TDBooking.countDocuments({ assignedExecutive: execId }) : Promise.resolve(0),
-    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(current.from, current.to) }),
+    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(range.from, range.to) }),
     Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(previous.from, previous.to) }),
   ]);
 
@@ -212,9 +222,9 @@ async function buildExecutiveDashboard({ executiveId, year } = {}) {
   leadReportPrev.overview.totalLeads = accurateLeadCountPrev;
 
   return {
-    year: current.year,
+    year: range.year,
     compareYear: previous.year,
-    period: { from: current.from, to: current.to },
+    period: { period: range.period, from: range.from, to: range.to },
     comparePeriod: { from: previous.from, to: previous.to },
     allTime: {
       totalLeads: totalLeadsAllTime,
@@ -243,15 +253,62 @@ async function buildExecutiveDashboard({ executiveId, year } = {}) {
   };
 }
 
+async function memberPeriodStats({ memberId, email, leadDateFilter, tdDateFilter, now }) {
+  const memberEmails = await resolveStaffEmailsForIds([memberId], email);
+  const leadF = { ...assignedToIdsFilter([memberId], email, memberEmails), ...leadDateFilter };
+  const leadFAll = assignedToIdsFilter([memberId], email, memberEmails);
+  const tdF = { ...assignedExecutiveIdsFilter([memberId], email, memberEmails), ...tdDateFilter };
+
+  const [leads, openLeads, testDrives, completedTds, leadDocs, followUpsDue] = await Promise.all([
+    Lead.countDocuments(leadF),
+    Lead.countDocuments({ ...leadF, status: { $nin: CLOSED_LEAD_STATUSES } }),
+    TDBooking.countDocuments(tdF),
+    TDBooking.countDocuments({ ...tdF, bookingStatus: 'COMPLETED' }),
+    Lead.find(leadF).select('status nextFollowUp').lean(),
+    Lead.countDocuments({
+      ...leadFAll,
+      status: { $nin: CLOSED_LEAD_STATUSES },
+      nextFollowUp: { $lte: now },
+    }),
+  ]);
+
+  let converted = 0;
+  let delivered = 0;
+  for (const lead of leadDocs) {
+    if (isConvertedStatus(lead.status)) converted += 1;
+    if (isDeliveredStatus(lead.status)) delivered += 1;
+  }
+
+  return {
+    leadsCount: leads,
+    leads,
+    openLeads,
+    testDrives,
+    tdCompleted: completedTds,
+    completedTestDrives: completedTds,
+    converted,
+    delivered,
+    followUpsDue,
+    conversionRate: leads > 0 ? Math.round((converted / leads) * 100) : 0,
+  };
+}
+
 /**
  * Sales Manager / team-lead dashboard: own assignments + reporting team stats.
  * Team = users under reportsTo subtree excluding self.
+ * Returns { view: 'manager', self, team } clearly separated.
  */
-async function buildManagerTeamDashboard({ admin, year } = {}) {
+async function buildManagerTeamDashboard({ admin, year, period, from, to } = {}) {
   if (!admin?._id) throw new Error('admin is required');
 
-  const current = yearBounds(year);
-  const personal = await buildExecutiveDashboard({ executiveId: admin._id, year: current.year });
+  const range = resolvePeriodRange({ period, from, to, year });
+  const personal = await buildExecutiveDashboard({
+    executiveId: admin._id,
+    year: range.year,
+    period: range.period,
+    from: range.from,
+    to: range.to,
+  });
 
   const selfIds = new Set([String(admin._id)]);
   const email = normalizeEmail(admin.email);
@@ -270,17 +327,21 @@ async function buildManagerTeamDashboard({ admin, year } = {}) {
     : [];
   const teamEmails = await resolveStaffEmailsForIds(teamIds, admin.email);
 
-  const mineLeadFilter = assignedToIdsFilter(mineIds, admin.email, mineEmails);
-  const reportLeadFilter = reportIds.length
-    ? assignedToIdsFilter(reportIds, null, reportEmails)
-    : { assignedTo: null };
-  const teamLeadFilter = assignedToIdsFilter(teamIds, admin.email, teamEmails);
+  const leadDateFilter = createdAtFilter(range.from, range.to);
+  const tdDateFilter = slotDateFilter(range.from, range.to);
 
-  const mineTdFilter = assignedExecutiveIdsFilter(mineIds, admin.email, mineEmails);
+  const mineLeadFilter = { ...assignedToIdsFilter(mineIds, admin.email, mineEmails), ...leadDateFilter };
+  const reportLeadFilter = reportIds.length
+    ? { ...assignedToIdsFilter(reportIds, null, reportEmails), ...leadDateFilter }
+    : { assignedTo: null };
+  const teamLeadFilter = { ...assignedToIdsFilter(teamIds, admin.email, teamEmails), ...leadDateFilter };
+  const teamLeadFilterOpen = assignedToIdsFilter(teamIds, admin.email, teamEmails);
+
+  const mineTdFilter = { ...assignedExecutiveIdsFilter(mineIds, admin.email, mineEmails), ...tdDateFilter };
   const reportTdFilter = reportIds.length
-    ? assignedExecutiveIdsFilter(reportIds, null, reportEmails)
+    ? { ...assignedExecutiveIdsFilter(reportIds, null, reportEmails), ...tdDateFilter }
     : { assignedExecutive: null };
-  const teamTdFilter = assignedExecutiveIdsFilter(teamIds, admin.email, teamEmails);
+  const teamTdFilter = { ...assignedExecutiveIdsFilter(teamIds, admin.email, teamEmails), ...tdDateFilter };
 
   const now = new Date();
   const [
@@ -292,6 +353,7 @@ async function buildManagerTeamDashboard({ admin, year } = {}) {
     followUpsDue,
     completedTestDrivesMine,
     completedTestDrivesTeam,
+    teamLeadDocs,
     teamMembers,
   ] = await Promise.all([
     Lead.countDocuments(mineLeadFilter),
@@ -303,12 +365,15 @@ async function buildManagerTeamDashboard({ admin, year } = {}) {
       status: { $nin: CLOSED_LEAD_STATUSES },
     }),
     Lead.countDocuments({
-      ...teamLeadFilter,
+      ...teamLeadFilterOpen,
       status: { $nin: CLOSED_LEAD_STATUSES },
       nextFollowUp: { $lte: now },
     }),
     TDBooking.countDocuments({ ...mineTdFilter, bookingStatus: 'COMPLETED' }),
     TDBooking.countDocuments({ ...teamTdFilter, bookingStatus: 'COMPLETED' }),
+    reportIds.length
+      ? Lead.find(reportLeadFilter).select('status').lean()
+      : Promise.resolve([]),
     reportIds.length
       ? TDStaff.find({ _id: { $in: reportIds.map((id) => toObjectId(id)).filter(Boolean) } })
           .select('name email designation role')
@@ -316,48 +381,76 @@ async function buildManagerTeamDashboard({ admin, year } = {}) {
       : Promise.resolve([]),
   ]);
 
+  let teamConverted = 0;
+  let teamDelivered = 0;
+  for (const lead of teamLeadDocs) {
+    if (isConvertedStatus(lead.status)) teamConverted += 1;
+    if (isDeliveredStatus(lead.status)) teamDelivered += 1;
+  }
+
   const byMember = await Promise.all(
     (teamMembers || []).map(async (member) => {
       const mid = String(member._id);
-      const memberEmails = await resolveStaffEmailsForIds([mid], member.email);
-      const leadF = assignedToIdsFilter([mid], member.email, memberEmails);
-      const tdF = assignedExecutiveIdsFilter([mid], member.email, memberEmails);
-      const [leads, testDrives, completedTds, openLeads] = await Promise.all([
-        Lead.countDocuments(leadF),
-        TDBooking.countDocuments(tdF),
-        TDBooking.countDocuments({ ...tdF, bookingStatus: 'COMPLETED' }),
-        Lead.countDocuments({ ...leadF, status: { $nin: CLOSED_LEAD_STATUSES } }),
-      ]);
+      const stats = await memberPeriodStats({
+        memberId: mid,
+        email: member.email,
+        leadDateFilter,
+        tdDateFilter,
+        now,
+      });
       return {
         _id: mid,
         name: member.name,
         email: member.email,
         designation: member.designation,
-        leads,
-        openLeads,
-        testDrives,
-        completedTestDrives: completedTds,
+        ...stats,
       };
     }),
   );
 
-  byMember.sort((a, b) => b.leads - a.leads || b.testDrives - a.testDrives);
+  byMember.sort((a, b) => b.leadsCount - a.leadsCount || b.tdCompleted - a.tdCompleted);
+
+  const teamSummary = {
+    leadsCount: teamLeads,
+    tdCompleted: completedTestDrivesTeam,
+    converted: teamConverted,
+    delivered: teamDelivered,
+    followUpsDue,
+    conversionRate: teamLeads > 0 ? Math.round((teamConverted / teamLeads) * 100) : 0,
+    teamSize: reportIds.length,
+    teamLeads,
+    teamTestDrives,
+    pendingLeads,
+    teamCompletedTestDrives: completedTestDrivesTeam,
+  };
+
+  // Legacy flat teamStats kept for older clients; preferred shape is self / team.
+  const teamStats = {
+    myAssignedLeads,
+    myAssignedTestDrives,
+    teamLeads,
+    teamTestDrives,
+    pendingLeads,
+    followUpsDue,
+    completedTestDrives: completedTestDrivesMine,
+    teamCompletedTestDrives: completedTestDrivesTeam,
+    teamSize: reportIds.length,
+    byMember,
+  };
 
   return {
+    // Spread personal first so view/self/team/reportType win afterward.
     ...personal,
+    view: 'manager',
     reportType: 'manager',
-    teamStats: {
-      myAssignedLeads,
-      myAssignedTestDrives,
-      teamLeads,
-      teamTestDrives,
-      pendingLeads,
-      followUpsDue,
-      completedTestDrives: completedTestDrivesMine,
-      teamCompletedTestDrives: completedTestDrivesTeam,
-      teamSize: reportIds.length,
+    year: range.year,
+    period: { period: range.period, from: range.from, to: range.to },
+    self: personal,
+    team: {
+      ...teamSummary,
       byMember,
     },
+    teamStats,
   };
 }
 

@@ -32,6 +32,7 @@ import vf7GalIntEnh06 from "@/assets/vf7-gallery/vf7-gallery-interior-enhanced-0
 import vf7GalIntEnh07 from "@/assets/vf7-gallery/vf7-gallery-interior-enhanced-07.jpg";
 import vf7GalIntEnh08 from "@/assets/vf7-gallery/vf7-gallery-interior-enhanced-08.jpg";
 import { usePublicSite } from "@/context/PublicSiteContext";
+import { usePublicPricing } from "@/hooks/usePublicPricing";
 import { VF7_TRIM_0_100_KMH } from "@/data/vinfastCompareSpecAnchors";
 
 const colors = [
@@ -442,6 +443,7 @@ function SpecTable7({ title, rows }: { title: string; rows: [string, string, str
 
 const ModelVF7 = () => {
   const { siteConfig } = usePublicSite();
+  const { variantPrice, bySlug } = usePublicPricing();
   const [selectedColor, setSelectedColor] = useState(0);
   const [variant, setVariant] = useState<VariantId>("earth");
 
@@ -466,7 +468,9 @@ const ModelVF7 = () => {
   const heroAccel = stats.accel;
   const vMeta = vf7Variants.find((v) => v.id === variant)!;
   const displayExShowroom =
-    variant === "earth" ? siteConfig.vf7Price : variantExShowroomPrice[variant];
+    variant === "earth"
+      ? bySlug("vf7")?.priceFrom || siteConfig.vf7Price || variantExShowroomPrice.earth
+      : variantPrice("vf7", variant, variantExShowroomPrice[variant]);
 
   return (
     <div className="min-h-screen bg-background pb-36 lg:pb-0">

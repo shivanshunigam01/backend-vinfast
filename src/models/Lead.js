@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const { isValidLeadModel } = require('../utils/leadModel');
 
+/** Legacy rows may still store "Both"; new writes should use a single model. */
+function isAcceptableStoredLeadModel(value) {
+  const s = String(value || '').trim();
+  return isValidLeadModel(s) || s === 'Both';
+}
+
 const LEAD_SOURCES = [
   'Meta Ads',
   'Google Business Profile',
@@ -51,7 +57,7 @@ const leadSchema = new mongoose.Schema(
       required: true,
       trim: true,
       validate: {
-        validator: isValidLeadModel,
+        validator: isAcceptableStoredLeadModel,
         message: 'Invalid model',
       },
     },

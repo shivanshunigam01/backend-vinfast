@@ -1,4 +1,5 @@
 import { adminGet } from "@/lib/api";
+import type { ReportPeriod } from "@/components/admin/ReportPeriodPresets";
 import type { LeadAdminReport, LeadDetailReportRow, LeadActivityRow, LeadFeedbackReportRow } from "@/lib/leadReportApi";
 
 export type ExecutiveTdStats = {
@@ -38,10 +39,18 @@ export type ManagerTeamMemberStats = {
   name: string;
   email?: string;
   designation?: string;
-  leads: number;
+  leadsCount: number;
+  /** @deprecated use leadsCount */
+  leads?: number;
   openLeads: number;
   testDrives: number;
-  completedTestDrives: number;
+  tdCompleted: number;
+  /** @deprecated use tdCompleted */
+  completedTestDrives?: number;
+  converted: number;
+  delivered: number;
+  followUpsDue: number;
+  conversionRate: number;
 };
 
 export type ManagerTeamStats = {
@@ -54,6 +63,21 @@ export type ManagerTeamStats = {
   completedTestDrives: number;
   teamCompletedTestDrives: number;
   teamSize: number;
+  byMember: ManagerTeamMemberStats[];
+};
+
+export type ManagerTeamBlock = {
+  leadsCount: number;
+  tdCompleted: number;
+  converted: number;
+  delivered: number;
+  followUpsDue: number;
+  conversionRate: number;
+  teamSize: number;
+  teamLeads?: number;
+  teamTestDrives?: number;
+  pendingLeads?: number;
+  teamCompletedTestDrives?: number;
   byMember: ManagerTeamMemberStats[];
 };
 
@@ -74,7 +98,7 @@ export type CreDashboardRecentLead = {
 export type CreDashboard = {
   year: number;
   compareYear: number;
-  period: { from: string; to: string };
+  period: { from: string; to: string; period?: string };
   comparePeriod: { from: string; to: string };
   reportType: "cre";
   cre?: { _id: string; name?: string; email?: string; designation?: string };
@@ -100,14 +124,12 @@ export type CreDashboard = {
   stages?: string[];
 };
 
-export type ExecutiveDashboard = {
+export type ExecutiveDashboardCore = {
   year: number;
   compareYear: number;
-  period: { from: string; to: string };
+  period: { from: string; to: string; period?: string };
   comparePeriod: { from: string; to: string };
   allTime: { totalLeads: number; totalTestDrives: number };
-  reportType?: "executive" | "manager" | "cre";
-  teamStats?: ManagerTeamStats;
   leads: Pick<
     LeadAdminReport,
     "overview" | "pipeline" | "bySource" | "byModel" | "followUpSummary"
@@ -128,13 +150,19 @@ export type ExecutiveDashboard = {
   stages: string[];
 };
 
+export type ExecutiveDashboard = ExecutiveDashboardCore & {
+  reportType?: "executive" | "manager" | "cre";
+  view?: "manager" | "executive";
+  teamStats?: ManagerTeamStats;
+  self?: ExecutiveDashboardCore;
+  team?: ManagerTeamBlock;
+};
+
 export type MyDashboardPayload = ExecutiveDashboard | CreDashboard;
 
 export function isCreDashboard(data: MyDashboardPayload | null | undefined): data is CreDashboard {
   if (!data) return false;
   if (data.reportType === "cre") return true;
-  // Shape fallback when reportType is missing/older backends:
-  // CRE payload has top-level pipeline + recentLeads/cre, and no executive `leads` block.
   const raw = data as Record<string, unknown>;
   const hasCreShape =
     Boolean(raw.cre || raw.recentLeads) ||
@@ -178,14 +206,29 @@ function readBySourceMap(data: MyDashboardPayload | null | undefined): Record<st
   return {};
 }
 
-export async function fetchExecutiveDashboard(year?: number): Promise<MyDashboardPayload> {
+export type DashboardPeriodQuery = {
+  period?: ReportPeriod;
+  from?: string;
+  to?: string;
+  year?: number;
+};
+
+export async function fetchExecutiveDashboard(
+  opts: number | DashboardPeriodQuery = {},
+): Promise<MyDashboardPayload> {
   const q = new URLSearchParams();
-  if (year) q.set("year", String(year));
+  if (typeof opts === "number") {
+    q.set("year", String(opts));
+  } else {
+    if (opts.period) q.set("period", opts.period);
+    if (opts.from) q.set("from", opts.from);
+    if (opts.to) q.set("to", opts.to);
+    if (opts.year) q.set("year", String(opts.year));
+  }
   const { data } = await adminGet<MyDashboardPayload>(`/admin/crm/leads/reports/me?${q}`);
   if (!data) {
     throw new Error("Dashboard response was empty");
   }
-  // Normalize CRE detection for older/partial payloads.
   if (isCreDashboard(data) && data.reportType !== "cre") {
     return { ...data, reportType: "cre" };
   }

@@ -234,7 +234,13 @@ export type CrmLeadImportFailure = {
   message: string;
 };
 
-export type CrmLeadImportRowStatus = "created" | "updated" | "failed";
+export type CrmLeadImportRowStatus =
+  | "created"
+  | "updated"
+  | "failed"
+  | "valid"
+  | "needs_model"
+  | "invalid";
 
 export type CrmLeadImportRow = {
   row: number | string;
@@ -242,8 +248,10 @@ export type CrmLeadImportRow = {
   name?: string;
   mobile?: string;
   model?: string;
+  modelRaw?: string;
   leadId?: string;
   message?: string;
+  needsCorrection?: boolean;
 };
 
 export type CrmLeadImportResult = {
@@ -252,7 +260,12 @@ export type CrmLeadImportResult = {
   followUpsCreated?: number;
   failed: CrmLeadImportFailure[];
   rows?: CrmLeadImportRow[];
+  dryRun?: boolean;
+  needsModel?: number;
 };
+
+/** Concrete models allowed when correcting ambiguous Excel "Both" / multi-model cells. */
+export const CRM_IMPORT_MODEL_OPTIONS = ["VF 6", "VF 7", "VF MPV 7", "Limo Green"] as const;
 
 /** Download failed import rows as Excel (and optional CSV). */
 export function downloadCrmImportErrors(
@@ -323,10 +336,33 @@ export async function exportPvCrmLeadsExcel(params?: {
 }
 
 /** Upload Excel/CSV for bulk lead import (multipart field name: file). */
-export async function importPvCrmLeadsFile(file: File): Promise<CrmLeadImportResult> {
+export async function importPvCrmLeadsFile(
+  file: File,
+  opts?: {
+    dryRun?: boolean;
+    modelCorrections?: Record<string, string>;
+  },
+): Promise<CrmLeadImportResult> {
   const form = new FormData();
   form.append("file", file);
-  return adminPostFormData<CrmLeadImportResult>(`${CRM_BASE}/import`, form);
+  if (opts?.modelCorrections && Object.keys(opts.modelCorrections).length > 0) {
+    form.append("modelCorrections", JSON.stringify(opts.modelCorrections));
+  }
+  if (opts?.dryRun) {
+    form.append("dryRun", "true");
+  }
+  const q = opts?.dryRun ? "?dryRun=1" : "";
+  return adminPostFormData<CrmLeadImportResult>(`${CRM_BASE}/import${q}`, form);
+}
+
+/** Commit import from a corrected leads JSON payload (no file). */
+export async function importPvCrmLeadsJson(payload: {
+  leads: Array<Record<string, unknown>>;
+  followUps?: Array<Record<string, unknown>>;
+  dryRun?: boolean;
+  modelCorrections?: Record<string, string>;
+}): Promise<CrmLeadImportResult> {
+  return adminPostJson<CrmLeadImportResult>(`${CRM_BASE}/import`, payload);
 }
 
 /** CRE Current Format blank template (all sheet columns; TD = Test Drive). */

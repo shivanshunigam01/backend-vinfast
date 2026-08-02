@@ -4,6 +4,7 @@
  */
 
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
+const { getActiveStageLabels } = require('./leadStageService');
 const { normalizeMobile } = require('./mobile');
 
 /** Canonical Current Format headers (export / template). */
@@ -359,13 +360,20 @@ function parseCurrentFormatRow(row) {
 
 /**
  * Advance stage only forward; Lost may reopen when sheet is active.
+ * Uses dynamic CRM stages when available (async).
  */
-function pickForwardStage(currentStatus, incomingStatus) {
+async function pickForwardStage(currentStatus, incomingStatus) {
   const prev = normalizeStageLabel(currentStatus);
   const next = normalizeStageLabel(incomingStatus);
   if (prev === 'Lost' && next !== 'Lost') return next;
-  const prevIdx = CRM_LEAD_STAGES.indexOf(prev);
-  const nextIdx = CRM_LEAD_STAGES.indexOf(next);
+  let labels = CRM_LEAD_STAGES;
+  try {
+    labels = await getActiveStageLabels();
+  } catch {
+    /* fallback */
+  }
+  const prevIdx = labels.indexOf(prev);
+  const nextIdx = labels.indexOf(next);
   if (nextIdx === -1) return prev;
   if (prevIdx === -1) return next;
   return nextIdx >= prevIdx ? next : prev;

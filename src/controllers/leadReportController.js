@@ -7,9 +7,19 @@ const {
   buildManagerTeamDashboard,
   isManagerDashboardUser,
 } = require('../utils/executiveDashboardBuilder');
+const { buildDeliveryReport } = require('../utils/deliveryReportBuilder');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
 const { isCreUser } = require('../utils/leadAssignment');
+
+function readPeriodQuery(req) {
+  return {
+    period: req.query.period,
+    from: req.query.from,
+    to: req.query.to,
+    year: req.query.year ? Number(req.query.year) : undefined,
+  };
+}
 
 exports.getAdminReport = asyncHandler(async (req, res) => {
   const data = await buildLeadAdminReport({
@@ -20,12 +30,18 @@ exports.getAdminReport = asyncHandler(async (req, res) => {
   return successResponse(res, data);
 });
 
+exports.getDeliveryReport = asyncHandler(async (req, res) => {
+  const data = await buildDeliveryReport(readPeriodQuery(req));
+  return successResponse(res, data);
+});
+
 exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
   if (!isCrmStaffRole(req.admin.role) && !isCreUser(req.admin)) {
     throw new ApiError(403, 'Executive dashboard is for CRM staff only');
   }
 
-  const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+  const periodQuery = readPeriodQuery(req);
+  const year = periodQuery.year || new Date().getFullYear();
 
   // CRE "My Dashboard" is their individual creator/assignment report — not assignee scope.
   if (isCreUser(req.admin)) {
@@ -35,12 +51,13 @@ exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
 
   // Sales Manager / Sales Head / Branch Manager — own + team metrics.
   if (isManagerDashboardUser(req.admin)) {
-    const data = await buildManagerTeamDashboard({ admin: req.admin, year });
+    const data = await buildManagerTeamDashboard({ admin: req.admin, ...periodQuery, year });
     return successResponse(res, data);
   }
 
   const data = await buildExecutiveDashboard({
     executiveId: req.admin._id,
+    ...periodQuery,
     year,
   });
   return successResponse(res, { ...data, reportType: 'executive' });

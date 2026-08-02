@@ -7,9 +7,23 @@ export type CalendarAssignee = {
   designation?: string;
 };
 
+export type CalendarEventType =
+  | "new_lead"
+  | "lead"
+  | "test_drive"
+  | "lead_follow_up"
+  | "stage_activity"
+  | "booking_update"
+  | "delivery"
+  | "sales_activity"
+  | "awaiting_vehicle"
+  | "pending_approval"
+  | "customer_appointment"
+  | string;
+
 export type CalendarEvent = {
   id: string;
-  type: string;
+  type: CalendarEventType;
   title: string;
   start: string;
   end?: string;

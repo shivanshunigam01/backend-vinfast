@@ -9,6 +9,7 @@ const whatsappOtpController = require('../../controllers/whatsappOtpController')
 const tdBranchesController = require('../../controllers/tdBranchesController');
 const tdSlotsController = require('../../controllers/tdSlotsController');
 const vehicleModelsController = require('../../controllers/vehicleModelsController');
+const pricingController = require('../../controllers/pricingController');
 const seoController = require('../../controllers/seoController');
 const { leadValidator, testDriveValidator, enquiryValidator } = require('../../validators/formValidators');
 const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
@@ -27,6 +28,7 @@ router.get('/public/faqs', publicController.getFAQs);
 router.get('/public/testimonials', publicController.getTestimonials);
 router.get('/public/dealer-settings', publicController.getDealerSettings);
 router.get('/public/vehicle-models', vehicleModelsController.getPublicCatalog);
+router.get('/public/pricing', pricingController.listPublic);
 
 // SEO / AEO endpoints (district landing pages, JSON-LD schemas, sitemap data)
 router.get('/public/seo/global', seoController.getGlobalSeo);

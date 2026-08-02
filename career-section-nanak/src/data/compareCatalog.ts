@@ -1,8 +1,10 @@
 import vf6DesatSilver from "@/assets/vf6-desat-silver.png";
 import vf7DesatSilver from "@/assets/vf7-desat-silver.png";
+import mpv7Card from "@/assets/mpv7-gallery/mpv7-new.png";
+import limoGreenCard from "@/assets/limo-green/modal-car.webp";
 import { VF6_TRIM_0_100_KMH, VF7_TRIM_0_100_KMH } from "@/data/vinfastCompareSpecAnchors";
 
-export type CompareModelKey = "vf6" | "vf7";
+export type CompareModelKey = "vf6" | "vf7" | "mpv7" | "limo-green";
 
 /** Flat strings for side-by-side rows */
 export type CompareSpecMap = Record<string, string>;
@@ -24,7 +26,14 @@ export interface CatalogModel {
   variants: CatalogVariant[];
 }
 
-export const COMPARE_MODEL_ORDER = ["vf6", "vf7"] as const satisfies readonly CompareModelKey[];
+export const COMPARE_MODEL_ORDER = ["vf6", "vf7", "mpv7", "limo-green"] as const satisfies readonly CompareModelKey[];
+
+export const COMPARE_MODEL_LABELS: Record<CompareModelKey, string> = {
+  vf6: "VinFast VF 6",
+  vf7: "VinFast VF 7",
+  mpv7: "VinFast VF MPV 7",
+  "limo-green": "VinFast Limo Green",
+};
 
 export const compareModels: Record<CompareModelKey, CatalogModel> = {
   vf6: {
@@ -341,6 +350,100 @@ export const compareModels: Record<CompareModelKey, CatalogModel> = {
       },
     ],
   },
+  mpv7: {
+    key: "mpv7",
+    brand: "VinFast",
+    name: "VF MPV 7",
+    route: "/models/mpv7",
+    image: mpv7Card,
+    variants: [
+      {
+        id: "base",
+        label: "Base",
+        price: "₹24.49L*",
+        specs: {
+          ex_showroom: "₹24.49L*",
+          power: "150 kW",
+          torque: "—",
+          range_midc: "—",
+          accel: "< 10s",
+          battery: "60.13 kWh",
+          driveline: "FWD",
+          dc_charging: "—",
+          fast_charge: "30 mins (10–70%)",
+          length: "4740 mm",
+          width: "1872 mm",
+          height: "1734 mm",
+          wheelbase: "2840 mm",
+          ground_clearance: "—",
+          boot: "—",
+          curb_weight: "—",
+          seating: "7 seats",
+          tyre_wheel: "235/50 R19",
+          tailgate: "—",
+          roof_rail: "—",
+          seat_upholstery: "Leatherette",
+          driver_seat: "—",
+          panoramic_roof: "—",
+          wireless_charger: "—",
+          hud: "—",
+          touchscreen: "—",
+          speakers: "—",
+          smart_suite: "Eco/Normal/Sport · regen Off/Low/Medium/High",
+          airbags: "—",
+          adas: "—",
+          safety_chassis: "ABS, EBD, BA, ESC, TCS, HSA, ROM · dTPMS · all-disc · EPB with Auto Hold",
+        },
+      },
+    ],
+  },
+  "limo-green": {
+    key: "limo-green",
+    brand: "VinFast",
+    name: "Limo Green",
+    route: "/models/limo-green",
+    image: limoGreenCard,
+    variants: [
+      {
+        id: "base",
+        label: "Standard",
+        price: "₹22.99 Lakh*",
+        specs: {
+          ex_showroom: "₹22.99 Lakh*",
+          power: "150 kW (201 hp)",
+          torque: "280 Nm",
+          range_midc: "Up to 450 km (NEDC)",
+          accel: "—",
+          battery: "60.13 kWh (LFP)",
+          driveline: "FWD (single-speed)",
+          dc_charging: "—",
+          fast_charge: "30 mins (10–70%)",
+          length: "4740 mm",
+          width: "1872 mm",
+          height: "1729 mm",
+          wheelbase: "2840 mm",
+          ground_clearance: "—",
+          boot: "1,240 L (rear seats folded)",
+          curb_weight: "—",
+          seating: "7 seats (2+3+2)",
+          tyre_wheel: "—",
+          tailgate: "—",
+          roof_rail: "—",
+          seat_upholstery: "—",
+          driver_seat: "—",
+          panoramic_roof: "—",
+          wireless_charger: "—",
+          hud: "—",
+          touchscreen: "10.1-inch",
+          speakers: "—",
+          smart_suite: "Eco/Normal drive modes",
+          airbags: "—",
+          adas: "—",
+          safety_chassis: "ABS, EBD, ESC · EPB · TPMS",
+        },
+      },
+    ],
+  },
 };
 
 export type CompareSelection = { modelKey: CompareModelKey; variantId: string };
@@ -359,7 +462,7 @@ export const compareSectionDefinitions: { title: string; keys: string[] }[] = [
   { title: "Charging", keys: ["dc_charging", "fast_charge"] },
   {
     title: "Dimensions & weight",
-    keys: ["length", "width", "height", "wheelbase", "ground_clearance", "boot", "curb_weight"],
+    keys: ["length", "width", "height", "wheelbase", "ground_clearance", "boot", "curb_weight", "seating"],
   },
   { title: "Wheels & exterior", keys: ["tyre_wheel", "tailgate", "roof_rail"] },
   {
@@ -387,6 +490,7 @@ export const compareRowLabels: Record<string, string> = {
   ground_clearance: "Ground clearance (unladen)",
   boot: "Boot space",
   curb_weight: "Curb weight",
+  seating: "Seating capacity",
   tyre_wheel: "Tyres & wheels",
   tailgate: "Tailgate",
   roof_rail: "Roof rail",

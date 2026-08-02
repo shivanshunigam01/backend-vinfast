@@ -4,7 +4,11 @@ require('../models/Counter');
 const PVCustomer = require('../models/PVCustomer');
 
 const Lead = require('../models/Lead');
-const { normalizeLeadModelForStorage, isValidLeadModel } = require('../utils/leadModel');
+const {
+  normalizeLeadModelForStorage,
+  isValidLeadModel,
+  isAmbiguousLeadModel,
+} = require('../utils/leadModel');
 const { intakePvLead, findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
@@ -15,6 +19,11 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
+const {
+  getActiveStageLabels,
+  assertValidCrmStage,
+  ensureDefaultLeadStages,
+} = require('../utils/leadStageService');
 const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
@@ -520,7 +529,8 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
     data.push(formatCrmLead(doc));
   }
 
-  return successResponse(res, data, undefined, 200, { page, limit, total, stages: CRM_LEAD_STAGES });
+  const stages = await getActiveStageLabels();
+  return successResponse(res, data, undefined, 200, { page, limit, total, stages });
 });
 
 exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
@@ -547,13 +557,14 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
     getCustomerTestDriveState(lead.mobile),
   ]);
 
+  const stages = await getActiveStageLabels();
   const isAdmin = isCrmManagerLike(req.admin);
   return successResponse(res, {
     lead: formatCrmLead(lead),
     history,
     followUps,
     siblingLeads,
-    stages: CRM_LEAD_STAGES,
+    stages,
     // Drives "Book Test Drive" / "Test Drive Done" button visibility in the UI:
     // once a test drive is completed, only admins can book a repeat drive
     // (executives raise a request that needs admin approval).
@@ -575,33 +586,36 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const { stage, reason } = req.body;
   if (!stage) throw new ApiError(400, 'Stage is required');
-  if (!CRM_LEAD_STAGES.includes(stage)) {
-    throw new ApiError(400, `Invalid stage. Use one of: ${CRM_LEAD_STAGES.join(', ')}`);
+  let normalizedStage;
+  try {
+    normalizedStage = await assertValidCrmStage(stage);
+  } catch (e) {
+    throw new ApiError(e.statusCode || 400, e.message);
   }
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
 
   const prevStage = lead.status;
-  if (prevStage === stage) {
+  if (prevStage === normalizedStage) {
     await lead.populate(LEAD_POPULATE);
     return successResponse(res, formatCrmLead(lead), 'Stage unchanged');
   }
 
-  lead.status = stage;
+  lead.status = normalizedStage;
   touchLeadActivity(lead);
   await lead.save();
 
   await LeadStageHistory.create({
     leadId: lead._id,
     fromStage: prevStage,
-    toStage: stage,
+    toStage: normalizedStage,
     changedBy: req.admin._id,
-    reason: reason || `Stage updated to ${stage}`,
+    reason: reason || `Stage updated to ${normalizedStage}`,
   });
 
   await lead.populate(LEAD_POPULATE);
-  return successResponse(res, formatCrmLead(lead), `Lead moved to ${stage}`);
+  return successResponse(res, formatCrmLead(lead), `Lead moved to ${normalizedStage}`);
 });
 
 const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
@@ -852,7 +866,9 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
 exports.getCrmStages = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  return successResponse(res, CRM_LEAD_STAGES);
+  await ensureDefaultLeadStages();
+  const stages = await getActiveStageLabels();
+  return successResponse(res, stages);
 });
 
 exports.getCrmSources = asyncHandler(async (req, res) => {
@@ -1384,13 +1400,76 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
 /**
  * CRE Current Format upsert: match by mobile + model; store creSheet; stage forward only.
  */
+const AMBIGUOUS_MODEL_ERROR = 'Ambiguous model (Both) — map to a single model';
+
 function pushImportRow(results, entry) {
   if (!Array.isArray(results.rows)) results.rows = [];
   results.rows.push(entry);
 }
 
-async function importCurrentFormatRows(admin, leadRows) {
-  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0, rows: [] };
+function parseModelCorrections(raw) {
+  if (!raw) return {};
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    const model = String(v || '').trim();
+    if (model) out[String(k)] = model;
+  }
+  return out;
+}
+
+function isDryRunRequest(req) {
+  const q = req.query?.dryRun;
+  if (q === '1' || q === 'true' || q === true) return true;
+  const b = req.body?.dryRun;
+  return b === true || b === '1' || b === 'true';
+}
+
+function assertImportModelOrThrow(model, modelRaw) {
+  const display = modelRaw || model || '';
+  if (isAmbiguousLeadModel(model) || isAmbiguousLeadModel(modelRaw)) {
+    const err = new Error(AMBIGUOUS_MODEL_ERROR);
+    err.code = 'needs_model';
+    err.modelRaw = display;
+    throw err;
+  }
+  const modelForStorage = normalizeLeadModelForStorage(model);
+  if (!isValidLeadModel(modelForStorage)) {
+    const err = new Error(`Invalid model: ${display || modelForStorage}`);
+    err.code = 'invalid';
+    throw err;
+  }
+  return modelForStorage;
+}
+
+function applyRowModelCorrection(parsed, rowNum, corrections) {
+  const corrected = corrections[String(rowNum)];
+  if (!corrected) return parsed;
+  return {
+    ...parsed,
+    model: corrected,
+    modelRaw: corrected,
+  };
+}
+
+async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelCorrections = {} } = {}) {
+  const results = {
+    created: 0,
+    updated: 0,
+    failed: [],
+    followUpsCreated: 0,
+    rows: [],
+    dryRun: Boolean(dryRun),
+    needsModel: 0,
+  };
   const seenInBatch = new Set();
 
   for (let i = 0; i < leadRows.length; i += 1) {
@@ -1398,20 +1477,73 @@ async function importCurrentFormatRows(admin, leadRows) {
     const rowNum = i + 2;
     let parsed;
     try {
-      parsed = parseCurrentFormatRow(raw);
+      parsed = applyRowModelCorrection(parseCurrentFormatRow(raw), rowNum, modelCorrections);
       const { name, mobile, model } = parsed;
       if (!name || String(name).trim().length < 2) {
-        throw new Error('Customer name is required');
+        throw Object.assign(new Error('Customer name is required'), { code: 'invalid' });
       }
       if (!mobile || !/^[6-9]\d{9}$/.test(mobile)) {
-        throw new Error('Valid 10-digit mobile (PHONE) is required');
+        throw Object.assign(new Error('Valid 10-digit mobile (PHONE) is required'), { code: 'invalid' });
       }
 
-      const batchKey = `${mobile}|${model}`;
+      let modelForStorage;
+      try {
+        modelForStorage = assertImportModelOrThrow(model, parsed.modelRaw);
+      } catch (modelErr) {
+        if (dryRun && modelErr.code === 'needs_model') {
+          results.needsModel += 1;
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'needs_model',
+            name: String(name).trim(),
+            mobile,
+            model: parsed.modelRaw || model,
+            modelRaw: parsed.modelRaw || model,
+            message: AMBIGUOUS_MODEL_ERROR,
+          });
+          continue;
+        }
+        if (dryRun) {
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'invalid',
+            name: String(name).trim(),
+            mobile,
+            model: parsed.modelRaw || model,
+            message: modelErr.message,
+          });
+          results.failed.push({
+            row: rowNum,
+            name: String(name).trim(),
+            mobile,
+            message: modelErr.message,
+          });
+          continue;
+        }
+        throw modelErr;
+      }
+
+      const batchKey = `${mobile}|${modelForStorage}`;
       if (seenInBatch.has(batchKey)) {
-        throw new Error(`Duplicate mobile + model within this import file (${mobile} / ${model})`);
+        throw Object.assign(
+          new Error(`Duplicate mobile + model within this import file (${mobile} / ${modelForStorage})`),
+          { code: 'invalid' },
+        );
       }
       seenInBatch.add(batchKey);
+
+      if (dryRun) {
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'valid',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          modelRaw: parsed.modelRaw || model,
+          message: 'Ready to import',
+        });
+        continue;
+      }
 
       let assignedTo = null;
       let assignedToEmail;
@@ -1429,12 +1561,7 @@ async function importCurrentFormatRows(admin, leadRows) {
         }
       }
 
-      const modelForStorage = normalizeLeadModelForStorage(model);
-      if (!isValidLeadModel(modelForStorage)) {
-        throw new Error(`Invalid model: ${parsed.modelRaw || model}`);
-      }
-
-      let lead = await findLeadByMobileAndModel(mobile, model);
+      let lead = await findLeadByMobileAndModel(mobile, modelForStorage);
       const incomingStatus = parsed.derivedStatus || 'Enquiry';
       const isNew = !lead;
 
@@ -1486,7 +1613,7 @@ async function importCurrentFormatRows(admin, leadRows) {
         });
       } else {
         const prevStage = lead.status;
-        const nextStage = pickForwardStage(prevStage, incomingStatus);
+        const nextStage = await pickForwardStage(prevStage, incomingStatus);
 
         lead.name = String(name).trim();
         if (parsed.email) lead.email = parsed.email;
@@ -1535,6 +1662,9 @@ async function importCurrentFormatRows(admin, leadRows) {
       touchLeadActivity(lead);
       await lead.save();
     } catch (err) {
+      const status =
+        err?.code === 'needs_model' ? 'needs_model' : 'failed';
+      if (status === 'needs_model') results.needsModel += 1;
       const fail = {
         row: rowNum,
         name: parsed?.name || cellStr(raw?.['CUSTOMER NAME'] ?? raw?.name) || '',
@@ -1544,8 +1674,10 @@ async function importCurrentFormatRows(admin, leadRows) {
       results.failed.push(fail);
       pushImportRow(results, {
         ...fail,
-        status: 'failed',
-        model: parsed?.model || cellStr(raw?.['EXISTING VARIANT'] ?? raw?.model) || '',
+        status,
+        model: parsed?.modelRaw || parsed?.model || cellStr(raw?.MODEL ?? raw?.model) || '',
+        modelRaw: parsed?.modelRaw || undefined,
+        needsCorrection: status === 'needs_model',
       });
     }
   }
@@ -1556,10 +1688,18 @@ async function importCurrentFormatRows(admin, leadRows) {
 /**
  * POST /admin/crm/leads/import
  * Body JSON: { leads: [...], followUps: [...] } OR multipart file.
+ * Query/body dryRun=true|1 validates only (valid | needs_model | invalid), no writes.
+ * Optional modelCorrections: { "<rowNumber>": "VF 7" } applied before commit/validate.
  * Auto-detects CRE Current Format (upsert by mobile + model) vs simple create-only import.
  */
 exports.importCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
+
+  const dryRun = isDryRunRequest(req);
+  const modelCorrections = {
+    ...parseModelCorrections(req.body?.modelCorrections),
+    ...parseModelCorrections(req.body?.corrections),
+  };
 
   let leadRows = [];
   let followUpRows = [];
@@ -1586,17 +1726,31 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
   }
 
   if (isCurrentFormatSheet(leadRows)) {
-    const results = await importCurrentFormatRows(req.admin, leadRows);
-    return successResponse(
-      res,
-      results,
-      `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`,
-      200,
-      { total: leadRows.length, failed: results.failed.length, format: 'current' },
-    );
+    const results = await importCurrentFormatRows(req.admin, leadRows, {
+      dryRun,
+      modelCorrections,
+    });
+    const msg = dryRun
+      ? `Validated ${leadRows.length} row(s): ${results.rows.filter((r) => r.status === 'valid').length} valid, ${results.needsModel} need model, ${results.failed.length} invalid.`
+      : `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`;
+    return successResponse(res, results, msg, 200, {
+      total: leadRows.length,
+      failed: results.failed.length,
+      needsModel: results.needsModel,
+      dryRun,
+      format: 'current',
+    });
   }
 
-  const results = { created: 0, updated: 0, failed: [], followUpsCreated: 0, rows: [] };
+  const results = {
+    created: 0,
+    updated: 0,
+    failed: [],
+    followUpsCreated: 0,
+    rows: [],
+    dryRun: Boolean(dryRun),
+    needsModel: 0,
+  };
   /** mobile (normalized) -> created lead _id for follow-up linking in this batch */
   const createdByMobile = new Map();
   const seenInBatch = new Set();
@@ -1614,12 +1768,89 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       const mobile = normalizeMobile(mobileRaw) || mobileRaw.replace(/\D/g, '').slice(-10);
 
       if (!name || !mobile) {
-        throw new Error('Name and Mobile are required');
+        throw Object.assign(new Error('Name and Mobile are required'), { code: 'invalid' });
       }
       if (seenInBatch.has(mobile)) {
-        throw new Error('Duplicate mobile within this import file');
+        throw Object.assign(new Error('Duplicate mobile within this import file'), { code: 'invalid' });
       }
       seenInBatch.add(mobile);
+
+      const modelRaw =
+        modelCorrections[String(rowNum)] ||
+        cellStr(raw.model ?? raw.Model) ||
+        headerKey(raw, ['model', 'interested model', 'vehicle']) ||
+        'VF 7';
+
+      let modelForStorage;
+      try {
+        modelForStorage = assertImportModelOrThrow(modelRaw, modelRaw);
+      } catch (modelErr) {
+        if (dryRun && modelErr.code === 'needs_model') {
+          results.needsModel += 1;
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'needs_model',
+            name: String(name).trim(),
+            mobile,
+            model: modelRaw,
+            modelRaw,
+            message: AMBIGUOUS_MODEL_ERROR,
+          });
+          continue;
+        }
+        if (dryRun) {
+          results.failed.push({
+            row: rowNum,
+            name: String(name).trim(),
+            mobile,
+            message: modelErr.message,
+          });
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'invalid',
+            name: String(name).trim(),
+            mobile,
+            model: modelRaw,
+            message: modelErr.message,
+          });
+          continue;
+        }
+        throw modelErr;
+      }
+
+      if (dryRun) {
+        const variants = mobileVariants(mobile);
+        const existing = await Lead.findOne({
+          mobile: { $in: variants.length ? variants : [mobile] },
+        }).sort({ createdAt: -1 });
+        if (existing) {
+          results.failed.push({
+            row: rowNum,
+            name: String(name).trim(),
+            mobile,
+            message: `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
+          });
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'invalid',
+            name: String(name).trim(),
+            mobile,
+            model: modelForStorage,
+            message: `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
+          });
+          continue;
+        }
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'valid',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          modelRaw,
+          message: 'Ready to import',
+        });
+        continue;
+      }
 
       const variants = mobileVariants(mobile);
       const existing = await Lead.findOne({
@@ -1635,10 +1866,6 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         cellStr(raw.email ?? raw.Email) || headerKey(raw, ['email', 'email id']) || undefined;
       const city =
         cellStr(raw.city ?? raw.City) || headerKey(raw, ['city', 'state', 'location']) || 'Patna';
-      const model =
-        cellStr(raw.model ?? raw.Model) ||
-        headerKey(raw, ['model', 'interested model', 'vehicle']) ||
-        'VF 7';
       const source =
         cellStr(raw.source ?? raw.Source) || headerKey(raw, ['source', 'lead source']) || 'Excel Import';
       const status =
@@ -1672,7 +1899,6 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         cellStr(raw.exchangeNeeded ?? raw.ExchangeNeeded) ||
         headerKey(raw, ['exchange', 'exchange needed']);
 
-      const modelForStorage = normalizeLeadModelForStorage(model);
       const { lead } = await intakePvLead({
         name,
         mobile,
@@ -1713,6 +1939,8 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         }
       }
     } catch (err) {
+      const status = err?.code === 'needs_model' ? 'needs_model' : 'failed';
+      if (status === 'needs_model') results.needsModel += 1;
       const fail = {
         row: rowNum,
         name: cellStr(raw?.name ?? raw?.Name) || headerKey(raw || {}, ['name']),
@@ -1722,13 +1950,29 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       results.failed.push(fail);
       pushImportRow(results, {
         ...fail,
-        status: 'failed',
+        status,
         model:
           cellStr(raw?.model ?? raw?.Model) ||
           headerKey(raw || {}, ['model', 'interested model', 'vehicle']) ||
           '',
+        needsCorrection: status === 'needs_model',
       });
     }
+  }
+
+  if (dryRun) {
+    return successResponse(
+      res,
+      results,
+      `Validated ${leadRows.length} row(s): ${results.rows.filter((r) => r.status === 'valid').length} valid, ${results.needsModel} need model, ${results.failed.length} invalid.`,
+      200,
+      {
+        total: leadRows.length,
+        failed: results.failed.length,
+        needsModel: results.needsModel,
+        dryRun: true,
+      },
+    );
   }
 
   // Import follow-ups linked by Mobile or LeadId

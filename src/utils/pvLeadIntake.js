@@ -2,6 +2,7 @@ const PVCustomer = require('../models/PVCustomer');
 const Lead = require('../models/Lead');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
+const { getActiveStageLabels } = require('./leadStageService');
 const { normalizeLeadModelForStorage } = require('./leadModel');
 const { touchLeadActivity } = require('./leadAssignment');
 const { nextCustomerId, nextLeadId, nextOpportunityId } = require('./pvIdGenerator');
@@ -215,8 +216,9 @@ async function intakePvLead(input = {}) {
     // lead back down the pipeline — keep the further-along stage. A "Lost"
     // lead is the exception: a fresh intake means the customer re-engaged.
     const prevStage = normalizeStageLabel(lead.status);
-    const currentIdx = CRM_LEAD_STAGES.indexOf(prevStage);
-    const incomingIdx = CRM_LEAD_STAGES.indexOf(normalizeStageLabel(status));
+    const stageLabels = await getActiveStageLabels();
+    const currentIdx = stageLabels.indexOf(prevStage);
+    const incomingIdx = stageLabels.indexOf(normalizeStageLabel(status));
     const keepCurrentStatus = prevStage !== 'Lost' && incomingIdx !== -1 && currentIdx > incomingIdx;
 
     const prevStatus = lead.status;

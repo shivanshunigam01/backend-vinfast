@@ -5,6 +5,7 @@
 const Lead = require('../models/Lead');
 const TDStaff = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
+const { getActiveStageLabels } = require('./leadStageService');
 const { toObjectId } = require('./leadAssignment');
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -161,7 +162,8 @@ async function buildCreReport({ creId, year } = {}) {
   });
 
   const pipeline = {};
-  for (const stage of CRM_LEAD_STAGES) pipeline[stage] = 0;
+  const stageLabels = await getActiveStageLabels();
+  for (const stage of stageLabels) pipeline[stage] = 0;
   for (const row of byStatus) {
     const stage = normalizeStageLabel(row._id);
     pipeline[stage] = (pipeline[stage] || 0) + row.count;
@@ -219,7 +221,7 @@ async function buildCreReport({ creId, year } = {}) {
         : null,
       createdAt: l.createdAt,
     })),
-    stages: CRM_LEAD_STAGES,
+    stages: stageLabels,
   };
 }
 

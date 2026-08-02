@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
-  Tag, Bell, Home, Image,
+  Tag, Bell, Home, Image, Layers,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield
 } from "lucide-react";
@@ -52,6 +52,8 @@ const coreNavItems = [
   { label: "Calendar",  icon: Clock,           path: "/admin/calendar" },
   { label: "Homepage",  icon: Home,            path: "/admin/homepage" },
   { label: "Lead CRM",  icon: Users,           path: "/admin/crm/leads" },
+  { label: "Lead Stages", icon: Layers,        path: "/admin/crm/lead-stages" },
+  { label: "Pricing",   icon: Tag,             path: "/admin/pricing" },
   { label: "Products",  icon: Car,             path: "/admin/products" },
   { label: "Offers",    icon: Tag,             path: "/admin/offers" },
   { label: "Content",   icon: FileText,        path: "/admin/content" },
@@ -72,7 +74,6 @@ const feedbackNavItems = [
 
 const tdNavItems = [
   { label: "My Test Drives", icon: User,         path: "/admin/td/my-bookings", staff: true },
-  { label: "Lead Reports",    icon: BarChart3,    path: "/admin/td/leads/reports", staff: false },
   { label: "TD Bookings",    icon: CalendarCheck, path: "/admin/td/bookings",    staff: false },
   { label: "Reschedule History", icon: Clock, path: "/admin/td/reschedule-history", staff: false },
   { label: "Fleet Health",   icon: Gauge,         path: "/admin/td/fleet-health", staff: false },
@@ -81,8 +82,14 @@ const tdNavItems = [
   { label: "Demo Fleet",     icon: Gauge,         path: "/admin/td/vehicles",    staff: false },
   { label: "Model Master",   icon: Car,           path: "/admin/td/models",      staff: false },
   { label: "Vehicle Stock",  icon: Warehouse,     path: "/admin/stock",          staff: false },
-  { label: "TD Reports",     icon: BarChart3,     path: "/admin/td/reports",     staff: false },
   { label: "Slot Config",    icon: Building2,     path: "/admin/td/config",      staff: false },
+];
+
+const reportsNavItems = [
+  { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: false },
+  { label: "TD Reports", icon: BarChart3, path: "/admin/td/reports", staff: false },
+  { label: "Delivery Reports", icon: PackageCheck, path: "/admin/reports/deliveries", staff: false },
+  { label: "My Dashboard (performance)", icon: LayoutDashboard, path: "/admin/my-dashboard", staff: true },
 ];
 
 type HeaderNotification = {
@@ -107,6 +114,14 @@ const AdminLayout = () => {
       (window.location.pathname.startsWith("/admin/td") ||
         window.location.pathname.startsWith("/admin/stock")),
   );
+  const [reportsMenuOpen, setReportsMenuOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (window.location.pathname.startsWith("/admin/reports") ||
+        window.location.pathname.startsWith("/admin/td/leads/reports") ||
+        window.location.pathname.startsWith("/admin/td/reports") ||
+        window.location.pathname === "/admin/my-dashboard"),
+  );
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -121,6 +136,14 @@ const AdminLayout = () => {
       location.pathname.startsWith("/admin/stock")
     ) {
       setTdMenuOpen(true);
+    }
+    if (
+      location.pathname.startsWith("/admin/reports") ||
+      location.pathname.startsWith("/admin/td/leads/reports") ||
+      location.pathname.startsWith("/admin/td/reports") ||
+      location.pathname === "/admin/my-dashboard"
+    ) {
+      setReportsMenuOpen(true);
     }
   }, [location.pathname]);
   const fullAdmin = canAccessFullAdmin(adminUser);
@@ -291,10 +314,16 @@ const AdminLayout = () => {
   };
 
   const visibleTdItems = tdNavItems.filter((item) => (item.staff || fullAdmin) && canSeePath(item.path));
+  const visibleReportsItems = reportsNavItems.filter(
+    (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
+  );
   const visibleFeedbackItems = feedbackNavItems.filter((item) => canSeePath(item.path));
   const visibleCoreItems = [
-    // Restricted users granted the staff portal see My Dashboard alongside core modules.
-    ...(restrictedModules && canSeePath("/admin/my-dashboard")
+    // Restricted users granted the staff portal see My Dashboard alongside core modules
+    // when Reports group is not visible (e.g. only my_dashboard + CRM).
+    ...(restrictedModules &&
+    canSeePath("/admin/my-dashboard") &&
+    !visibleReportsItems.some((i) => i.path === "/admin/my-dashboard")
       ? [{ label: "My Dashboard", icon: LayoutDashboard, path: "/admin/my-dashboard" }]
       : []),
     ...coreNavItems.filter((item) => canSeePath(item.path)),
@@ -440,6 +469,53 @@ const AdminLayout = () => {
                       </Link>
                     );
                   })}
+                </div>
+              )}
+
+              {visibleReportsItems.length > 0 && (
+                <div className="pt-0.5">
+                  <div className="mx-1 my-1 border-t border-border/50" />
+                  <button
+                    type="button"
+                    onClick={() => setReportsMenuOpen((o) => !o)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                      location.pathname.startsWith("/admin/reports") ||
+                      location.pathname.startsWith("/admin/td/leads/reports") ||
+                      location.pathname.startsWith("/admin/td/reports") ||
+                      location.pathname === "/admin/my-dashboard"
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                    }`}
+                    aria-expanded={reportsMenuOpen}
+                  >
+                    <BarChart3 className="h-4 w-4 shrink-0 opacity-90" />
+                    <span className="truncate flex-1 text-left">Reports</span>
+                    <ChevDown
+                      className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${reportsMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {reportsMenuOpen ? (
+                    <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
+                      {visibleReportsItems.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
