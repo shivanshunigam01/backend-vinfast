@@ -45,6 +45,7 @@ const VINFAST_MPV7_DISCLAIMER =
 const specRows: [string, string][] = [
   ["Overall dimension (LxWxH) (mm)", "4740 x 1872 x 1734"],
   ["Wheel base (mm)", "2840 mm"],
+  ["Range (ARAI)", "517 km"],
   ["Acceleration (0-100 kph) (s)", "< 10s"],
   ["Regeneration brake mode", "Off, Low, Medium, High"],
   ["Selectable driving mode", "Eco/Normal/Sport"],
@@ -61,9 +62,9 @@ const specRows: [string, string][] = [
 ];
 
 const mpv7HighlightTriplet: { label: string; value: string }[] = [
-  { label: "Wheel base", value: "2840 mm" },
+  { label: "Range (ARAI)", value: "517 km" },
   { label: "Battery Capacity", value: "60.13 kWh" },
-  { label: "Wheel & Tyre", value: "R19" },
+  { label: "Wheel base", value: "2840 mm" },
 ];
 
 const inputClass =

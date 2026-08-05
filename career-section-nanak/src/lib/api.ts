@@ -242,6 +242,52 @@ export async function staffLogin(email: string, password: string): Promise<{ tok
   return { token: json.token as string, admin: json.admin as Record<string, unknown> };
 }
 
+async function staffForgotPost<T>(path: string, body: unknown): Promise<T> {
+  if (!API_BASE) {
+    throw new ApiRequestError(
+      "API is not configured. Set VITE_API_URL in .env (must end with /api/v1).",
+      0,
+    );
+  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await parseJson(res);
+  if (!res.ok) {
+    throw new ApiRequestError(
+      String(json.message ?? "Request failed"),
+      res.status,
+      json.errors as ApiRequestError["errors"],
+    );
+  }
+  return json.data as T;
+}
+
+export async function staffForgotSendOtp(mobile: string) {
+  return staffForgotPost<{
+    sent: boolean;
+    mobileMasked: string;
+    resendCooldownSec: number;
+    maxAttempts: number;
+  }>("/admin/auth/staff-forgot/send-otp", { mobile });
+}
+
+export async function staffForgotVerifyOtp(mobile: string, code: string) {
+  return staffForgotPost<{ resetToken: string }>("/admin/auth/staff-forgot/verify-otp", {
+    mobile,
+    code,
+  });
+}
+
+export async function staffForgotResetPassword(resetToken: string, newPassword: string) {
+  return staffForgotPost<{ ok: boolean }>("/admin/auth/staff-forgot/reset", {
+    resetToken,
+    newPassword,
+  });
+}
+
 export async function adminMe(): Promise<unknown> {
   const { res, json } = await adminRequest("/admin/auth/me");
   assertOk(res, json);

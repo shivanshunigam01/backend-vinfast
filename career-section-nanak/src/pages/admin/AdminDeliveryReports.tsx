@@ -9,6 +9,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import { resolvePeriodRange } from "@/lib/reportPeriod";
 import { formatApiErrors } from "@/lib/api";
 import { fetchDeliveryReport, type DeliveryReport } from "@/lib/deliveryReportApi";
 
@@ -42,9 +43,10 @@ function downloadCsv(report: DeliveryReport) {
 }
 
 export default function AdminDeliveryReports() {
-  const [period, setPeriod] = useState<ReportPeriod>("monthly");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const initial = resolvePeriodRange({ period: "monthly" });
+  const [period, setPeriod] = useState<ReportPeriod>(initial.period);
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
   const [data, setData] = useState<DeliveryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -122,11 +124,7 @@ export default function AdminDeliveryReports() {
       <Card className="bg-card border-border/50 p-4">
         <ReportPeriodPresets
           value={period}
-          onChange={(p) => {
-            setPeriod(p);
-            setFrom("");
-            setTo("");
-          }}
+          onChange={setPeriod}
           from={from}
           to={to}
           onRangeChange={({ from: f, to: t }) => {

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import { resolvePeriodRange } from "@/lib/reportPeriod";
 import { formatApiErrors, adminGet } from "@/lib/api";
 import { getAdminUser } from "@/lib/adminAuth";
 import {
@@ -324,9 +325,10 @@ export default function AdminExecutiveDashboard() {
   const adminUser = getAdminUser();
   const selfId = String(adminUser?._id || "");
   const [year, setYear] = useState(new Date().getFullYear());
-  const [period, setPeriod] = useState<ReportPeriod>("monthly");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const initialRange = resolvePeriodRange({ period: "monthly" });
+  const [period, setPeriod] = useState<ReportPeriod>(initialRange.period);
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const [managerTab, setManagerTab] = useState("team");
   const [data, setData] = useState<MyDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1241,13 +1243,10 @@ export default function AdminExecutiveDashboard() {
       <Card className="bg-card border-border/50 p-4">
         <ReportPeriodPresets
           value={period}
-          onChange={(p) => {
-            setPeriod(p);
-            setFrom("");
-            setTo("");
-          }}
+          onChange={setPeriod}
           from={from}
           to={to}
+          year={year}
           onRangeChange={({ from: f, to: t }) => {
             setFrom(f);
             setTo(t);

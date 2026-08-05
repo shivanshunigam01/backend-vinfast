@@ -2,8 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { resolvePeriodRange, type ReportPeriod } from "@/lib/reportPeriod";
 
-export type ReportPeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+export type { ReportPeriod };
 
 const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
   { value: "daily", label: "Daily" },
@@ -19,6 +20,8 @@ type Props = {
   from?: string;
   to?: string;
   onRangeChange?: (range: { from: string; to: string }) => void;
+  /** Optional calendar year used when selecting Yearly. */
+  year?: number;
   className?: string;
 };
 
@@ -28,8 +31,20 @@ export default function ReportPeriodPresets({
   from = "",
   to = "",
   onRangeChange,
+  year,
   className,
 }: Props) {
+  const applyPeriod = (period: ReportPeriod) => {
+    const range = resolvePeriodRange({ period, year });
+    onChange(period);
+    onRangeChange?.({ from: range.from, to: range.to });
+  };
+
+  const resetToPeriod = () => {
+    const range = resolvePeriodRange({ period: value, year });
+    onRangeChange?.({ from: range.from, to: range.to });
+  };
+
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       <div className="flex flex-wrap gap-1.5">
@@ -39,7 +54,7 @@ export default function ReportPeriodPresets({
             type="button"
             size="sm"
             variant={value === opt.value ? "default" : "outline"}
-            onClick={() => onChange(opt.value)}
+            onClick={() => applyPeriod(opt.value)}
           >
             {opt.label}
           </Button>
@@ -71,17 +86,15 @@ export default function ReportPeriodPresets({
               className="w-[160px] bg-background h-9"
             />
           </div>
-          {(from || to) ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              onClick={() => onRangeChange({ from: "", to: "" })}
-            >
-              Clear dates
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={resetToPeriod}
+          >
+            Reset to {value}
+          </Button>
         </div>
       ) : null}
     </div>

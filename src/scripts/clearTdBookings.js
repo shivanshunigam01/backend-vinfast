@@ -11,6 +11,9 @@ const connectDB = require('../config/db');
 require('../models/tdModels');
 const TDBooking = require('../models/TDBooking');
 const TDFeedback = require('../models/TDFeedback');
+const TestDrive = require('../models/TestDrive');
+const TDLog = require('../models/TDLog');
+const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete');
 
 (async () => {
   try {
@@ -23,16 +26,29 @@ const TDFeedback = require('../models/TDFeedback');
 
     await connectDB();
 
-    const [bookingCount, feedbackCount] = await Promise.all([
+    const bookings = await TDBooking.find({}).select('_id testDriveId').lean();
+    const [bookingCount, feedbackCount, logCount, testDriveCount] = await Promise.all([
       TDBooking.countDocuments(),
       TDFeedback.countDocuments(),
+      TDLog.countDocuments(),
+      TestDrive.countDocuments(),
     ]);
 
-    const feedbackResult = await TDFeedback.deleteMany({});
-    const bookingResult = await TDBooking.deleteMany({});
+    if (bookings.length) {
+      await cascadeDeleteBookingRelated(bookings);
+    }
 
-    console.log(`Deleted ${feedbackResult.deletedCount} TD feedback record(s) (had ${feedbackCount}).`);
+    const [bookingResult, feedbackResult, logResult, testDriveResult] = await Promise.all([
+      TDBooking.deleteMany({}),
+      TDFeedback.deleteMany({}),
+      TDLog.deleteMany({}),
+      TestDrive.deleteMany({}),
+    ]);
+
     console.log(`Deleted ${bookingResult.deletedCount} TD booking(s) (had ${bookingCount}).`);
+    console.log(`Deleted ${feedbackResult.deletedCount} feedback (had ${feedbackCount}).`);
+    console.log(`Deleted ${logResult.deletedCount} TD log(s) (had ${logCount}).`);
+    console.log(`Deleted ${testDriveResult.deletedCount} TestDrive(s) (had ${testDriveCount}).`);
     process.exit(0);
   } catch (error) {
     console.error('Failed to clear TD bookings:', error.message);

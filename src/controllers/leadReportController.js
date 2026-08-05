@@ -45,7 +45,7 @@ exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
 
   // CRE "My Dashboard" is their individual creator/assignment report — not assignee scope.
   if (isCreUser(req.admin)) {
-    const data = await buildCreReport({ creId: req.admin._id, year });
+    const data = await buildCreReport({ creId: req.admin._id, ...periodQuery, year });
     return successResponse(res, { ...data, reportType: 'cre' });
   }
 
@@ -75,6 +75,6 @@ exports.getCreReport = asyncHandler(async (req, res) => {
   }
 
   if (!creId) throw new ApiError(400, 'creId is required');
-  const data = await buildCreReport({ creId, year });
+  const data = await buildCreReport({ creId, ...readPeriodQuery(req), year });
   return successResponse(res, { ...data, reportType: 'cre' });
 });

@@ -365,7 +365,7 @@ export const compareModels: Record<CompareModelKey, CatalogModel> = {
           ex_showroom: "₹24.49L*",
           power: "150 kW",
           torque: "—",
-          range_midc: "—",
+          range_midc: "517 km (ARAI)",
           accel: "< 10s",
           battery: "60.13 kWh",
           driveline: "FWD",

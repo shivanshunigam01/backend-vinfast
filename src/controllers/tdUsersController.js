@@ -50,6 +50,7 @@ function formatStaff(doc) {
     _id: plain._id,
     name: plain.name,
     email: plain.email,
+    mobile: plain.mobile || null,
     role: plain.role,
     designation: plain.designation,
     designationLabel: DESIGNATION_LABELS[plain.designation] || plain.designation,
@@ -62,6 +63,12 @@ function formatStaff(doc) {
     allowedActions: Array.isArray(plain.allowedActions) ? plain.allowedActions : [],
     createdAt: plain.createdAt,
   };
+}
+
+function normalizeStaffMobile(raw) {
+  const d = String(raw || '').replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(d)) return null;
+  return d;
 }
 
 /**
@@ -152,6 +159,7 @@ exports.createUser = asyncHandler(async (req, res) => {
   const {
     name,
     email,
+    mobile,
     password,
     designation,
     role,
@@ -164,6 +172,10 @@ exports.createUser = asyncHandler(async (req, res) => {
   if (!name || !email) throw new ApiError(400, 'Name and email are required');
   if (!password || String(password).length < 8) {
     throw new ApiError(400, 'Password must be at least 8 characters');
+  }
+  const mobile10 = normalizeStaffMobile(mobile);
+  if (!mobile10) {
+    throw new ApiError(400, 'Valid 10-digit WhatsApp mobile number is required');
   }
 
   const resolvedDesignation = resolveDesignation(designation || 'sales_executive');
@@ -191,6 +203,9 @@ exports.createUser = asyncHandler(async (req, res) => {
   const exists = await TDStaff.findOne({ email: String(email).trim().toLowerCase() });
   if (exists) throw new ApiError(409, 'Email already registered');
 
+  const mobileTaken = await TDStaff.findOne({ mobile: mobile10 });
+  if (mobileTaken) throw new ApiError(409, 'This WhatsApp mobile is already registered to another user');
+
   let reportsToId = null;
   if (reportsTo) {
     const manager = await TDStaff.findById(reportsTo);
@@ -201,6 +216,7 @@ exports.createUser = asyncHandler(async (req, res) => {
   const doc = await TDStaff.create({
     name: String(name).trim(),
     email: String(email).trim().toLowerCase(),
+    mobile: mobile10,
     password: String(password),
     designation: resolvedDesignation,
     role: resolvedRole,
@@ -229,6 +245,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   const {
     name,
     email,
+    mobile,
     password,
     designation,
     role,
@@ -240,6 +257,15 @@ exports.updateUser = asyncHandler(async (req, res) => {
   } = req.body || {};
   if (name !== undefined) doc.name = String(name).trim();
   if (email !== undefined) doc.email = String(email).trim().toLowerCase();
+  if (mobile !== undefined) {
+    const mobile10 = normalizeStaffMobile(mobile);
+    if (!mobile10) {
+      throw new ApiError(400, 'Valid 10-digit WhatsApp mobile number is required');
+    }
+    const mobileTaken = await TDStaff.findOne({ mobile: mobile10, _id: { $ne: doc._id } });
+    if (mobileTaken) throw new ApiError(409, 'This WhatsApp mobile is already registered to another user');
+    doc.mobile = mobile10;
+  }
   if (wantsPassword) {
     const nextPassword = String(password).trim();
     if (nextPassword.length < 8) {

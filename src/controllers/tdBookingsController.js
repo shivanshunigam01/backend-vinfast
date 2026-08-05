@@ -12,6 +12,7 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { ensureBookingsCustomers, ensureBookingCustomer } = require('../utils/tdCustomerResolver');
 const { syncAllLegacyTestDrives } = require('../utils/tdBookingSync');
+const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete');
 const {
   isExecutiveScopedUser,
   isTeamScopedUser,
@@ -509,6 +510,7 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
 /**
  * Permanently remove a junk/incorrect booking from the database.
  * Managers/superadmins only. Releases any BOOKED demo vehicle back to AVAILABLE.
+ * Also removes linked TestDrive / feedback / logs so sync cannot recreate the booking.
  */
 exports.deleteBooking = asyncHandler(async (req, res) => {
   const designation = String(req.admin.designation || '').toLowerCase();
@@ -542,6 +544,7 @@ exports.deleteBooking = asyncHandler(async (req, res) => {
   }
 
   const bookingId = doc.bookingId;
+  await cascadeDeleteBookingRelated(doc);
   await doc.deleteOne();
   return successResponse(res, { _id: doc._id, bookingId }, `Booking ${bookingId} deleted`);
 });
@@ -596,6 +599,7 @@ exports.bulkDeleteBookings = asyncHandler(async (req, res) => {
 
   const deleteIds = toDelete.map((d) => d._id);
   if (deleteIds.length) {
+    await cascadeDeleteBookingRelated(toDelete);
     await TDBooking.deleteMany({ _id: { $in: deleteIds } });
   }
 

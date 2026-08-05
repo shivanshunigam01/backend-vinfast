@@ -7,17 +7,18 @@ const TDStaff = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { toObjectId } = require('./leadAssignment');
+const { resolvePeriodRange } = require('./reportPeriod');
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function yearBounds(year) {
-  const y = Number(year) || new Date().getFullYear();
+  const range = resolvePeriodRange({ period: 'yearly', year });
   return {
-    year: y,
-    from: new Date(`${y}-01-01T00:00:00.000Z`),
-    to: new Date(`${y}-12-31T23:59:59.999Z`),
-    fromStr: `${y}-01-01`,
-    toStr: `${y}-12-31`,
+    year: range.year,
+    from: range.fromDate,
+    to: range.toDate,
+    fromStr: range.from,
+    toStr: range.to,
   };
 }
 
@@ -30,7 +31,7 @@ function countMap(rows) {
   return out;
 }
 
-async function buildCreReport({ creId, year } = {}) {
+async function buildCreReport({ creId, year, period, from, to } = {}) {
   const creObjectId = toObjectId(creId);
   if (!creObjectId) {
     throw new Error('CRE id is required');
@@ -39,7 +40,19 @@ async function buildCreReport({ creId, year } = {}) {
   const cre = await TDStaff.findById(creObjectId).select('name email designation role').lean();
   if (!cre) throw new Error('CRE user not found');
 
-  const current = yearBounds(year);
+  const range = resolvePeriodRange({
+    period: period || (from || to ? undefined : 'yearly'),
+    from,
+    to,
+    year,
+  });
+  const current = {
+    year: range.year,
+    from: range.fromDate,
+    to: range.toDate,
+    fromStr: range.from,
+    toStr: range.to,
+  };
   const previous = yearBounds(current.year - 1);
   const baseMatch = { createdBy: creObjectId };
   const yearMatch = { ...baseMatch, createdAt: { $gte: current.from, $lte: current.to } };
@@ -182,7 +195,7 @@ async function buildCreReport({ creId, year } = {}) {
   return {
     year: current.year,
     compareYear: previous.year,
-    period: { from: current.fromStr, to: current.toStr },
+    period: { period: range.period, from: current.fromStr, to: current.toStr },
     comparePeriod: { from: previous.fromStr, to: previous.toStr },
     cre: {
       _id: String(cre._id),

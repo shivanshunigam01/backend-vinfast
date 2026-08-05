@@ -55,7 +55,7 @@ const BASE_MODELS: Omit<ModelCard, "price">[] = [
     href: "/models/mpv7",
     specs: [
       { icon: Battery, label: "Battery", value: "60.13 kWh" },
-      { icon: Gauge, label: "Max. power", value: "150 kW" },
+      { icon: Gauge, label: "Range", value: "517 km" },
       { icon: Zap, label: "0–100", value: "<10 sec" },
       { icon: Users, label: "Seats", value: "7" },
     ],

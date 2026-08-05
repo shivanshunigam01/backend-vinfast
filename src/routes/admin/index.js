@@ -3,6 +3,7 @@ const validate = require('../../middleware/validate');
 const { protect, authorize, requireModuleAction } = require('../../middleware/auth');
 const { requireModuleActionOrRoles, requireAnyModuleAction } = require('../../utils/modulePermissions');
 const authController = require('../../controllers/authController');
+const staffForgotPasswordController = require('../../controllers/staffForgotPasswordController');
 const dashboardController = require('../../controllers/dashboardController');
 const ctrl = require('../../controllers/adminResourceController');
 const metaLeadsController = require('../../controllers/metaLeadsController');
@@ -30,13 +31,31 @@ const testDriveFeedbackController = require('../../controllers/testDriveFeedback
 const calendarController = require('../../controllers/calendarController');
 const geocodeController = require('../../controllers/geocodeController');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
+const { otpSendLimiter, otpVerifyLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
 const { mongoIdParam, adminUserValidator, productValidator, mediaValidator, slideReorderValidator } = require('../../validators/adminValidators');
 
 // Auth — isolated portals (Admin vs Staff)
 router.post('/auth/login', loginValidator, validate, authController.adminLogin);
 router.post('/auth/staff-login', loginValidator, validate, authController.staffLogin);
+router.post(
+  '/auth/staff-forgot/send-otp',
+  otpSendLimiter,
+  staffForgotPasswordController.sendOtp,
+);
+router.post(
+  '/auth/staff-forgot/verify-otp',
+  otpVerifyLimiter,
+  staffForgotPasswordController.verifyOtp,
+);
+router.post(
+  '/auth/staff-forgot/reset',
+  otpVerifyLimiter,
+  staffForgotPasswordController.resetPassword,
+);
 router.get('/auth/me', protect, authController.me);
+router.put('/auth/profile', protect, authController.updateProfile);
+router.post('/auth/change-password', protect, authController.changePassword);
 
 /** Meta leads — no JWT (proxies META_LEADS_UPSTREAM_URL). Same as GET /api/v1/public/All_leads */
 router.get('/All_leads', metaLeadsLimiter, metaLeadsController.getAllMetaLeads);

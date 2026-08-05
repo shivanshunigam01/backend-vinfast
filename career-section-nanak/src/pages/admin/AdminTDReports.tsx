@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import { adminGet, formatApiErrors } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +13,8 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { toast } from "sonner";
 import { formatTime12h } from "@/lib/tdSlotSchedule";
+import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import { resolvePeriodRange } from "@/lib/reportPeriod";
 
 type AdminReport = {
   overview: {
@@ -143,8 +143,10 @@ function fmtDate(iso?: string) {
 export default function AdminTDReports() {
   const [data, setData] = useState<AdminReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const initialRange = resolvePeriodRange({ period: "monthly" });
+  const [period, setPeriod] = useState<ReportPeriod>(initialRange.period);
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupMode, setPopupMode] = useState<"bookings" | "feedback">("bookings");
@@ -243,16 +245,33 @@ export default function AdminTDReports() {
         </Button>
       </div>
 
-      <Card className="bg-card border-border/50 p-4">
-        {/* Phone: dates side by side, buttons full width below.
-            Tablet/desktop (sm+): dates and buttons aligned on one row. */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <div className="space-y-1.5 min-w-0"><Label className="text-xs">From Date</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full bg-secondary/50" /></div>
-          <div className="space-y-1.5 min-w-0"><Label className="text-xs">To Date</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full bg-secondary/50" /></div>
-          <div className="flex gap-3 col-span-2 sm:col-span-1 sm:self-end">
-            <Button onClick={() => void fetchReport()} className="bg-primary text-primary-foreground flex-1 sm:flex-none shrink-0">Apply Filter</Button>
-            <Button onClick={() => { setFrom(""); setTo(""); }} variant="outline" className="flex-1 sm:flex-none shrink-0">Clear</Button>
-          </div>
+      <Card className="bg-card border-border/50 p-4 space-y-4">
+        <ReportPeriodPresets
+          value={period}
+          onChange={setPeriod}
+          from={from}
+          to={to}
+          onRangeChange={({ from: f, to: t }) => {
+            setFrom(f);
+            setTo(t);
+          }}
+        />
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => void fetchReport()} className="bg-primary text-primary-foreground shrink-0">
+            Apply Filter
+          </Button>
+          <Button
+            onClick={() => {
+              const range = resolvePeriodRange({ period: "monthly" });
+              setPeriod(range.period);
+              setFrom(range.from);
+              setTo(range.to);
+            }}
+            variant="outline"
+            className="shrink-0"
+          >
+            Clear
+          </Button>
         </div>
       </Card>
 

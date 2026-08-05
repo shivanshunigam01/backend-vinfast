@@ -52,7 +52,12 @@ function getSessionStartedAt(): number | null {
 }
 
 /** Paths executives can access in the staff portal. */
-export const STAFF_PORTAL_PREFIXES = ["/admin/my-dashboard", "/admin/td/my-bookings", "/admin/crm/leads"] as const;
+export const STAFF_PORTAL_PREFIXES = [
+  "/admin/my-dashboard",
+  "/admin/td/my-bookings",
+  "/admin/crm/leads",
+  "/admin/account",
+] as const;
 
 export function isStaffPortalPath(pathname: string): boolean {
   return STAFF_PORTAL_PREFIXES.some((p) => pathname.startsWith(p));
@@ -126,6 +131,8 @@ export function canPerformManagerAction(
 export function isPathAllowed(user: AdminUser | null | undefined, pathname: string): boolean {
   const restricted = getRestrictedModules(user);
   if (!restricted) return true;
+  // Self-service account — available to every logged-in user
+  if (pathname.startsWith("/admin/account")) return true;
   if (ADMIN_MODULES.some(
     (m) => restricted.includes(m.key) && (pathname === m.path || pathname.startsWith(`${m.path}/`)),
   )) {
@@ -194,6 +201,16 @@ export function setAdminSession(token: string, admin: AdminUser) {
   localStorage.setItem(USER_KEY, JSON.stringify(admin));
   localStorage.setItem("admin_logged_in", "true");
   markAdminSessionStart();
+}
+
+/** Merge fields into the stored session user and notify the layout to refresh. */
+export function updateStoredAdminUser(partial: Partial<AdminUser>) {
+  if (typeof localStorage === "undefined") return;
+  const current = getAdminUser();
+  if (!current) return;
+  const next = { ...current, ...partial };
+  localStorage.setItem(USER_KEY, JSON.stringify(next));
+  window.dispatchEvent(new Event("vf-admin-user-updated"));
 }
 
 export function clearAdminSession() {

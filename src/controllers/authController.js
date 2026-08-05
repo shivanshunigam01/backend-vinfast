@@ -147,3 +147,79 @@ exports.login = asyncHandler(async (req, res) => {
 });
 
 exports.me = asyncHandler(async (req, res) => successResponse(res, req.admin));
+
+/** Update own profile (name only). Email, role, designation, and ACL stay admin-managed. */
+exports.updateProfile = asyncHandler(async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) {
+    throw new ApiError(400, 'Name is required');
+  }
+  if (name.length > 120) {
+    throw new ApiError(400, 'Name must be 120 characters or fewer');
+  }
+
+  if (req.admin.userType === 'tdstaff') {
+    const staff = await TDStaff.findById(req.admin._id);
+    if (!staff || !staff.active) {
+      throw new ApiError(401, 'Staff user not found or inactive');
+    }
+    staff.name = name;
+    await staff.save();
+    return successResponse(res, staffLoginPayload(staff), 'Profile updated');
+  }
+
+  const admin = await Admin.findById(req.admin._id);
+  if (!admin || !admin.active) {
+    throw new ApiError(401, 'Admin not found or inactive');
+  }
+  admin.name = name;
+  await admin.save();
+  return successResponse(res, adminLoginPayload(admin), 'Profile updated');
+});
+
+/** Change own password — requires current password. */
+exports.changePassword = asyncHandler(async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+
+  if (!currentPassword || !newPassword) {
+    throw new ApiError(400, 'Current password and new password are required');
+  }
+
+  const isStaff = req.admin.userType === 'tdstaff';
+  const minLen = isStaff ? 8 : 6;
+  if (newPassword.length < minLen) {
+    throw new ApiError(400, `New password must be at least ${minLen} characters`);
+  }
+  if (currentPassword === newPassword) {
+    throw new ApiError(400, 'New password must be different from the current password');
+  }
+
+  if (isStaff) {
+    const staff = await TDStaff.findById(req.admin._id).select('+password +passwordPlain');
+    if (!staff || !staff.active) {
+      throw new ApiError(401, 'Staff user not found or inactive');
+    }
+    const matches = await staff.comparePassword(currentPassword);
+    if (!matches) {
+      throw new ApiError(400, 'Current password is incorrect');
+    }
+    staff.password = newPassword;
+    staff.markModified('password');
+    await staff.save();
+    return successResponse(res, { ok: true }, 'Password updated');
+  }
+
+  const admin = await Admin.findById(req.admin._id).select('+password');
+  if (!admin || !admin.active) {
+    throw new ApiError(401, 'Admin not found or inactive');
+  }
+  const matches = await admin.comparePassword(currentPassword);
+  if (!matches) {
+    throw new ApiError(400, 'Current password is incorrect');
+  }
+  admin.password = newPassword;
+  admin.markModified('password');
+  await admin.save();
+  return successResponse(res, { ok: true }, 'Password updated');
+});

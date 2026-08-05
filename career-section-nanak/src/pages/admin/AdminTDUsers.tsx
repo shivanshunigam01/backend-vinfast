@@ -20,7 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff, KeyRound, Copy
+  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -35,6 +35,7 @@ type StaffUser = {
   _id: string;
   name: string;
   email: string;
+  mobile?: string | null;
   role: string;
   designation: string;
   designationLabel?: string;
@@ -65,6 +66,7 @@ const NO_ROLE = "__none__";
 const emptyForm = {
   name: "",
   email: "",
+  mobile: "",
   password: "",
   designation: "sales_executive" as string,
   customDesignation: "",
@@ -95,7 +97,6 @@ export default function AdminTDUsers() {
   const canUpdate = canPerformManagerAction(adminUser, "td_users", "update");
   const canDelete = canPerformManagerAction(adminUser, "td_users", "delete");
   const canViewPassword = canPerformManagerAction(adminUser, "td_users", "view_password");
-  const canResetPassword = canUpdate || canViewPassword;
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [managerOptions, setManagerOptions] = useState<StaffUser[]>([]);
   const [roleTemplates, setRoleTemplates] = useState<StaffRoleOption[]>([]);
@@ -109,12 +110,6 @@ export default function AdminTDUsers() {
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [revealLoadingId, setRevealLoadingId] = useState<string | null>(null);
   const [showFormPassword, setShowFormPassword] = useState(false);
-  const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
-  const [resetCustomPassword, setResetCustomPassword] = useState("");
-  const [resetUseCustom, setResetUseCustom] = useState(false);
-  const [resetResultPassword, setResetResultPassword] = useState<string | null>(null);
-  const [resetLoading, setResetLoading] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(true);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -201,6 +196,7 @@ export default function AdminTDUsers() {
       _id: user._id,
       name: user.name,
       email: user.email,
+      mobile: user.mobile || "",
       password: "",
       designation: isKnown ? user.designation : OTHER_DESIGNATION,
       customDesignation: isKnown ? "" : user.designation,
@@ -278,6 +274,11 @@ export default function AdminTDUsers() {
       toast.error("Name and email are required");
       return;
     }
+    const mobile10 = form.mobile.replace(/\D/g, "").slice(-10);
+    if (!/^[6-9]\d{9}$/.test(mobile10)) {
+      toast.error("Enter a valid 10-digit WhatsApp mobile number");
+      return;
+    }
     if (form._id && form.password && form.password.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
@@ -296,6 +297,7 @@ export default function AdminTDUsers() {
       const payload: Record<string, unknown> = {
         name: form.name.trim(),
         email: form.email.trim(),
+        mobile: mobile10,
         designation: isOtherDesignation ? form.customDesignation.trim() : form.designation,
         active: form.active,
         allowedModules: form.allowedModules,
@@ -363,49 +365,6 @@ export default function AdminTDUsers() {
       toast.error(formatApiErrors(e));
     } finally {
       setRevealLoadingId(null);
-    }
-  };
-
-  const openResetPassword = (user: StaffUser) => {
-    setResetTarget(user);
-    setResetCustomPassword("");
-    setResetUseCustom(false);
-    setResetResultPassword(null);
-    setShowResetPassword(true);
-  };
-
-  const closeResetPassword = () => {
-    setResetTarget(null);
-    setResetCustomPassword("");
-    setResetUseCustom(false);
-    setResetResultPassword(null);
-  };
-
-  const handleResetPassword = async () => {
-    if (!resetTarget) return;
-    if (resetUseCustom && resetCustomPassword.trim().length < 8) {
-      toast.error("Custom password must be at least 8 characters");
-      return;
-    }
-    setResetLoading(true);
-    try {
-      const body = resetUseCustom ? { newPassword: resetCustomPassword.trim() } : {};
-      const data = await adminPostJson<{ password: string }>(
-        `/admin/td/users/${resetTarget._id}/reset-password`,
-        body,
-      );
-      const nextPassword = String(data?.password || "");
-      if (!nextPassword) {
-        toast.error("Password reset succeeded but no password was returned");
-        return;
-      }
-      setResetResultPassword(nextPassword);
-      setRevealedPasswords((prev) => ({ ...prev, [resetTarget._id]: nextPassword }));
-      toast.success("Password reset — copy it now; it is shown only once");
-    } catch (e) {
-      toast.error(formatApiErrors(e));
-    } finally {
-      setResetLoading(false);
     }
   };
 
@@ -499,14 +458,19 @@ export default function AdminTDUsers() {
         <div className="grid gap-3">
           {filtered.map((user) => (
             <Card key={user._id} className="p-4 border-border/50 bg-card/50">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start gap-3 min-w-0">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
                     {user.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-foreground truncate">{user.name}</p>
                     <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                    {user.mobile ? (
+                      <p className="text-xs text-muted-foreground font-mono">+91 {user.mobile}</p>
+                    ) : (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">WhatsApp mobile not set</p>
+                    )}
                     {revealedPasswords[user._id] !== undefined && (
                       <button
                         type="button"
@@ -521,12 +485,23 @@ export default function AdminTDUsers() {
                       </button>
                     )}
                   </div>
+                  <Badge
+                    variant="outline"
+                    className={`shrink-0 ${user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}`}
+                  >
+                    {user.active ? "Active" : "Inactive"}
+                  </Badge>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline" className={DESIGNATION_COLORS[user.designation] || CUSTOM_DESIGNATION_COLOR}>
                     {user.designationLabel || designationLabel(user.designation)}
                   </Badge>
-                  {user.staffRole?.name ? (
+                  {user.staffRole?.name &&
+                  user.staffRole.name.trim().toLowerCase() !==
+                    String(user.designationLabel || designationLabel(user.designation))
+                      .trim()
+                      .toLowerCase() ? (
                     <Badge variant="outline" className="border-primary/30 text-primary">
                       <ShieldCheck className="mr-1 h-3 w-3" />
                       {user.staffRole.name}
@@ -541,9 +516,9 @@ export default function AdminTDUsers() {
                         : ""}
                     </Badge>
                   )}
-                  <Badge variant="outline" className={user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}>
-                    {user.active ? "Active" : "Inactive"}
-                  </Badge>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
                   {canViewPassword ? (
                     <Button
                       variant="outline"
@@ -559,16 +534,6 @@ export default function AdminTDUsers() {
                       ) : (
                         <Eye className="w-4 h-4" />
                       )}
-                    </Button>
-                  ) : null}
-                  {canResetPassword ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      title="Reset password"
-                      onClick={() => openResetPassword(user)}
-                    >
-                      <KeyRound className="w-4 h-4 mr-1" /> Reset Password
                     </Button>
                   ) : null}
                   {canUpdate ? (
@@ -619,6 +584,20 @@ export default function AdminTDUsers() {
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <div className="space-y-2">
+              <Label>WhatsApp mobile</Label>
+              <Input
+                type="tel"
+                inputMode="numeric"
+                value={form.mobile}
+                onChange={(e) => setForm({ ...form, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                placeholder="10-digit Indian mobile"
+                maxLength={10}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Required for employee forgot-password OTP on WhatsApp.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label>Password</Label>
               <div className="relative">
                 <Input
@@ -641,7 +620,7 @@ export default function AdminTDUsers() {
               {form._id ? (
                 <p className="text-[11px] text-muted-foreground">
                   Shown like name/email when a saved password exists. Edit and save to reset login credentials.
-                  Employee sign in at <span className="font-mono">/staff/login</span>.
+                  Employees can also reset via WhatsApp OTP at <span className="font-mono">/staff/login</span>.
                 </p>
               ) : null}
             </div>
@@ -800,99 +779,6 @@ export default function AdminTDUsers() {
               {form._id ? "Save changes" : "Create user"}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(resetTarget)}
-        onOpenChange={(open) => {
-          if (!open) closeResetPassword();
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset password</DialogTitle>
-          </DialogHeader>
-          {resetTarget ? (
-            <div className="space-y-4 pt-1">
-              <p className="text-sm text-muted-foreground">
-                Reset login credentials for{" "}
-                <span className="font-medium text-foreground">{resetTarget.name}</span>{" "}
-                (<span className="font-mono text-xs">{resetTarget.email}</span>).
-              </p>
-              {resetResultPassword ? (
-                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                  <p className="text-xs text-muted-foreground">
-                    New password (shown once). Copy and share with the employee securely.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate rounded bg-secondary/60 px-2 py-1.5 font-mono text-sm">
-                      {showResetPassword ? resetResultPassword : "••••••••••••"}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowResetPassword((v) => !v)}
-                      aria-label={showResetPassword ? "Hide password" : "Show password"}
-                    >
-                      {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(resetResultPassword);
-                        toast.success("Password copied");
-                      }}
-                    >
-                      <Copy className="h-4 w-4 mr-1" /> Copy
-                    </Button>
-                  </div>
-                  <Button className="w-full" variant="secondary" onClick={closeResetPassword}>
-                    Done
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={resetUseCustom}
-                      onCheckedChange={(v) => setResetUseCustom(v === true)}
-                    />
-                    Set a custom password
-                  </label>
-                  {resetUseCustom ? (
-                    <div className="space-y-2">
-                      <Label>New password</Label>
-                      <Input
-                        type="text"
-                        value={resetCustomPassword}
-                        onChange={(e) => setResetCustomPassword(e.target.value)}
-                        placeholder="Min 8 characters"
-                        autoComplete="new-password"
-                        className="font-mono"
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Leave unchecked to auto-generate a secure password.
-                    </p>
-                  )}
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1" onClick={closeResetPassword} disabled={resetLoading}>
-                      Cancel
-                    </Button>
-                    <Button className="flex-1" disabled={resetLoading} onClick={() => void handleResetPassword()}>
-                      {resetLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <KeyRound className="w-4 h-4 mr-2" />}
-                      Reset
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : null}
         </DialogContent>
       </Dialog>
 

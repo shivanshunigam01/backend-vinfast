@@ -19,6 +19,20 @@ const tdStaffSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    // WhatsApp-capable 10-digit Indian mobile (used for staff password-reset OTP).
+    mobile: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+      validate: {
+        validator(v) {
+          if (v == null || v === '') return true;
+          return /^[6-9]\d{9}$/.test(String(v));
+        },
+        message: 'Mobile must be a valid 10-digit Indian number',
+      },
+    },
     password: { type: String, required: true, minlength: 8, select: false },
     // Viewable copy of the password for the User Master "eye" feature.
     // Only exposed to managers/superadmins via GET /admin/td/users/:id/password.

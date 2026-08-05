@@ -44,6 +44,7 @@ import AdminProducts from "./pages/admin/AdminProducts";
 import AdminOffers from "./pages/admin/AdminOffers";
 import AdminContent from "./pages/admin/AdminContent";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminAccount from "./pages/admin/AdminAccount";
 import AdminHomepage from "./pages/admin/AdminHomepage";
 import AdminMedia from "./pages/admin/AdminMedia";
 import AdminMetaLeadCRM from "./pages/admin/AdminMetaLeadCRM";
@@ -153,6 +154,7 @@ const App = () => {
             <Route path="homepage" element={<AdminHomepage />} />
             <Route path="media" element={<AdminMedia />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="account" element={<AdminAccount />} />
 
             {/* Lead CRM module */}
             <Route path="my-dashboard" element={<AdminExecutiveDashboard />} />

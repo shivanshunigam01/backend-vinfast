@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatApiErrors } from "@/lib/api";
 import { fetchAssignableStaffUsers, type AssignableStaffUser } from "@/lib/leadCrmApi";
+import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import { resolvePeriodRange } from "@/lib/reportPeriod";
 import {
   fetchLeadAdminReport,
   type LeadAdminReport,
@@ -91,8 +92,10 @@ export default function AdminTDLeadReports() {
   const [staff, setStaff] = useState<AssignableStaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const initialRange = resolvePeriodRange({ period: "monthly" });
+  const [period, setPeriod] = useState<ReportPeriod>(initialRange.period);
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const [executiveId, setExecutiveId] = useState("all");
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
@@ -243,19 +246,21 @@ export default function AdminTDLeadReports() {
         </Button>
       </div>
 
-      <Card className="bg-card border-border/50 p-4">
+      <Card className="bg-card border-border/50 p-4 space-y-4">
+        <ReportPeriodPresets
+          value={period}
+          onChange={setPeriod}
+          from={from}
+          to={to}
+          onRangeChange={({ from: f, to: t }) => {
+            setFrom(f);
+            setTo(t);
+          }}
+        />
         {/* Phone: dates side by side, staff + buttons full width.
             Tablet (sm–lg): dates row, then staff + buttons aligned on one row.
             Desktop (lg+): everything on a single row. */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_1fr_1.25fr_auto] lg:items-end">
-          <div className="space-y-1.5 min-w-0">
-            <Label className="text-xs">From date</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full bg-secondary/50" />
-          </div>
-          <div className="space-y-1.5 min-w-0">
-            <Label className="text-xs">To date</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full bg-secondary/50" />
-          </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.25fr_auto] lg:items-end">
           <div className="space-y-1.5 min-w-0 col-span-2 sm:col-span-1 lg:col-span-1">
             <Label className="text-xs">Executive / staff</Label>
             <Select value={executiveId} onValueChange={setExecutiveId}>
@@ -274,7 +279,19 @@ export default function AdminTDLeadReports() {
           </div>
           <div className="flex gap-3 col-span-2 sm:col-span-1 sm:self-end lg:col-span-1">
             <Button onClick={() => void fetchReport()} className="bg-primary text-primary-foreground flex-1 lg:flex-none shrink-0">Apply</Button>
-            <Button onClick={() => { setFrom(""); setTo(""); setExecutiveId("all"); }} variant="outline" className="flex-1 lg:flex-none shrink-0">Clear</Button>
+            <Button
+              onClick={() => {
+                const range = resolvePeriodRange({ period: "monthly" });
+                setPeriod(range.period);
+                setFrom(range.from);
+                setTo(range.to);
+                setExecutiveId("all");
+              }}
+              variant="outline"
+              className="flex-1 lg:flex-none shrink-0"
+            >
+              Clear
+            </Button>
           </div>
         </div>
       </Card>

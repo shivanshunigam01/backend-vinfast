@@ -1316,6 +1316,17 @@ export default function AdminTDBookings() {
                             }}
                           />
                         )}
+                        {canDelete ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={actionLoading}
+                            onClick={() => setDeleteDialog(selected)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" /> Delete record
+                          </Button>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-3">

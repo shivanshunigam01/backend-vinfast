@@ -127,8 +127,14 @@ const AdminLayout = () => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifRev, setNotifRev] = useState(0);
 
-  const adminUser = getAdminUser();
+  const [adminUser, setAdminUser] = useState(() => getAdminUser());
   const fieldStaff = isFieldStaffUser(adminUser);
+
+  useEffect(() => {
+    const syncUser = () => setAdminUser(getAdminUser());
+    window.addEventListener("vf-admin-user-updated", syncUser);
+    return () => window.removeEventListener("vf-admin-user-updated", syncUser);
+  }, []);
 
   useEffect(() => {
     if (
@@ -696,6 +702,9 @@ const AdminLayout = () => {
                 onClick={() => navigate(getAdminLoginRedirect(adminUser))}
               >
                 <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/admin/account")}>
+                <User className="mr-2 h-4 w-4" /> My Account
               </DropdownMenuItem>
               {fullAdmin && canSeePath("/admin/settings") && (
                 <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/admin/settings")}>
