@@ -20,7 +20,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff
+  Users, Search, RefreshCw, Loader2, Plus, Edit2, UserCircle2, Trash2, ShieldCheck, Eye, EyeOff, UserX, UserCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/lib/staffRoles";
 import { MODULE_GROUPS, modulesForGroup, actionToken, ACTION_LABELS, allActionTokensForModules, type AdminModuleKey, type AdminModuleAction } from "@/lib/adminModules";
 import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type StaffUser = {
   _id: string;
@@ -90,6 +91,26 @@ const DESIGNATION_COLORS: Record<string, string> = {
 };
 
 const CUSTOM_DESIGNATION_COLOR = "bg-teal-400/10 text-teal-400 border-teal-400/20";
+
+/** Collapse spaces/case so "CRE" / "cre" / "Sales Executive" don't double-badge. */
+function normalizeLabel(value: string | null | undefined): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function isDuplicateRoleBadge(
+  designation: string,
+  designationLabelText: string | null | undefined,
+  roleName: string | null | undefined,
+): boolean {
+  if (!roleName?.trim()) return true;
+  const role = normalizeLabel(roleName);
+  const desig = normalizeLabel(designationLabelText || designationLabel(designation));
+  const key = normalizeLabel(designation);
+  return role === desig || role === key;
+}
 
 export default function AdminTDUsers() {
   const adminUser = getAdminUser();
@@ -456,16 +477,30 @@ export default function AdminTDUsers() {
         </Card>
       ) : (
         <div className="grid gap-3">
-          {filtered.map((user) => (
-            <Card key={user._id} className="p-4 border-border/50 bg-card/50">
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start gap-3 min-w-0">
+          {filtered.map((user) => {
+            const desigText = user.designationLabel || designationLabel(user.designation);
+            const showRoleTemplate =
+              Boolean(user.staffRole?.name) &&
+              !isDuplicateRoleBadge(user.designation, desigText, user.staffRole?.name);
+
+            return (
+            <Card key={user._id} className="p-4 border-border/50 bg-card/50 overflow-hidden">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
                     {user.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground truncate">{user.name}</p>
-                    <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-foreground break-words">{user.name}</p>
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 ${user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}`}
+                      >
+                        {user.active ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground break-all">{user.email}</p>
                     {user.mobile ? (
                       <p className="text-xs text-muted-foreground font-mono">+91 {user.mobile}</p>
                     ) : (
@@ -474,7 +509,7 @@ export default function AdminTDUsers() {
                     {revealedPasswords[user._id] !== undefined && (
                       <button
                         type="button"
-                        className="text-xs font-mono text-primary truncate hover:underline"
+                        className="text-xs font-mono text-primary break-all hover:underline text-left"
                         title="Click to copy"
                         onClick={() => {
                           void navigator.clipboard?.writeText(revealedPasswords[user._id]);
@@ -484,88 +519,108 @@ export default function AdminTDUsers() {
                         Password: {revealedPasswords[user._id]}
                       </button>
                     )}
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={`shrink-0 ${user.active ? "border-green-400/30 text-green-400" : "border-red-400/30 text-red-400"}`}
-                  >
-                    {user.active ? "Active" : "Inactive"}
-                  </Badge>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className={DESIGNATION_COLORS[user.designation] || CUSTOM_DESIGNATION_COLOR}>
-                    {user.designationLabel || designationLabel(user.designation)}
-                  </Badge>
-                  {user.staffRole?.name &&
-                  user.staffRole.name.trim().toLowerCase() !==
-                    String(user.designationLabel || designationLabel(user.designation))
-                      .trim()
-                      .toLowerCase() ? (
-                    <Badge variant="outline" className="border-primary/30 text-primary">
-                      <ShieldCheck className="mr-1 h-3 w-3" />
-                      {user.staffRole.name}
-                    </Badge>
-                  ) : null}
-                  {(user.allowedModules?.length ?? 0) > 0 && (
-                    <Badge variant="outline" className="border-primary/30 text-primary">
-                      <ShieldCheck className="mr-1 h-3 w-3" />
-                      {user.allowedModules!.length} module{user.allowedModules!.length === 1 ? "" : "s"}
-                      {(user.allowedActions?.length ?? 0) > 0
-                        ? ` · ${user.allowedActions!.length} action${user.allowedActions!.length === 1 ? "" : "s"}`
-                        : ""}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
-                  {canViewPassword ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={revealLoadingId === user._id}
-                      title={revealedPasswords[user._id] !== undefined ? "Hide password" : "View password"}
-                      onClick={() => void toggleRevealPassword(user)}
-                    >
-                      {revealLoadingId === user._id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : revealedPasswords[user._id] !== undefined ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <Badge variant="outline" className={DESIGNATION_COLORS[user.designation] || CUSTOM_DESIGNATION_COLOR}>
+                        {desigText}
+                      </Badge>
+                      {showRoleTemplate ? (
+                        <Badge variant="outline" className="border-primary/30 text-primary">
+                          <ShieldCheck className="mr-1 h-3 w-3" />
+                          {user.staffRole!.name}
+                        </Badge>
+                      ) : null}
+                      {(user.allowedModules?.length ?? 0) > 0 && (
+                        <Badge variant="outline" className="border-primary/30 text-primary">
+                          <ShieldCheck className="mr-1 h-3 w-3" />
+                          {user.allowedModules!.length} module{user.allowedModules!.length === 1 ? "" : "s"}
+                          {(user.allowedActions?.length ?? 0) > 0
+                            ? ` · ${user.allowedActions!.length} action${user.allowedActions!.length === 1 ? "" : "s"}`
+                            : ""}
+                        </Badge>
                       )}
-                    </Button>
-                  ) : null}
-                  {canUpdate ? (
-                    <Button variant="outline" size="sm" onClick={() => void openEdit(user)}>
-                      <Edit2 className="w-4 h-4 mr-1" /> Edit
-                    </Button>
-                  ) : null}
-                  {canUpdate ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={actionLoading}
-                      onClick={() => void toggleActive(user)}
-                    >
-                      {user.active ? "Deactivate" : "Activate"}
-                    </Button>
-                  ) : null}
-                  {canDelete ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={actionLoading}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setDeleteTarget(user)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" /> Delete
-                    </Button>
-                  ) : null}
+                    </div>
+                  </div>
                 </div>
+
+                <TooltipProvider delayDuration={200}>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
+                    {canViewPassword ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            disabled={revealLoadingId === user._id}
+                            onClick={() => void toggleRevealPassword(user)}
+                          >
+                            {revealLoadingId === user._id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : revealedPasswords[user._id] !== undefined ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {revealedPasswords[user._id] !== undefined ? "Hide password" : "View password"}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canUpdate ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => void openEdit(user)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Edit</TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canUpdate ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            disabled={actionLoading}
+                            onClick={() => void toggleActive(user)}
+                          >
+                            {user.active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{user.active ? "Deactivate" : "Activate"}</TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {canDelete ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={actionLoading}
+                            onClick={() => setDeleteTarget(user)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Delete</TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                  </div>
+                </TooltipProvider>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
