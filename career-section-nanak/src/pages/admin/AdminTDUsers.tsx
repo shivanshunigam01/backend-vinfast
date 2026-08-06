@@ -92,26 +92,6 @@ const DESIGNATION_COLORS: Record<string, string> = {
 
 const CUSTOM_DESIGNATION_COLOR = "bg-teal-400/10 text-teal-400 border-teal-400/20";
 
-/** Collapse spaces/case so "CRE" / "cre" / "Sales Executive" don't double-badge. */
-function normalizeLabel(value: string | null | undefined): string {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
-}
-
-function isDuplicateRoleBadge(
-  designation: string,
-  designationLabelText: string | null | undefined,
-  roleName: string | null | undefined,
-): boolean {
-  if (!roleName?.trim()) return true;
-  const role = normalizeLabel(roleName);
-  const desig = normalizeLabel(designationLabelText || designationLabel(designation));
-  const key = normalizeLabel(designation);
-  return role === desig || role === key;
-}
-
 export default function AdminTDUsers() {
   const adminUser = getAdminUser();
   const canCreate = canPerformManagerAction(adminUser, "td_users", "create");
@@ -479,9 +459,6 @@ export default function AdminTDUsers() {
         <div className="grid gap-3">
           {filtered.map((user) => {
             const desigText = user.designationLabel || designationLabel(user.designation);
-            const showRoleTemplate =
-              Boolean(user.staffRole?.name) &&
-              !isDuplicateRoleBadge(user.designation, desigText, user.staffRole?.name);
 
             return (
             <Card key={user._id} className="p-4 border-border/50 bg-card/50 overflow-hidden">
@@ -523,15 +500,8 @@ export default function AdminTDUsers() {
                       <Badge variant="outline" className={DESIGNATION_COLORS[user.designation] || CUSTOM_DESIGNATION_COLOR}>
                         {desigText}
                       </Badge>
-                      {showRoleTemplate ? (
-                        <Badge variant="outline" className="border-primary/30 text-primary">
-                          <ShieldCheck className="mr-1 h-3 w-3" />
-                          {user.staffRole!.name}
-                        </Badge>
-                      ) : null}
                       {(user.allowedModules?.length ?? 0) > 0 && (
-                        <Badge variant="outline" className="border-primary/30 text-primary">
-                          <ShieldCheck className="mr-1 h-3 w-3" />
+                        <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground">
                           {user.allowedModules!.length} module{user.allowedModules!.length === 1 ? "" : "s"}
                           {(user.allowedActions?.length ?? 0) > 0
                             ? ` · ${user.allowedActions!.length} action${user.allowedActions!.length === 1 ? "" : "s"}`
