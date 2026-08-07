@@ -13,6 +13,8 @@ const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { ensureBookingsCustomers, ensureBookingCustomer } = require('../utils/tdCustomerResolver');
 const { syncAllLegacyTestDrives } = require('../utils/tdBookingSync');
 const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete');
+const { recordBookingDeletes } = require('../utils/tdBookingDeleteAudit');
+const TDBookingDeleteAudit = require('../models/TDBookingDeleteAudit');
 const {
   isExecutiveScopedUser,
   isTeamScopedUser,
@@ -508,6 +510,43 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /admin/td/bookings/delete-audit — who deleted what, and when.
+ * Managers / superadmins / portal admins only.
+ */
+exports.listDeleteAudit = asyncHandler(async (req, res) => {
+  const designation = String(req.admin.designation || '').toLowerCase();
+  const managerDesignations = new Set([
+    'sales_manager',
+    'sales_head',
+    'branch_manager',
+    'gm',
+    'ceo',
+    'md',
+  ]);
+  const canView =
+    ['manager', 'superadmin'].includes(req.admin.role) ||
+    managerDesignations.has(designation) ||
+    req.admin.userType === 'admin';
+  if (!canView) {
+    throw new ApiError(403, 'Only managers and admins can view booking delete history');
+  }
+
+  const { page, limit, skip } = buildPagination(req);
+  const query = {};
+  if (req.query.mode) query.mode = String(req.query.mode).toLowerCase();
+  if (req.query.email) {
+    query.deletedByEmail = String(req.query.email).trim().toLowerCase();
+  }
+
+  const [docs, total] = await Promise.all([
+    TDBookingDeleteAudit.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    TDBookingDeleteAudit.countDocuments(query),
+  ]);
+
+  return successResponse(res, docs, undefined, 200, { page, limit, total });
+});
+
+/**
  * Permanently remove a junk/incorrect booking from the database.
  * Managers/superadmins only. Releases any BOOKED demo vehicle back to AVAILABLE.
  * Also removes linked TestDrive / feedback / logs so sync cannot recreate the booking.
@@ -546,6 +585,11 @@ exports.deleteBooking = asyncHandler(async (req, res) => {
   const bookingId = doc.bookingId;
   await cascadeDeleteBookingRelated(doc);
   await doc.deleteOne();
+  await recordBookingDeletes({
+    mode: 'single',
+    bookings: [doc],
+    admin: req.admin,
+  });
   return successResponse(res, { _id: doc._id, bookingId }, `Booking ${bookingId} deleted`);
 });
 
@@ -601,6 +645,13 @@ exports.bulkDeleteBookings = asyncHandler(async (req, res) => {
   if (deleteIds.length) {
     await cascadeDeleteBookingRelated(toDelete);
     await TDBooking.deleteMany({ _id: { $in: deleteIds } });
+    await recordBookingDeletes({
+      mode: 'bulk',
+      bookings: toDelete,
+      admin: req.admin,
+      requestedCount: ids.length,
+      skippedInProgress: skipped,
+    });
   }
 
   return successResponse(

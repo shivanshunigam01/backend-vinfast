@@ -22,6 +22,8 @@ const defaultSiteConfig = {
   limoGreenPrice: '₹22.99L*',
   vf7Range: '532 km',
   vf6Range: '468 km',
+  mpv7Range: '517 km (ARAI)',
+  limoGreenRange: '450 km',
 };
 
 const defaultDealerSettings = {
@@ -39,6 +41,21 @@ const defaultDealerSettings = {
 exports.getSiteConfig = asyncHandler(async (req, res) => {
   let doc = await SiteConfig.findOne();
   if (!doc) doc = await SiteConfig.create(defaultSiteConfig);
+  else {
+    const patch = {};
+    for (const [key, value] of Object.entries(defaultSiteConfig)) {
+      const current = doc[key];
+      if (current == null || String(current).trim() === '') {
+        if (['mpv7Range', 'limoGreenRange'].includes(key)) {
+          patch[key] = value;
+        }
+      }
+    }
+    if (Object.keys(patch).length) {
+      Object.assign(doc, patch);
+      await doc.save();
+    }
+  }
   const data = doc.toObject ? doc.toObject() : doc;
   return successResponse(res, {
     ...data,

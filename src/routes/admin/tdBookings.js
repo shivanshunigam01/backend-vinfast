@@ -21,6 +21,11 @@ router.post(
   requireModuleActionOrRoles('td_bookings', 'update', 'superadmin', 'manager'),
   tdBookingsController.bulkDeleteBookings,
 );
+router.get(
+  '/delete-audit',
+  requireModuleActionOrRoles('td_bookings', 'view', 'superadmin', 'manager'),
+  tdBookingsController.listDeleteAudit,
+);
 router.get('/reschedule/pending', tdRescheduleController.listPendingReschedules);
 router.get(
   '/reschedule/history',

@@ -8,6 +8,7 @@ require('./TDVehicle');
 require('./TDStaff');
 require('./StaffRole');
 require('./TDBooking');
+require('./TDBookingDeleteAudit');
 require('./TDSlotConfig');
 require('./TDFeedback');
 require('./TDLog');

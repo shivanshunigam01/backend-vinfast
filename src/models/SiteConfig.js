@@ -13,6 +13,8 @@ const siteConfigSchema = new mongoose.Schema(
     limoGreenPrice: { type: String, trim: true },
     vf7Range: { type: String, trim: true },
     vf6Range: { type: String, trim: true },
+    mpv7Range: { type: String, trim: true },
+    limoGreenRange: { type: String, trim: true },
     // Site-wide SEO defaults (served via GET /public/seo/global).
     defaultMetaTitle: { type: String, trim: true },
     defaultMetaDescription: { type: String, trim: true },

@@ -14,6 +14,7 @@ const TDFeedback = require('../models/TDFeedback');
 const TestDrive = require('../models/TestDrive');
 const TDLog = require('../models/TDLog');
 const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete');
+const { recordBookingDeletes } = require('../utils/tdBookingDeleteAudit');
 
 (async () => {
   try {
@@ -26,7 +27,7 @@ const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete
 
     await connectDB();
 
-    const bookings = await TDBooking.find({}).select('_id testDriveId').lean();
+    const bookings = await TDBooking.find({}).lean();
     const [bookingCount, feedbackCount, logCount, testDriveCount] = await Promise.all([
       TDBooking.countDocuments(),
       TDFeedback.countDocuments(),
@@ -35,6 +36,12 @@ const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete
     ]);
 
     if (bookings.length) {
+      await recordBookingDeletes({
+        mode: 'script',
+        bookings,
+        admin: null,
+        note: 'clearTdBookings.js (CLEAR_TD_BOOKINGS_CONFIRM=yes)',
+      });
       await cascadeDeleteBookingRelated(bookings);
     }
 

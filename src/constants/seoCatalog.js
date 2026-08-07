@@ -81,7 +81,7 @@ const SEO_MODELS = [
     seats: 7,
     variants: ['Standard'],
     priceKey: 'mpv7Price',
-    rangeKey: null,
+    rangeKey: 'mpv7Range',
     positioning: 'a spacious 7-seater electric MPV designed for large families and corporate fleets',
     primaryKeywords: [
       'VinFast MPV7',
@@ -110,7 +110,7 @@ const SEO_MODELS = [
     seats: 7,
     variants: ['Standard'],
     priceKey: 'limoGreenPrice',
-    rangeKey: null,
+    rangeKey: 'limoGreenRange',
     positioning: 'a premium 7-seater electric MPV built for executive travel, fleets and long family journeys',
     primaryKeywords: [
       'VinFast Limo Green',

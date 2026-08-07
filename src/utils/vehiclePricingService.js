@@ -6,8 +6,8 @@ const { buildDefaultPricingDocs, SLUG_ORDER } = require('./vehiclePricingDefault
 const SITE_CONFIG_FIELD_BY_SLUG = {
   vf6: { price: 'vf6Price', range: 'vf6Range' },
   vf7: { price: 'vf7Price', range: 'vf7Range' },
-  mpv7: { price: 'mpv7Price' },
-  'limo-green': { price: 'limoGreenPrice' },
+  mpv7: { price: 'mpv7Price', range: 'mpv7Range' },
+  'limo-green': { price: 'limoGreenPrice', range: 'limoGreenRange' },
 };
 
 /** Product slug aliases that should receive priceFrom when a pricing slug is updated. */
@@ -45,6 +45,17 @@ async function ensureDefaultPricing() {
     const exists = await VehiclePricing.exists({ slug: def.slug });
     if (!exists) {
       await VehiclePricing.create(def);
+      continue;
+    }
+    // Backfill missing range for MPV 7 / Limo Green (older seeds left range blank).
+    if (def.range) {
+      await VehiclePricing.updateOne(
+        {
+          slug: def.slug,
+          $or: [{ range: '' }, { range: null }, { range: { $exists: false } }],
+        },
+        { $set: { range: def.range } },
+      );
     }
   }
 }
