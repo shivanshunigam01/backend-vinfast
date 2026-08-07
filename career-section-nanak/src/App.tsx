@@ -70,6 +70,7 @@ import CustomerLayout from "./pages/customer/CustomerLayout";
 import CustomerBookings from "./pages/customer/CustomerBookings";
 import AdminCalendar from "./pages/admin/AdminCalendar";
 import AdminRescheduleHistory from "./pages/admin/AdminRescheduleHistory";
+import AdminTDDeleteHistory from "./pages/admin/AdminTDDeleteHistory";
 import AdminFleetHealth from "./pages/admin/AdminFleetHealth";
 
 const queryClient = new QueryClient();
@@ -171,6 +172,7 @@ const App = () => {
             <Route path="td/bookings" element={<AdminTDBookings />} />
             <Route path="td/my-bookings" element={<AdminTDMyBookings />} />
             <Route path="td/reschedule-history" element={<AdminRescheduleHistory />} />
+            <Route path="td/delete-history" element={<AdminTDDeleteHistory />} />
             <Route path="td/fleet-health" element={<AdminFleetHealth />} />
             <Route path="td/leads" element={<AdminTDLeads />} />
             <Route path="td/leads/reports" element={<AdminTDLeadReports />} />

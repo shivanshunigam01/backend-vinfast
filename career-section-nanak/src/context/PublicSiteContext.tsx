@@ -28,6 +28,8 @@ export type SiteConfigPublic = {
   limoGreenPrice: string;
   vf7Range: string;
   vf6Range: string;
+  mpv7Range: string;
+  limoGreenRange: string;
   /** Set by API from env when WhatsApp OTP is enabled on the server. */
   features?: { whatsappOtp?: boolean };
 };
@@ -55,6 +57,8 @@ const DEFAULT_SITE: SiteConfigPublic = {
   limoGreenPrice: "₹22.99L*",
   vf7Range: "532 km",
   vf6Range: "468 km",
+  mpv7Range: "517 km (ARAI)",
+  limoGreenRange: "450 km",
   features: { whatsappOtp: false },
 };
 
@@ -116,6 +120,8 @@ function mergeSite(doc: Record<string, unknown> | null): SiteConfigPublic {
     limoGreenPrice: coalesceStr(doc.limoGreenPrice, DEFAULT_SITE.limoGreenPrice),
     vf7Range: coalesceStr(doc.vf7Range, DEFAULT_SITE.vf7Range),
     vf6Range: coalesceStr(doc.vf6Range, DEFAULT_SITE.vf6Range),
+    mpv7Range: coalesceStr(doc.mpv7Range, DEFAULT_SITE.mpv7Range),
+    limoGreenRange: coalesceStr(doc.limoGreenRange, DEFAULT_SITE.limoGreenRange),
     features: {
       whatsappOtp: Boolean(featObj?.whatsappOtp),
     },

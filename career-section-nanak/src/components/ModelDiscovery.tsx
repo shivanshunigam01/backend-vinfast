@@ -55,7 +55,7 @@ const BASE_MODELS: Omit<ModelCard, "price">[] = [
     href: "/models/mpv7",
     specs: [
       { icon: Battery, label: "Battery", value: "60.13 kWh" },
-      { icon: Gauge, label: "Range", value: "517 km" },
+      { icon: Gauge, label: "Range", value: "517 km (ARAI)" },
       { icon: Zap, label: "0–100", value: "<10 sec" },
       { icon: Users, label: "Seats", value: "7" },
     ],
@@ -86,7 +86,16 @@ function slugMatchesHref(href: string, slug: string): boolean {
 function mergeModels(
   base: Omit<ModelCard, "price">[],
   apiList: Record<string, unknown>[] | null,
-  site: { vf7Price: string; vf6Price: string; mpv7Price: string; limoGreenPrice: string; vf7Range: string; vf6Range: string },
+  site: {
+    vf7Price: string;
+    vf6Price: string;
+    mpv7Price: string;
+    limoGreenPrice: string;
+    vf7Range: string;
+    vf6Range: string;
+    mpv7Range: string;
+    limoGreenRange: string;
+  },
 ): ModelCard[] {
   return base.map((m) => {
     const api = apiList?.find((p) => slugMatchesHref(m.href, String(p.slug ?? "")));
@@ -97,11 +106,13 @@ function mergeModels(
         : m.href.includes("limo-green")
           ? site.limoGreenPrice
           : site.vf6Price;
-    const siteRange = m.href.includes("mpv7") || m.href.includes("limo-green")
-      ? ""
-      : m.href.includes("vf7")
-        ? site.vf7Range
-        : site.vf6Range;
+    const siteRange = m.href.includes("mpv7")
+      ? site.mpv7Range
+      : m.href.includes("limo-green")
+        ? site.limoGreenRange
+        : m.href.includes("vf7")
+          ? site.vf7Range
+          : site.vf6Range;
     const price = api?.priceFrom ? String(api.priceFrom) : sitePrice;
     const image =
       api?.heroImage && String(api.heroImage).trim() ? String(api.heroImage) : m.image;
@@ -113,6 +124,7 @@ function mergeModels(
       if (spec.label !== "Range") return spec;
       /** VF 6 / VF 7 cards use fixed headline MIDC from BASE_MODELS; ignore CMS vf6Range / vf7Range so wrong admin values (e.g. 381 / 431 km) never override. */
       if (m.href.includes("/models/vf6") || m.href.includes("/models/vf7")) return spec;
+      /** MPV 7 / Limo Green show CMS ranges when set (Homepage → Display Prices & Stats). */
       return { ...spec, value: siteRange || spec.value };
     });
     return {

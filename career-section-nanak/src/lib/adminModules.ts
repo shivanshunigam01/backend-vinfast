@@ -115,6 +115,8 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
 
 /** Roles UI shares User Master ACL (td_users). */
 MODULE_BY_PATH["/admin/td/roles"] = "td_users";
+/** Delete audit trail shares TD Bookings ACL (td_bookings). */
+MODULE_BY_PATH["/admin/td/delete-history"] = "td_bookings";
 
 export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "Reports", "TD Management"] as const;
 

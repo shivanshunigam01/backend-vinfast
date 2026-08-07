@@ -44,6 +44,8 @@ interface SiteConfig {
   limoGreenPrice: string;
   vf7Range: string;
   vf6Range: string;
+  mpv7Range: string;
+  limoGreenRange: string;
 }
 
 const initialSlides: HeroSlide[] = [
@@ -71,6 +73,8 @@ const initialConfig: SiteConfig = {
   limoGreenPrice: "₹22.99L*",
   vf7Range: "532 km",
   vf6Range: "468 km",
+  mpv7Range: "517 km (ARAI)",
+  limoGreenRange: "450 km",
 };
 
 /** Empty shell until `/admin/homepage/*` loads — avoids flashing local defaults when API is configured. */
@@ -86,6 +90,8 @@ const emptySiteConfig: SiteConfig = {
   limoGreenPrice: "",
   vf7Range: "",
   vf6Range: "",
+  mpv7Range: "",
+  limoGreenRange: "",
 };
 
 const emptySlide: HeroSlide = {
@@ -137,6 +143,8 @@ function siteConfigFromApi(doc: Record<string, unknown>): SiteConfig {
     limoGreenPrice: String(doc.limoGreenPrice ?? initialConfig.limoGreenPrice),
     vf7Range: String(doc.vf7Range ?? initialConfig.vf7Range),
     vf6Range: String(doc.vf6Range ?? initialConfig.vf6Range),
+    mpv7Range: String(doc.mpv7Range ?? initialConfig.mpv7Range),
+    limoGreenRange: String(doc.limoGreenRange ?? initialConfig.limoGreenRange),
   };
 }
 
@@ -392,6 +400,14 @@ const AdminHomepage = () => {
               <div className="space-y-1.5">
                 <Label className="text-xs">VF 6 Range</Label>
                 <Input value={config.vf6Range} onChange={e => updateConfig("vf6Range", e.target.value)} className="bg-secondary/50" placeholder="468 km" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">MPV 7 Range</Label>
+                <Input value={config.mpv7Range} onChange={e => updateConfig("mpv7Range", e.target.value)} className="bg-secondary/50" placeholder="517 km (ARAI)" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Limo Green Range</Label>
+                <Input value={config.limoGreenRange} onChange={e => updateConfig("limoGreenRange", e.target.value)} className="bg-secondary/50" placeholder="450 km" />
               </div>
             </div>
           </Card>
