@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const STOCK_STATUSES = ['FRESH_STOCK', 'DEMO', 'RESERVED', 'SOLD', 'IN_TRANSIT'];
 const BATTERY_STATUSES = ['OK', 'CHARGING', 'LOW', 'FAULT'];
+const PDI_STATUSES = ['NONE', 'YARD_PENDING', 'YARD_PASSED', 'FINAL_PENDING', 'FINAL_PASSED'];
 
 /**
  * Dealer stock register. A stock unit can be tagged as a demo vehicle, which
@@ -25,8 +26,12 @@ const vehicleStockSchema = new mongoose.Schema(
     batteryStatus: { type: String, enum: BATTERY_STATUSES, default: 'OK' },
     location: { type: String, trim: true },
     status: { type: String, enum: STOCK_STATUSES, default: 'FRESH_STOCK', index: true },
+    pdiStatus: { type: String, enum: PDI_STATUSES, default: 'NONE', index: true },
     isDemo: { type: Boolean, default: false, index: true },
     demoVehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDVehicle' },
+    purchaseOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseOrder', index: true },
+    orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleOrder', index: true },
+    leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
     remarks: { type: String, trim: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
@@ -37,3 +42,4 @@ const vehicleStockSchema = new mongoose.Schema(
 module.exports = mongoose.model('VehicleStock', vehicleStockSchema);
 module.exports.STOCK_STATUSES = STOCK_STATUSES;
 module.exports.BATTERY_STATUSES = BATTERY_STATUSES;
+module.exports.PDI_STATUSES = PDI_STATUSES;

@@ -31,7 +31,7 @@ function countMap(rows) {
   return out;
 }
 
-async function buildCreReport({ creId, year, period, from, to } = {}) {
+async function buildCreReport({ creId, year, period, from, to, status, source } = {}) {
   const creObjectId = toObjectId(creId);
   if (!creObjectId) {
     throw new Error('CRE id is required');
@@ -55,6 +55,14 @@ async function buildCreReport({ creId, year, period, from, to } = {}) {
   };
   const previous = yearBounds(current.year - 1);
   const baseMatch = { createdBy: creObjectId };
+  const stageFilter = status ? String(status).trim() : '';
+  if (stageFilter && stageFilter.toLowerCase() !== 'all') {
+    baseMatch.status = stageFilter;
+  }
+  const sourceFilter = source ? String(source).trim() : '';
+  if (sourceFilter && sourceFilter.toLowerCase() !== 'all') {
+    baseMatch.source = sourceFilter;
+  }
   const yearMatch = { ...baseMatch, createdAt: { $gte: current.from, $lte: current.to } };
   const prevMatch = { ...baseMatch, createdAt: { $gte: previous.from, $lte: previous.to } };
 

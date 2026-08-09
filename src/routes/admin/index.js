@@ -139,6 +139,8 @@ router.use('/pricing', pricingRoutes);
 
 // Vehicle stock register with demo tagging (/api/v1/admin/stock/vehicles)
 router.use('/stock/vehicles', vehicleStockRoutes);
+// Stock-to-Delivery ops (/api/v1/admin/stock-delivery/*)
+router.use('/stock-delivery', require('./stockDelivery'));
 
 // Customer feedback form submissions (QR pages) — admin viewer
 router.get(

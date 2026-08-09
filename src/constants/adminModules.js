@@ -30,6 +30,7 @@ const ADMIN_MODULE_KEYS = [
   'td_vehicles',
   'td_models',
   'vehicle_stock',
+  'stock_delivery',
   'td_reports',
   'td_config',
   'calendar',
@@ -60,6 +61,7 @@ const ADMIN_MODULE_ACTIONS = {
   td_vehicles: ['view', 'create', 'update', 'delete'],
   td_models: ['view', 'create', 'update', 'delete'],
   vehicle_stock: ['view', 'create', 'update', 'delete', 'tag_demo'],
+  stock_delivery: ['view', 'create', 'update', 'delete', 'receive', 'allocate', 'pdi', 'deliver'],
   td_reports: ['view', 'export'],
   td_config: ['view', 'update'],
   calendar: ['view', 'update'],
@@ -85,6 +87,10 @@ const ACTION_LABELS = {
   approve: 'Approve',
   schedule_charge: 'Schedule charge',
   log_maintenance: 'Log maintenance',
+  receive: 'Receive stock',
+  allocate: 'Allocate VIN',
+  pdi: 'Perform PDI',
+  deliver: 'Deliver vehicle',
 };
 
 function actionToken(moduleKey, action) {

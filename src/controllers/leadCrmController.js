@@ -873,7 +873,7 @@ exports.getCrmStages = asyncHandler(async (req, res) => {
 
 exports.getCrmSources = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  return successResponse(res, ['Website', 'Meta Ads', 'Test Drive', 'Enquiry', 'Walk-in', 'Executive', 'Referral', 'WhatsApp']);
+  return successResponse(res, Lead.LEAD_SOURCES || []);
 });
 
 exports.createCrmLead = asyncHandler(async (req, res) => {

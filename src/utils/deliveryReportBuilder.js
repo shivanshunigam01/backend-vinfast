@@ -24,16 +24,22 @@ function sortedCountEntries(map) {
  * Delivery report: leads in Delivered stage, dated by
  * convertedAt || creSheet.deliveryDate || updatedAt.
  */
-async function buildDeliveryReport({ period, from, to, year } = {}) {
+async function buildDeliveryReport({ period, from, to, year, source } = {}) {
   const range = resolvePeriodRange({ period, from, to, year });
   const fromMs = range.fromDate.getTime();
   const toMs = range.toDate.getTime();
 
-  // Pull delivered leads (canonical + common aliases); filter by delivery date in JS.
-  const candidates = await Lead.find({
+  const leadMatch = {
     status: { $in: ['Delivered', 'delivered'] },
     isDuplicate: { $ne: true },
-  })
+  };
+  const sourceFilter = source ? String(source).trim() : '';
+  if (sourceFilter && sourceFilter.toLowerCase() !== 'all') {
+    leadMatch.source = sourceFilter;
+  }
+
+  // Pull delivered leads (canonical + common aliases); filter by delivery date in JS.
+  const candidates = await Lead.find(leadMatch)
     .populate('assignedTo', 'name email designation')
     .select(
       'name mobile model source status assignedTo convertedAt creSheet.deliveryDate updatedAt createdAt leadId',

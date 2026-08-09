@@ -51,11 +51,19 @@ function isConverted(status) {
   return CONVERTED_STATUSES.includes(normalizeStageLabel(status));
 }
 
-async function buildLeadAdminReport({ from, to, executiveId } = {}) {
+async function buildLeadAdminReport({ from, to, executiveId, status, source } = {}) {
   const leadDateFilter = buildLeadDateFilter(from, to);
   const leadQuery = { ...leadDateFilter };
   if (executiveId) {
     Object.assign(leadQuery, assignedToStaffFilter(executiveId));
+  }
+  const stageFilter = status ? String(status).trim() : '';
+  if (stageFilter && stageFilter.toLowerCase() !== 'all') {
+    leadQuery.status = stageFilter;
+  }
+  const sourceFilter = source ? String(source).trim() : '';
+  if (sourceFilter && sourceFilter.toLowerCase() !== 'all') {
+    leadQuery.source = sourceFilter;
   }
 
   const now = new Date();

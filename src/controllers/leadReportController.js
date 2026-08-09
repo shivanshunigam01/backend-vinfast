@@ -21,17 +21,28 @@ function readPeriodQuery(req) {
   };
 }
 
+function readLeadFilterQuery(req) {
+  return {
+    status: req.query.status || req.query.stage || undefined,
+    source: req.query.source || undefined,
+  };
+}
+
 exports.getAdminReport = asyncHandler(async (req, res) => {
   const data = await buildLeadAdminReport({
     from: req.query.from,
     to: req.query.to,
     executiveId: req.query.executiveId,
+    ...readLeadFilterQuery(req),
   });
   return successResponse(res, data);
 });
 
 exports.getDeliveryReport = asyncHandler(async (req, res) => {
-  const data = await buildDeliveryReport(readPeriodQuery(req));
+  const data = await buildDeliveryReport({
+    ...readPeriodQuery(req),
+    source: req.query.source || undefined,
+  });
   return successResponse(res, data);
 });
 
@@ -41,17 +52,18 @@ exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
   }
 
   const periodQuery = readPeriodQuery(req);
+  const leadFilters = readLeadFilterQuery(req);
   const year = periodQuery.year || new Date().getFullYear();
 
   // CRE "My Dashboard" is their individual creator/assignment report — not assignee scope.
   if (isCreUser(req.admin)) {
-    const data = await buildCreReport({ creId: req.admin._id, ...periodQuery, year });
+    const data = await buildCreReport({ creId: req.admin._id, ...periodQuery, year, ...leadFilters });
     return successResponse(res, { ...data, reportType: 'cre' });
   }
 
   // Sales Manager / Sales Head / Branch Manager — own + team metrics.
   if (isManagerDashboardUser(req.admin)) {
-    const data = await buildManagerTeamDashboard({ admin: req.admin, ...periodQuery, year });
+    const data = await buildManagerTeamDashboard({ admin: req.admin, ...periodQuery, year, ...leadFilters });
     return successResponse(res, data);
   }
 
@@ -59,6 +71,7 @@ exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
     executiveId: req.admin._id,
     ...periodQuery,
     year,
+    ...leadFilters,
   });
   return successResponse(res, { ...data, reportType: 'executive' });
 });
@@ -75,6 +88,11 @@ exports.getCreReport = asyncHandler(async (req, res) => {
   }
 
   if (!creId) throw new ApiError(400, 'creId is required');
-  const data = await buildCreReport({ creId, ...readPeriodQuery(req), year });
+  const data = await buildCreReport({
+    creId,
+    ...readPeriodQuery(req),
+    year,
+    ...readLeadFilterQuery(req),
+  });
   return successResponse(res, { ...data, reportType: 'cre' });
 });

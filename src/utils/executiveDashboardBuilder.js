@@ -187,12 +187,13 @@ async function fetchRecentBookings(executiveId, limit = 15) {
   }));
 }
 
-async function buildExecutiveDashboard({ executiveId, year, period, from, to } = {}) {
+async function buildExecutiveDashboard({ executiveId, year, period, from, to, status, source } = {}) {
   if (!executiveId) throw new Error('executiveId is required');
 
   const execId = toObjectId(executiveId);
   const range = resolvePeriodRange({ period, from, to, year });
   const previous = yearBounds(range.year - 1);
+  const leadFilters = { status, source };
 
   const [
     leadReport,
@@ -206,16 +207,26 @@ async function buildExecutiveDashboard({ executiveId, year, period, from, to } =
     accurateLeadCount,
     accurateLeadCountPrev,
   ] = await Promise.all([
-    buildLeadAdminReport({ from: range.from, to: range.to, executiveId }),
-    buildLeadAdminReport({ from: previous.from, to: previous.to, executiveId }),
+    buildLeadAdminReport({ from: range.from, to: range.to, executiveId, ...leadFilters }),
+    buildLeadAdminReport({ from: previous.from, to: previous.to, executiveId, ...leadFilters }),
     buildExecutiveTdStats({ executiveId, from: range.from, to: range.to }),
     buildExecutiveTdStats({ executiveId, from: previous.from, to: previous.to }),
     buildMonthlyBreakdown(executiveId, range.year),
     fetchRecentBookings(executiveId),
     Lead.countDocuments(assignedToStaffFilter(executiveId)),
     execId ? TDBooking.countDocuments({ assignedExecutive: execId }) : Promise.resolve(0),
-    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(range.from, range.to) }),
-    Lead.countDocuments({ ...assignedToStaffFilter(executiveId), ...createdAtFilter(previous.from, previous.to) }),
+    Lead.countDocuments({
+      ...assignedToStaffFilter(executiveId),
+      ...createdAtFilter(range.from, range.to),
+      ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),
+      ...(source && String(source).toLowerCase() !== 'all' ? { source: String(source).trim() } : {}),
+    }),
+    Lead.countDocuments({
+      ...assignedToStaffFilter(executiveId),
+      ...createdAtFilter(previous.from, previous.to),
+      ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),
+      ...(source && String(source).toLowerCase() !== 'all' ? { source: String(source).trim() } : {}),
+    }),
   ]);
 
   leadReport.overview.totalLeads = accurateLeadCount;
@@ -298,7 +309,7 @@ async function memberPeriodStats({ memberId, email, leadDateFilter, tdDateFilter
  * Team = users under reportsTo subtree excluding self.
  * Returns { view: 'manager', self, team } clearly separated.
  */
-async function buildManagerTeamDashboard({ admin, year, period, from, to } = {}) {
+async function buildManagerTeamDashboard({ admin, year, period, from, to, status, source } = {}) {
   if (!admin?._id) throw new Error('admin is required');
 
   const range = resolvePeriodRange({ period, from, to, year });
@@ -308,6 +319,8 @@ async function buildManagerTeamDashboard({ admin, year, period, from, to } = {})
     period: range.period,
     from: range.from,
     to: range.to,
+    status,
+    source,
   });
 
   const selfIds = new Set([String(admin._id)]);
