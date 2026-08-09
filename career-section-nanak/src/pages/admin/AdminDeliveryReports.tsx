@@ -9,6 +9,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import ReportStageSourceFilters from "@/components/admin/ReportStageSourceFilters";
 import { resolvePeriodRange } from "@/lib/reportPeriod";
 import { formatApiErrors } from "@/lib/api";
 import { fetchDeliveryReport, type DeliveryReport } from "@/lib/deliveryReportApi";
@@ -47,6 +48,7 @@ export default function AdminDeliveryReports() {
   const [period, setPeriod] = useState<ReportPeriod>(initial.period);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+  const [source, setSource] = useState("all");
   const [data, setData] = useState<DeliveryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export default function AdminDeliveryReports() {
         period,
         from: from || undefined,
         to: to || undefined,
+        source: source !== "all" ? source : undefined,
       });
       setData(report);
     } catch (e) {
@@ -69,7 +72,7 @@ export default function AdminDeliveryReports() {
     } finally {
       setLoading(false);
     }
-  }, [period, from, to]);
+  }, [period, from, to, source]);
 
   useEffect(() => {
     void load();
@@ -121,7 +124,7 @@ export default function AdminDeliveryReports() {
         </div>
       </div>
 
-      <Card className="bg-card border-border/50 p-4">
+      <Card className="bg-card border-border/50 p-4 space-y-4">
         <ReportPeriodPresets
           value={period}
           onChange={setPeriod}
@@ -131,6 +134,13 @@ export default function AdminDeliveryReports() {
             setFrom(f);
             setTo(t);
           }}
+        />
+        <ReportStageSourceFilters
+          status="all"
+          source={source}
+          onStatusChange={() => {}}
+          onSourceChange={setSource}
+          showStage={false}
         />
       </Card>
 

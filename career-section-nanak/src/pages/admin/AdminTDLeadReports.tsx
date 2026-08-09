@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatApiErrors } from "@/lib/api";
 import { fetchAssignableStaffUsers, type AssignableStaffUser } from "@/lib/leadCrmApi";
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import ReportStageSourceFilters from "@/components/admin/ReportStageSourceFilters";
 import { resolvePeriodRange } from "@/lib/reportPeriod";
 import {
   fetchLeadAdminReport,
@@ -97,6 +98,8 @@ export default function AdminTDLeadReports() {
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
   const [executiveId, setExecutiveId] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [source, setSource] = useState("all");
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupMode, setPopupMode] = useState<"leads" | "followups" | "feedback">("leads");
@@ -144,6 +147,8 @@ export default function AdminTDLeadReports() {
         from: from || undefined,
         to: to || undefined,
         executiveId: executiveId !== "all" ? executiveId : undefined,
+        status: status !== "all" ? status : undefined,
+        source: source !== "all" ? source : undefined,
       });
       setData(report);
     } catch (e) {
@@ -154,7 +159,7 @@ export default function AdminTDLeadReports() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, executiveId]);
+  }, [from, to, executiveId, status, source]);
 
   useEffect(() => { void fetchReport(); }, [fetchReport]);
 
@@ -256,6 +261,12 @@ export default function AdminTDLeadReports() {
             setFrom(f);
             setTo(t);
           }}
+        />
+        <ReportStageSourceFilters
+          status={status}
+          source={source}
+          onStatusChange={setStatus}
+          onSourceChange={setSource}
         />
         {/* Phone: dates side by side, staff + buttons full width.
             Tablet (sm–lg): dates row, then staff + buttons aligned on one row.

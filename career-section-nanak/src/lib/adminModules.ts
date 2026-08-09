@@ -27,6 +27,7 @@ export type AdminModuleKey =
   | "td_vehicles"
   | "td_models"
   | "vehicle_stock"
+  | "stock_delivery"
   | "td_reports"
   | "td_config"
   | "calendar"
@@ -50,7 +51,11 @@ export type AdminModuleAction =
   | "tag_demo"
   | "approve"
   | "schedule_charge"
-  | "log_maintenance";
+  | "log_maintenance"
+  | "receive"
+  | "allocate"
+  | "pdi"
+  | "deliver";
 
 export type AdminModule = {
   key: AdminModuleKey;
@@ -78,6 +83,10 @@ export const ACTION_LABELS: Record<AdminModuleAction, string> = {
   approve: "Approve",
   schedule_charge: "Schedule charge",
   log_maintenance: "Log maintenance",
+  receive: "Receive stock",
+  allocate: "Allocate VIN",
+  pdi: "Perform PDI",
+  deliver: "Deliver vehicle",
 };
 
 export const ADMIN_MODULES: AdminModule[] = [
@@ -106,6 +115,13 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "TD Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
+  {
+    key: "stock_delivery",
+    label: "Stock & Delivery",
+    path: "/admin/stock/orders",
+    group: "TD Management",
+    actions: ["view", "create", "update", "delete", "receive", "allocate", "pdi", "deliver"],
+  },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
@@ -117,6 +133,9 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
 MODULE_BY_PATH["/admin/td/roles"] = "td_users";
 /** Delete audit trail shares TD Bookings ACL (td_bookings). */
 MODULE_BY_PATH["/admin/td/delete-history"] = "td_bookings";
+MODULE_BY_PATH["/admin/stock/purchase-orders"] = "stock_delivery";
+MODULE_BY_PATH["/admin/stock/orders"] = "stock_delivery";
+MODULE_BY_PATH["/admin/stock/deliveries"] = "stock_delivery";
 
 export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "Reports", "TD Management"] as const;
 

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
+import ReportStageSourceFilters from "@/components/admin/ReportStageSourceFilters";
 import { resolvePeriodRange } from "@/lib/reportPeriod";
 import { formatApiErrors, adminGet } from "@/lib/api";
 import { getAdminUser } from "@/lib/adminAuth";
@@ -329,6 +330,8 @@ export default function AdminExecutiveDashboard() {
   const [period, setPeriod] = useState<ReportPeriod>(initialRange.period);
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
+  const [status, setStatus] = useState("all");
+  const [source, setSource] = useState("all");
   const [managerTab, setManagerTab] = useState("team");
   const [data, setData] = useState<MyDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -350,6 +353,8 @@ export default function AdminExecutiveDashboard() {
         from: from || undefined,
         to: to || undefined,
         year,
+        status: status !== "all" ? status : undefined,
+        source: source !== "all" ? source : undefined,
       });
       setData(report);
     } catch (e) {
@@ -358,7 +363,7 @@ export default function AdminExecutiveDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [period, from, to, year]);
+  }, [period, from, to, year, status, source]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -1240,7 +1245,7 @@ export default function AdminExecutiveDashboard() {
         </Button>
       </div>
 
-      <Card className="bg-card border-border/50 p-4">
+      <Card className="bg-card border-border/50 p-4 space-y-4">
         <ReportPeriodPresets
           value={period}
           onChange={setPeriod}
@@ -1251,6 +1256,12 @@ export default function AdminExecutiveDashboard() {
             setFrom(f);
             setTo(t);
           }}
+        />
+        <ReportStageSourceFilters
+          status={status}
+          source={source}
+          onStatusChange={setStatus}
+          onSourceChange={setSource}
         />
       </Card>
 

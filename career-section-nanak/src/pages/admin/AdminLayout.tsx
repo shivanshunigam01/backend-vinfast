@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
   Tag, Bell, Home, Image, Layers,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
-  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2
+  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
@@ -83,6 +83,9 @@ const tdNavItems = [
   { label: "Demo Fleet",     icon: Gauge,         path: "/admin/td/vehicles",    staff: false },
   { label: "Model Master",   icon: Car,           path: "/admin/td/models",      staff: false },
   { label: "Vehicle Stock",  icon: Warehouse,     path: "/admin/stock",          staff: false },
+  { label: "Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
+  { label: "Vehicle Orders", icon: Car, path: "/admin/stock/orders", staff: false },
+  { label: "Deliveries", icon: PackageCheck, path: "/admin/stock/deliveries", staff: false },
   { label: "Slot Config",    icon: Building2,     path: "/admin/td/config",      staff: false },
 ];
 

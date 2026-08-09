@@ -17,6 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatApiErrors } from "@/lib/api";
 import { getAdminUser, isFieldStaffUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
+import { createVehicleOrder } from "@/lib/stockDeliveryApi";
+import { useNavigate } from "react-router-dom";
 import {
   addPvCrmFollowUp,
   assignPvCrmLeadExecutive,
@@ -75,6 +77,8 @@ const PAGE_SIZE = 20;
 
 export default function AdminCrmLeads() {
   const adminUser = getAdminUser();
+  const navigate = useNavigate();
+  const canCreateVehicleOrder = canPerformAction(adminUser, "stock_delivery", "create");
   const isExecutive = isFieldStaffUser(adminUser);
   const isCre = String(adminUser?.designation || "").toLowerCase() === "cre";
   const isAdminPortal =
@@ -1334,6 +1338,33 @@ export default function AdminCrmLeads() {
                       Converting opportunity <span className="font-mono">{detail.lead.opportunityId || "—"}</span> creates/links a
                       customer record with a unique Customer ID for lifecycle tracking.
                     </p>
+                    {canCreateVehicleOrder ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full"
+                        disabled={saving}
+                        onClick={() =>
+                          void (async () => {
+                            setSaving(true);
+                            try {
+                              const order = await createVehicleOrder({
+                                leadId: detail.lead._id,
+                                preferredModel: detail.lead.model || undefined,
+                              });
+                              toast.success(`Vehicle order ${order.orderNumber} created`);
+                              navigate("/admin/stock/orders");
+                            } catch (e) {
+                              toast.error(formatApiErrors(e));
+                            } finally {
+                              setSaving(false);
+                            }
+                          })()
+                        }
+                      >
+                        Create vehicle order / Allocate stock
+                      </Button>
+                    ) : null}
                     <div className="space-y-2">
                       <Label className="text-xs">Sale stage</Label>
                       <Select value={convertStage} onValueChange={(v) => setConvertStage(v as "Booking" | "Delivered")}>

@@ -52,6 +52,9 @@ import AdminTDBookings from "./pages/admin/AdminTDBookings";
 import AdminTDDemoVehicles from "./pages/admin/AdminTDDemoVehicles";
 import AdminVehicleModels from "./pages/admin/AdminVehicleModels";
 import AdminVehicleStock from "./pages/admin/AdminVehicleStock";
+import AdminPurchaseOrders from "./pages/admin/AdminPurchaseOrders";
+import AdminVehicleOrders from "./pages/admin/AdminVehicleOrders";
+import AdminStockDeliveries from "./pages/admin/AdminStockDeliveries";
 import AdminTDReports from "./pages/admin/AdminTDReports";
 import AdminTDSlotConfig from "./pages/admin/AdminTDSlotConfig";
 import AdminTDUsers from "./pages/admin/AdminTDUsers";
@@ -179,6 +182,9 @@ const App = () => {
             <Route path="td/vehicles" element={<AdminTDDemoVehicles />} />
             <Route path="td/models" element={<AdminVehicleModels />} />
             <Route path="stock" element={<AdminVehicleStock />} />
+            <Route path="stock/purchase-orders" element={<AdminPurchaseOrders />} />
+            <Route path="stock/orders" element={<AdminVehicleOrders />} />
+            <Route path="stock/deliveries" element={<AdminStockDeliveries />} />
             <Route path="td/reports" element={<AdminTDReports />} />
             <Route path="td/config" element={<AdminTDSlotConfig />} />
             <Route path="td/users" element={<AdminTDUsers />} />

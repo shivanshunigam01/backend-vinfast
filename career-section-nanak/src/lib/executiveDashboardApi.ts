@@ -211,6 +211,8 @@ export type DashboardPeriodQuery = {
   from?: string;
   to?: string;
   year?: number;
+  status?: string;
+  source?: string;
 };
 
 export async function fetchExecutiveDashboard(
@@ -224,6 +226,8 @@ export async function fetchExecutiveDashboard(
     if (opts.from) q.set("from", opts.from);
     if (opts.to) q.set("to", opts.to);
     if (opts.year) q.set("year", String(opts.year));
+    if (opts.status && opts.status !== "all") q.set("status", opts.status);
+    if (opts.source && opts.source !== "all") q.set("source", opts.source);
   }
   const { data } = await adminGet<MyDashboardPayload>(`/admin/crm/leads/reports/me?${q}`);
   if (!data) {

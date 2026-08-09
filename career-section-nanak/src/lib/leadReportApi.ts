@@ -208,11 +208,15 @@ export async function fetchLeadAdminReport(params?: {
   from?: string;
   to?: string;
   executiveId?: string;
+  status?: string;
+  source?: string;
 }): Promise<LeadAdminReport> {
   const q = new URLSearchParams();
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
   if (params?.executiveId) q.set("executiveId", params.executiveId);
+  if (params?.status && params.status !== "all") q.set("status", params.status);
+  if (params?.source && params.source !== "all") q.set("source", params.source);
   const { data } = await adminGet<LeadAdminReport>(`/admin/td/leads/reports/admin?${q}`);
   return normalizeLeadReport(data);
 }

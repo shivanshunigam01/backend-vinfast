@@ -5,7 +5,8 @@ import {
   BatteryCharging, MapPin, Car, Gauge, CheckCircle2, CalendarDays,
 } from "lucide-react";
 import { adminGet, adminPostJson, adminPatchJson, adminRequest, formatApiErrors } from "@/lib/api";
-import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
+import { getAdminUser, canPerformManagerAction, canPerformAction } from "@/lib/adminAuth";
+import { submitYardPdi } from "@/lib/stockDeliveryApi";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import {
   exteriorColoursForModel,
@@ -86,6 +87,8 @@ export default function AdminVehicleStock() {
   const canUpdate = canPerformManagerAction(adminUser, "vehicle_stock", "update");
   const canDelete = canPerformManagerAction(adminUser, "vehicle_stock", "delete");
   const canTagDemo = canPerformManagerAction(adminUser, "vehicle_stock", "tag_demo");
+  const canYardPdi = canPerformAction(adminUser, "stock_delivery", "pdi");
+  const [yardBusyId, setYardBusyId] = useState<string | null>(null);
   const { models: catalogModels, trimsFor } = useVehicleCatalog();
 
   const [items, setItems] = useState<StockItem[]>([]);
@@ -414,8 +417,36 @@ export default function AdminVehicleStock() {
                 </div>
               </div>
 
-              {canTagDemo || canUpdate || canDelete ? (
+              {canTagDemo || canUpdate || canDelete || canYardPdi ? (
                 <div className="flex gap-2 border-t border-border/30 pt-3">
+                  {canYardPdi && item.status === "IN_TRANSIT" ? (
+                    <Button
+                      size="sm"
+                      className="flex-1 text-xs h-8"
+                      disabled={yardBusyId === item._id}
+                      onClick={() =>
+                        void (async () => {
+                          setYardBusyId(item._id);
+                          try {
+                            await submitYardPdi(item._id, { result: "PASS", location: "Yard" });
+                            toast.success("Yard PDI passed — free stock");
+                            void fetchStock();
+                          } catch (e) {
+                            toast.error(formatApiErrors(e));
+                          } finally {
+                            setYardBusyId(null);
+                          }
+                        })()
+                      }
+                    >
+                      {yardBusyId === item._id ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                      )}
+                      Yard PDI PASS
+                    </Button>
+                  ) : null}
                   {canTagDemo ? (
                     item.isDemo ? (
                       <Button
