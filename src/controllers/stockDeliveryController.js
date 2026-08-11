@@ -395,7 +395,13 @@ exports.allocateOrder = asyncHandler(async (req, res) => {
     if (order.preferredColour) q.colour = order.preferredColour;
     stock = await VehicleStock.findOne(q).sort({ createdAt: 1 });
   }
-  if (!stock) throw new ApiError(404, 'No free stock available for this model — raise a PO');
+  if (!stock) {
+    if (order.stage !== 'AWAITING_STOCK') {
+      order.stage = 'AWAITING_STOCK';
+      await order.save();
+    }
+    throw new ApiError(404, 'No free stock available for this model — raise a PO');
+  }
   if (stock.status !== 'FRESH_STOCK' || stock.isDemo) {
     throw new ApiError(400, 'Selected unit is not free stock');
   }

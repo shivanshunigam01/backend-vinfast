@@ -361,21 +361,23 @@ export default function AdminCrmLeads() {
     setSaving(true);
     try {
       const updated = await updatePvCrmLeadStage(selected._id, stageDraft, stageReason.trim() || undefined);
-      const vo = (updated as { vehicleOrder?: { orderNumber?: string; created?: boolean } }).vehicleOrder;
+      const vo = updated.vehicleOrder;
       if (stageDraft === "Booking" && vo?.orderNumber) {
         toast.success(
           vo.created
             ? `Booking done — vehicle order ${vo.orderNumber} created`
             : `Booking done — vehicle order ${vo.orderNumber} ready`,
+          { action: { label: "Open orders", onClick: () => navigate("/admin/stock/orders") } },
+        );
+      } else if (stageDraft === "Booking" && updated.vehicleOrderError) {
+        toast.error(
+          `Booking saved, but vehicle order failed: ${updated.vehicleOrderError}. Set lead model, then use Open vehicle order.`,
         );
       } else {
         toast.success(`Stage updated to ${stageDraft}`);
       }
       await refreshDetail(selected._id);
       setStageReason("");
-      if (stageDraft === "Booking") {
-        // Soft nudge — user can open Vehicle Orders from nav
-      }
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {
@@ -455,11 +457,17 @@ export default function AdminCrmLeads() {
         vehicleRegistration: convertRegistration.trim() || undefined,
         remarks: convertRemarks.trim() || undefined,
       });
-      toast.success(
-        res.vehicleOrder?.orderNumber
-          ? `Opportunity converted — customer ${res.customer.customerId} — order ${res.vehicleOrder.orderNumber}`
-          : `Opportunity converted — customer ${res.customer.customerId}`,
-      );
+      if (convertStage === "Booking" && res.vehicleOrderError && !res.vehicleOrder?.orderNumber) {
+        toast.error(
+          `Converted, but vehicle order failed: ${res.vehicleOrderError}. Set lead model, then use Open vehicle order.`,
+        );
+      } else {
+        toast.success(
+          res.vehicleOrder?.orderNumber
+            ? `Opportunity converted — customer ${res.customer.customerId} — order ${res.vehicleOrder.orderNumber}`
+            : `Opportunity converted — customer ${res.customer.customerId}`,
+        );
+      }
       setConvertBuyerDiffers(false);
       setConvertBuyerName("");
       setConvertBuyerMobile("");

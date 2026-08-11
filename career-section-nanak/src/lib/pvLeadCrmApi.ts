@@ -39,6 +39,10 @@ export type PvCrmLead = {
   convertedAt?: string;
   convertedCustomerId?: { _id: string; customerId?: string; name?: string; mobile?: string } | string | null;
   creSheet?: Record<string, unknown> | null;
+  /** Present when stage→Booking auto-created/opened a vehicle order. */
+  vehicleOrder?: { _id: string; orderNumber: string; stage: string; created: boolean };
+  /** Present when Booking stage saved but order ensure failed (e.g. missing model). */
+  vehicleOrderError?: string;
 };
 
 export type LeadStageHistoryItem = {
@@ -431,6 +435,7 @@ export type ConvertLeadToSaleResult = {
   lead: PvCrmLead;
   customer: { _id: string; customerId: string; name: string; mobile: string };
   vehicleOrder?: { _id: string; orderNumber: string; stage: string; created: boolean };
+  vehicleOrderError?: string;
 };
 
 /** Convert an opportunity to a sale; a differing buyer gets its own Customer ID. */

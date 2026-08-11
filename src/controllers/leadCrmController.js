@@ -615,6 +615,7 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   });
 
   let vehicleOrder = null;
+  let vehicleOrderError = null;
   if (normalizedStage === 'Booking') {
     try {
       const { ensureVehicleOrderForLead } = require('../utils/ensureVehicleOrder');
@@ -629,7 +630,8 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
         created: ensured.created,
       };
     } catch (e) {
-      console.error('[updateLeadStage] ensureVehicleOrderForLead:', e.message);
+      vehicleOrderError = e.message || 'Could not create vehicle order';
+      console.error('[updateLeadStage] ensureVehicleOrderForLead:', vehicleOrderError);
     }
   }
 
@@ -638,12 +640,17 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   if (vehicleOrder) {
     leadPayload.vehicleOrder = vehicleOrder;
   }
+  if (vehicleOrderError) {
+    leadPayload.vehicleOrderError = vehicleOrderError;
+  }
   return successResponse(
     res,
     leadPayload,
     vehicleOrder
       ? `Lead moved to ${normalizedStage} — vehicle order ${vehicleOrder.orderNumber}`
-      : `Lead moved to ${normalizedStage}`,
+      : vehicleOrderError
+        ? `Lead moved to ${normalizedStage} — vehicle order failed: ${vehicleOrderError}`
+        : `Lead moved to ${normalizedStage}`,
   );
 });
 
@@ -1173,6 +1180,7 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
   });
 
   let vehicleOrder = null;
+  let vehicleOrderError = null;
   if (targetStage === 'Booking') {
     try {
       const { ensureVehicleOrderForLead } = require('../utils/ensureVehicleOrder');
@@ -1187,7 +1195,8 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
         created: ensured.created,
       };
     } catch (e) {
-      console.error('[convertLeadToSale] ensureVehicleOrderForLead:', e.message);
+      vehicleOrderError = e.message || 'Could not create vehicle order';
+      console.error('[convertLeadToSale] ensureVehicleOrderForLead:', vehicleOrderError);
     }
   }
 
@@ -1203,10 +1212,13 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
         mobile: buyer.mobile,
       },
       vehicleOrder,
+      vehicleOrderError,
     },
     vehicleOrder
       ? `Opportunity converted — customer ${buyer.customerId} — order ${vehicleOrder.orderNumber}`
-      : `Opportunity converted — customer ${buyer.customerId}`,
+      : vehicleOrderError
+        ? `Opportunity converted — customer ${buyer.customerId} — vehicle order failed: ${vehicleOrderError}`
+        : `Opportunity converted — customer ${buyer.customerId}`,
   );
 });
 
