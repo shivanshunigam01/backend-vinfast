@@ -614,8 +614,37 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
     reason: reason || `Stage updated to ${normalizedStage}`,
   });
 
+  let vehicleOrder = null;
+  if (normalizedStage === 'Booking') {
+    try {
+      const { ensureVehicleOrderForLead } = require('../utils/ensureVehicleOrder');
+      const ensured = await ensureVehicleOrderForLead(lead, req.admin, {
+        syncLead: true,
+        reason: 'Auto vehicle order from Booking stage',
+      });
+      vehicleOrder = {
+        _id: ensured.order._id,
+        orderNumber: ensured.order.orderNumber,
+        stage: ensured.order.stage,
+        created: ensured.created,
+      };
+    } catch (e) {
+      console.error('[updateLeadStage] ensureVehicleOrderForLead:', e.message);
+    }
+  }
+
   await lead.populate(LEAD_POPULATE);
-  return successResponse(res, formatCrmLead(lead), `Lead moved to ${normalizedStage}`);
+  const leadPayload = formatCrmLead(lead);
+  if (vehicleOrder) {
+    leadPayload.vehicleOrder = vehicleOrder;
+  }
+  return successResponse(
+    res,
+    leadPayload,
+    vehicleOrder
+      ? `Lead moved to ${normalizedStage} — vehicle order ${vehicleOrder.orderNumber}`
+      : `Lead moved to ${normalizedStage}`,
+  );
 });
 
 const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
@@ -1143,6 +1172,25 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
     reason: `Opportunity ${lead.opportunityId || ''} converted to sale — customer ${buyer.customerId} (${buyer.name})${buyerDiffers ? ' · buyer differs from enquirer' : ''}`,
   });
 
+  let vehicleOrder = null;
+  if (targetStage === 'Booking') {
+    try {
+      const { ensureVehicleOrderForLead } = require('../utils/ensureVehicleOrder');
+      const ensured = await ensureVehicleOrderForLead(lead, req.admin, {
+        syncLead: true,
+        reason: 'Auto vehicle order from convert to Booking',
+      });
+      vehicleOrder = {
+        _id: ensured.order._id,
+        orderNumber: ensured.order.orderNumber,
+        stage: ensured.order.stage,
+        created: ensured.created,
+      };
+    } catch (e) {
+      console.error('[convertLeadToSale] ensureVehicleOrderForLead:', e.message);
+    }
+  }
+
   await lead.populate(LEAD_POPULATE);
   return successResponse(
     res,
@@ -1154,8 +1202,11 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
         name: buyer.name,
         mobile: buyer.mobile,
       },
+      vehicleOrder,
     },
-    `Opportunity converted — customer ${buyer.customerId}`,
+    vehicleOrder
+      ? `Opportunity converted — customer ${buyer.customerId} — order ${vehicleOrder.orderNumber}`
+      : `Opportunity converted — customer ${buyer.customerId}`,
   );
 });
 

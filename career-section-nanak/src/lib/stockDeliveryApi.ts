@@ -114,10 +114,11 @@ export async function receiveTransit(
     motorNo2?: string;
     location?: string;
   }>,
+  yardPdi?: { result: "PASS" | "FAIL"; notes?: string; location?: string },
 ) {
   return adminPostJson<{ purchaseOrder: PurchaseOrder; stock: StockUnitBrief[] }>(
     `${BASE}/purchase-orders/${id}/receive-transit`,
-    { units },
+    { units, yardPdi },
   );
 }
 

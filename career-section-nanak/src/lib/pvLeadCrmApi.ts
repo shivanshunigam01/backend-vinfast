@@ -430,6 +430,7 @@ export type ConvertLeadToSalePayload = {
 export type ConvertLeadToSaleResult = {
   lead: PvCrmLead;
   customer: { _id: string; customerId: string; name: string; mobile: string };
+  vehicleOrder?: { _id: string; orderNumber: string; stage: string; created: boolean };
 };
 
 /** Convert an opportunity to a sale; a differing buyer gets its own Customer ID. */

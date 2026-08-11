@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Car, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,21 @@ const STAGES = [
   "DELIVERED",
 ];
 
+function nextStepLabel(o: VehicleOrder): string {
+  if (o.stage === "DELIVERED") return "Complete — see Deliveries";
+  if (o.stage === "RETAIL") return "Next: Mark delivered";
+  if (o.stage === "AWAITING_STOCK" || (!o.stockId && ["DRAFT", "AWAITING_STOCK"].includes(o.stage))) {
+    return "Next: Raise PO or allocate when free stock arrives";
+  }
+  if (!o.stockId) return "Next: Allocate VIN";
+  if (!o.payment?.done) return "Next: Record payment";
+  if (!o.insurance?.done) return "Next: Mark insurance done";
+  if (!o.registration?.done) return "Next: Mark registration done";
+  if (!o.finalPdiPassed) return "Next: Final PDI PASS";
+  if (o.stage !== "RETAIL" && o.stage !== "DELIVERED") return "Next: Retail sale";
+  return "Open for details";
+}
+
 export default function AdminVehicleOrders() {
   const admin = getAdminUser();
   const canAllocate = canPerformAction(admin, "stock_delivery", "allocate");
@@ -54,7 +70,7 @@ export default function AdminVehicleOrders() {
   const [rows, setRows] = useState<VehicleOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<VehicleOrder | null>(null);
-  const [avail, setAvail] = useState<{ _id: string; vinNo: string; stockId: string }[]>([]);
+  const [avail, setAvail] = useState<{ _id: string; vinNo: string; stockId: string; motorNo?: string }[]>([]);
   const [pickStockId, setPickStockId] = useState("");
   const [payForm, setPayForm] = useState({ downPayment: "", finance: "", paymentMode: "", notes: "" });
   const [regNo, setRegNo] = useState("");
@@ -75,6 +91,30 @@ export default function AdminVehicleOrders() {
     void load();
   }, [load]);
 
+  const loadAvailability = async (order: VehicleOrder) => {
+    if (!order.stockId && order.preferredModel) {
+      try {
+        const a = await fetchAvailability({
+          model: order.preferredModel,
+          variant: order.preferredVariant,
+          colour: order.preferredColour,
+        });
+        setAvail(
+          a.units.map((u) => ({
+            _id: u._id,
+            vinNo: u.vinNo,
+            stockId: u.stockId,
+            motorNo: u.motorNo,
+          })),
+        );
+      } catch {
+        setAvail([]);
+      }
+    } else {
+      setAvail([]);
+    }
+  };
+
   const openOrder = async (order: VehicleOrder) => {
     setSelected(order);
     setPickStockId("");
@@ -85,19 +125,11 @@ export default function AdminVehicleOrders() {
       notes: order.payment?.notes || "",
     });
     setRegNo("");
-    if (!order.stockId && order.preferredModel) {
-      try {
-        const a = await fetchAvailability({ model: order.preferredModel });
-        setAvail(a.units.map((u) => ({ _id: u._id, vinNo: u.vinNo, stockId: u.stockId })));
-      } catch {
-        setAvail([]);
-      }
-    } else {
-      setAvail([]);
-    }
+    await loadAvailability(order);
   };
 
-  const run = async (fn: () => Promise<unknown>, ok: string) => {
+  /** Close dialog after success (milestone steps). */
+  const run = async (fn: () => Promise<VehicleOrder | unknown>, ok: string) => {
     setSaving(true);
     try {
       await fn();
@@ -111,6 +143,28 @@ export default function AdminVehicleOrders() {
     }
   };
 
+  /** Keep dialog open and refresh order (e.g. after allocate so VIN/motor show). */
+  const runKeepOpen = async (fn: () => Promise<VehicleOrder>, ok: string) => {
+    setSaving(true);
+    try {
+      const updated = await fn();
+      toast.success(ok);
+      setSelected(updated);
+      setPickStockId("");
+      setAvail([]);
+      void load();
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const needsStock =
+    selected &&
+    !selected.stockId &&
+    (selected.stage === "AWAITING_STOCK" || avail.length === 0);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -120,7 +174,8 @@ export default function AdminVehicleOrders() {
             Vehicle Orders
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Allocate VIN → payment → insurance → registration → final PDI → retail → deliver.
+            Booking creates an order automatically → allocate VIN → payment → insurance →
+            registration → final PDI → retail → deliver.
           </p>
         </div>
         <div className="flex items-end gap-2">
@@ -150,8 +205,21 @@ export default function AdminVehicleOrders() {
           <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading…
         </div>
       ) : rows.length === 0 ? (
-        <Card className="p-10 text-center text-muted-foreground">
-          No vehicle orders. Create one from Lead CRM (Booking stage).
+        <Card className="p-10 text-center space-y-3 text-muted-foreground">
+          <p>No vehicle orders yet.</p>
+          <p className="text-sm">
+            Set a lead to <span className="font-medium text-foreground">Booking</span> in Lead CRM —
+            an order is created automatically. Or open an existing Booking lead and use{" "}
+            <span className="font-medium text-foreground">Open vehicle order / Allocate stock</span>.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 pt-2">
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/admin/crm/leads">Open Lead CRM</Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/admin/stock/purchase-orders">Raise Purchase Order</Link>
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="space-y-2">
@@ -167,8 +235,10 @@ export default function AdminVehicleOrders() {
                   <p className="font-mono text-sm font-semibold">{o.orderNumber}</p>
                   <p className="text-sm">
                     {o.customerName || o.leadId?.name || "—"} · {o.preferredModel}
-                    {o.vinNo ? ` · ${o.vinNo}` : ""}
+                    {o.vinNo ? ` · VIN ${o.vinNo}` : ""}
+                    {o.motorNo ? ` · Motor ${o.motorNo}` : ""}
                   </p>
+                  <p className="text-xs text-muted-foreground mt-1">{nextStepLabel(o)}</p>
                 </div>
                 <Badge>{o.stage}</Badge>
               </Card>
@@ -188,9 +258,45 @@ export default function AdminVehicleOrders() {
                 {selected.customerName} · {selected.customerMobile}
                 <br />
                 Model: {selected.preferredModel}
-                {selected.vinNo ? ` · VIN ${selected.vinNo}` : ""}
+                {selected.preferredVariant ? ` · ${selected.preferredVariant}` : ""}
+                {selected.preferredColour ? ` · ${selected.preferredColour}` : ""}
               </p>
               <Badge variant="secondary">{selected.stage}</Badge>
+              <p className="text-xs text-muted-foreground">{nextStepLabel(selected)}</p>
+
+              {selected.vinNo || selected.motorNo || selected.stockId ? (
+                <div className="rounded-md border bg-muted/30 p-3 space-y-1">
+                  <p className="font-medium">Allocated vehicle</p>
+                  <p>
+                    VIN:{" "}
+                    <span className="font-mono font-semibold">
+                      {selected.vinNo || selected.stockId?.vinNo || "—"}
+                    </span>
+                  </p>
+                  <p>
+                    Motor:{" "}
+                    <span className="font-mono">
+                      {selected.motorNo || selected.stockId?.motorNo || "—"}
+                    </span>
+                  </p>
+                  {selected.stockId?.stockId ? (
+                    <p className="text-xs text-muted-foreground">Stock ID: {selected.stockId.stockId}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {needsStock ? (
+                <div className="space-y-2 border border-amber-500/40 rounded-md p-3 bg-amber-500/5">
+                  <p className="font-medium">Awaiting free stock</p>
+                  <p className="text-xs text-muted-foreground">
+                    No free unit for this model yet. Raise a purchase order, receive + Yard PDI PASS,
+                    then allocate here.
+                  </p>
+                  <Button size="sm" asChild>
+                    <Link to="/admin/stock/purchase-orders">Raise Purchase Order</Link>
+                  </Button>
+                </div>
+              ) : null}
 
               {!selected.stockId && canAllocate ? (
                 <div className="space-y-2 border rounded-md p-3">
@@ -203,21 +309,25 @@ export default function AdminVehicleOrders() {
                       <SelectContent>
                         {avail.map((u) => (
                           <SelectItem key={u._id} value={u._id}>
-                            {u.vinNo} ({u.stockId})
+                            {u.vinNo}
+                            {u.motorNo ? ` · Motor ${u.motorNo}` : ""} ({u.stockId})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <p className="text-muted-foreground text-xs">No free stock — raise a PO.</p>
+                    <p className="text-muted-foreground text-xs">
+                      No free stock listed — use Raise Purchase Order above, or Allocate to try
+                      auto-pick.
+                    </p>
                   )}
                   <Button
                     size="sm"
                     disabled={saving}
                     onClick={() =>
-                      void run(
+                      void runKeepOpen(
                         () => allocateOrder(selected._id, pickStockId || undefined),
-                        "Allocated",
+                        "Allocated — VIN & motor saved on order",
                       )
                     }
                   >
@@ -268,7 +378,7 @@ export default function AdminVehicleOrders() {
                     onClick={() =>
                       void run(
                         () => updateOrderPayment(selected._id, { ...payForm, done: true }),
-                        "Payment recorded",
+                        "Payment recorded — next: insurance",
                       )
                     }
                   >
@@ -284,7 +394,7 @@ export default function AdminVehicleOrders() {
                   onClick={() =>
                     void run(
                       () => updateOrderInsurance(selected._id, { done: true }),
-                      "Insurance done",
+                      "Insurance done — next: registration",
                     )
                   }
                 >
@@ -306,7 +416,7 @@ export default function AdminVehicleOrders() {
                             done: true,
                             registrationNo: regNo || undefined,
                           }),
-                        "Registration done",
+                        "Registration done — next: final PDI",
                       )
                     }
                   >
@@ -321,7 +431,10 @@ export default function AdminVehicleOrders() {
                     size="sm"
                     disabled={saving || selected.finalPdiPassed}
                     onClick={() =>
-                      void run(() => submitFinalPdi(selected._id, { result: "PASS" }), "Final PDI PASS")
+                      void run(
+                        () => submitFinalPdi(selected._id, { result: "PASS" }),
+                        "Final PDI PASS — next: retail sale",
+                      )
                     }
                   >
                     Final PDI PASS
@@ -345,7 +458,9 @@ export default function AdminVehicleOrders() {
                     <Button
                       size="sm"
                       disabled={saving}
-                      onClick={() => void run(() => retailSale(selected._id), "Retail sale done")}
+                      onClick={() =>
+                        void run(() => retailSale(selected._id), "Retail sale — next: deliver")
+                      }
                     >
                       Retail sale
                     </Button>

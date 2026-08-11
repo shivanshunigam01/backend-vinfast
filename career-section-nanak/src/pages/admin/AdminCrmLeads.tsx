@@ -360,10 +360,22 @@ export default function AdminCrmLeads() {
     if (!selected || !stageDraft) return;
     setSaving(true);
     try {
-      await updatePvCrmLeadStage(selected._id, stageDraft, stageReason.trim() || undefined);
-      toast.success(`Stage updated to ${stageDraft}`);
+      const updated = await updatePvCrmLeadStage(selected._id, stageDraft, stageReason.trim() || undefined);
+      const vo = (updated as { vehicleOrder?: { orderNumber?: string; created?: boolean } }).vehicleOrder;
+      if (stageDraft === "Booking" && vo?.orderNumber) {
+        toast.success(
+          vo.created
+            ? `Booking done — vehicle order ${vo.orderNumber} created`
+            : `Booking done — vehicle order ${vo.orderNumber} ready`,
+        );
+      } else {
+        toast.success(`Stage updated to ${stageDraft}`);
+      }
       await refreshDetail(selected._id);
       setStageReason("");
+      if (stageDraft === "Booking") {
+        // Soft nudge — user can open Vehicle Orders from nav
+      }
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {
@@ -443,13 +455,20 @@ export default function AdminCrmLeads() {
         vehicleRegistration: convertRegistration.trim() || undefined,
         remarks: convertRemarks.trim() || undefined,
       });
-      toast.success(`Opportunity converted — customer ${res.customer.customerId}`);
+      toast.success(
+        res.vehicleOrder?.orderNumber
+          ? `Opportunity converted — customer ${res.customer.customerId} — order ${res.vehicleOrder.orderNumber}`
+          : `Opportunity converted — customer ${res.customer.customerId}`,
+      );
       setConvertBuyerDiffers(false);
       setConvertBuyerName("");
       setConvertBuyerMobile("");
       setConvertRegistration("");
       setConvertRemarks("");
       await refreshDetail(selected._id);
+      if (convertStage === "Booking" && res.vehicleOrder?.orderNumber) {
+        navigate("/admin/stock/orders");
+      }
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {
@@ -1352,7 +1371,7 @@ export default function AdminCrmLeads() {
                                 leadId: detail.lead._id,
                                 preferredModel: detail.lead.model || undefined,
                               });
-                              toast.success(`Vehicle order ${order.orderNumber} created`);
+                              toast.success(`Vehicle order ${order.orderNumber} ready`);
                               navigate("/admin/stock/orders");
                             } catch (e) {
                               toast.error(formatApiErrors(e));
@@ -1362,7 +1381,7 @@ export default function AdminCrmLeads() {
                           })()
                         }
                       >
-                        Create vehicle order / Allocate stock
+                        Open vehicle order / Allocate stock
                       </Button>
                     ) : null}
                     <div className="space-y-2">

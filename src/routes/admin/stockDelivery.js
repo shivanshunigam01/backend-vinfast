@@ -33,6 +33,11 @@ router.post(
 router.get('/orders/availability', requireModuleAction('stock_delivery', 'view'), ctrl.availability);
 router.get('/orders', requireModuleAction('stock_delivery', 'view'), ctrl.listOrders);
 router.post('/orders', requireModuleAction('stock_delivery', 'create'), ctrl.createOrder);
+router.post(
+  '/orders/backfill-booking',
+  requireModuleAction('stock_delivery', 'create'),
+  ctrl.backfillBookingOrders,
+);
 router.get('/orders/:id', mongoIdParam, validate, requireModuleAction('stock_delivery', 'view'), ctrl.getOrder);
 router.post(
   '/orders/:id/allocate',

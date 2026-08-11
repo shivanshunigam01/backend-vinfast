@@ -10,6 +10,10 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { normalizeStageLabel } = require('../constants/leadStages');
+const {
+  ensureVehicleOrderForLead,
+  backfillBookingVehicleOrders,
+} = require('../utils/ensureVehicleOrder');
 
 async function nextCounter(key, prefix, pad = 4) {
   const doc = await Counter.findOneAndUpdate(
@@ -27,11 +31,6 @@ async function nextStockId() {
 async function nextPoNumber() {
   const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   return nextCounter(`po_${ymd}`, `PO-${ymd}-`, 3);
-}
-
-async function nextOrderNumber() {
-  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  return nextCounter(`vo_${ymd}`, `VO-${ymd}-`, 3);
 }
 
 function actorId(admin) {
@@ -172,13 +171,54 @@ exports.receiveTransit = asyncHandler(async (req, res) => {
     created.push(stock);
   }
 
+  const yardPdi = req.body?.yardPdi;
+  const yardResult = yardPdi?.result ? String(yardPdi.result).toUpperCase() : '';
+  const pdiDocs = [];
+  if (yardResult && ['PASS', 'FAIL'].includes(yardResult)) {
+    for (const stock of created) {
+      const pdi = await StockPdi.create({
+        type: 'YARD',
+        result: yardResult,
+        vehicleStockId: stock._id,
+        checklist: Array.isArray(yardPdi.checklist) ? yardPdi.checklist : [],
+        notes: yardPdi.notes,
+        performedBy: actorId(req.admin),
+        performedAt: new Date(),
+      });
+      pdiDocs.push(pdi);
+      if (yardResult === 'PASS') {
+        stock.status = 'FRESH_STOCK';
+        stock.pdiStatus = 'YARD_PASSED';
+        stock.grnDate = stock.grnDate || new Date();
+        stock.location = yardPdi.location || stock.location || 'Yard';
+      } else {
+        stock.pdiStatus = 'YARD_PENDING';
+        stock.remarks = [stock.remarks, `Yard PDI FAIL: ${yardPdi.notes || ''}`]
+          .filter(Boolean)
+          .join(' | ');
+      }
+      await stock.save();
+    }
+  }
+
   const allDone = po.lines.every((l) => l.receivedQty >= l.qty);
   const anyReceived = po.lines.some((l) => l.receivedQty > 0);
   po.status = allDone ? 'CLOSED' : anyReceived ? 'PARTIAL' : po.status;
   if (allDone) po.closedAt = new Date();
   await po.save();
 
-  return successResponse(res, { purchaseOrder: po, stock: created }, `Received ${created.length} unit(s) in transit`);
+  const msg =
+    yardResult === 'PASS'
+      ? `Received ${created.length} unit(s) — Yard PDI PASS (free stock)`
+      : yardResult === 'FAIL'
+        ? `Received ${created.length} unit(s) — Yard PDI FAIL (held)`
+        : `Received ${created.length} unit(s) in transit`;
+
+  return successResponse(
+    res,
+    { purchaseOrder: po, stock: created, pdi: pdiDocs },
+    msg,
+  );
 });
 
 /* ─── Yard / Final PDI ────────────────────────────────────────────── */
@@ -285,40 +325,40 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(leadId);
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  const existing = await VehicleOrder.findOne({
-    leadId,
-    stage: { $nin: ['CANCELLED', 'DELIVERED'] },
-  });
-  if (existing) {
-    throw new ApiError(409, `Open vehicle order already exists (${existing.orderNumber})`);
+  let result;
+  try {
+    result = await ensureVehicleOrderForLead(lead, req.admin, {
+      preferredModel: req.body?.preferredModel,
+      preferredVariant: req.body?.preferredVariant,
+      preferredColour: req.body?.preferredColour,
+      remarks: req.body?.remarks,
+      syncLead: true,
+      reason: 'Vehicle order opened from CRM',
+    });
+  } catch (e) {
+    throw new ApiError(400, e.message || 'Could not create vehicle order');
   }
 
-  const preferredModel = String(req.body?.preferredModel || lead.model || '').trim();
-  if (!preferredModel) throw new ApiError(400, 'preferredModel is required');
+  const populated = await findOrderOrThrow(result.order._id);
+  return successResponse(
+    res,
+    populated,
+    result.created ? 'Vehicle order created' : 'Open vehicle order already exists',
+    result.created ? 201 : 200,
+  );
+});
 
-  const freeCount = await VehicleStock.countDocuments({
-    model: preferredModel,
-    status: 'FRESH_STOCK',
-    isDemo: { $ne: true },
-  });
+/** One-shot: create missing VehicleOrders for Booking leads. Managers only. */
+exports.backfillBookingOrders = asyncHandler(async (req, res) => {
+  const designation = String(req.admin.designation || '').toLowerCase();
+  const canRun =
+    ['manager', 'superadmin'].includes(req.admin.role) ||
+    req.admin.userType === 'admin' ||
+    ['sales_manager', 'sales_head', 'gm', 'ceo', 'md'].includes(designation);
+  if (!canRun) throw new ApiError(403, 'Only managers and admins can run backfill');
 
-  const order = await VehicleOrder.create({
-    orderNumber: await nextOrderNumber(),
-    stage: freeCount > 0 ? 'DRAFT' : 'AWAITING_STOCK',
-    leadId: lead._id,
-    customerName: lead.name,
-    customerMobile: lead.mobile,
-    preferredModel,
-    preferredVariant: req.body?.preferredVariant,
-    preferredColour: req.body?.preferredColour,
-    remarks: req.body?.remarks,
-    createdBy: actorId(req.admin),
-    assignedExecutive: lead.assignedTo || undefined,
-  });
-
-  await syncLeadStage(lead._id, 'Booking', req.admin, 'Vehicle order created');
-  const populated = await findOrderOrThrow(order._id);
-  return successResponse(res, populated, 'Vehicle order created', 201);
+  const summary = await backfillBookingVehicleOrders(req.admin);
+  return successResponse(res, summary, `Backfill done — created ${summary.created}`);
 });
 
 exports.availability = asyncHandler(async (req, res) => {

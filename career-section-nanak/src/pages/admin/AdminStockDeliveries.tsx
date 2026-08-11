@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { PackageCheck, Loader2, RefreshCw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { formatApiErrors } from "@/lib/api";
 import { deliverOrder, fetchDeliveries, retailSale, type VehicleOrder } from "@/lib/stockDeliveryApi";
 import { getAdminUser, canPerformAction } from "@/lib/adminAuth";
+
+function deliveryNextStep(o: VehicleOrder): string {
+  if (o.stage === "DELIVERED") return "Handover complete";
+  if (o.stage === "RETAIL") return "Next: Complete handover";
+  if (o.finalPdiPassed) return "Next: Retail sale";
+  return "Open Vehicle Orders to finish milestones";
+}
 
 export default function AdminStockDeliveries() {
   const admin = getAdminUser();
@@ -38,12 +46,18 @@ export default function AdminStockDeliveries() {
             Deliveries
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Retail sale and handover list with post-delivery feedback links.
+            After final PDI PASS on Vehicle Orders → retail sale → handover. Feedback links appear
+            after delivery.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()}>
-          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/admin/stock/orders">Vehicle Orders</Link>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -51,7 +65,16 @@ export default function AdminStockDeliveries() {
           <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading…
         </div>
       ) : rows.length === 0 ? (
-        <Card className="p-10 text-center text-muted-foreground">No retail/delivered orders yet.</Card>
+        <Card className="p-10 text-center space-y-3 text-muted-foreground">
+          <p>No retail or delivered orders yet.</p>
+          <p className="text-sm">
+            Complete allocate → payment → insurance → registration → final PDI PASS on{" "}
+            <Link to="/admin/stock/orders" className="text-primary underline">
+              Vehicle Orders
+            </Link>
+            , then retail sale appears here for handover.
+          </p>
+        </Card>
       ) : (
         <div className="space-y-3">
           {rows.map((o) => (
@@ -61,8 +84,10 @@ export default function AdminStockDeliveries() {
                   <p className="font-mono font-semibold">{o.orderNumber}</p>
                   <p className="text-sm">
                     {o.customerName} · {o.preferredModel}
-                    {o.vinNo ? ` · ${o.vinNo}` : ""}
+                    {o.vinNo ? ` · VIN ${o.vinNo}` : ""}
+                    {o.motorNo ? ` · Motor ${o.motorNo}` : ""}
                   </p>
+                  <p className="text-xs text-muted-foreground mt-1">{deliveryNextStep(o)}</p>
                 </div>
                 <Badge>{o.stage}</Badge>
               </div>
