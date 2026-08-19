@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import {
   Users, Search, RefreshCw, Loader2, Phone, Clock,
   MessageSquare, ArrowRight, CheckCircle2, CalendarClock, UserCheck, Plus, ChevronLeft, ChevronRight, Pencil,
-  History, Trophy, ShieldAlert, Trash2, CheckSquare, Square, X, Download, Upload, FileSpreadsheet,
+  History, Trophy, ShieldAlert, Trash2, CheckSquare, Square, X, Download, Upload, FileSpreadsheet, Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatApiErrors } from "@/lib/api";
 import { getAdminUser, isFieldStaffUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import { createVehicleOrder } from "@/lib/stockDeliveryApi";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   addPvCrmFollowUp,
   assignPvCrmLeadExecutive,
@@ -26,6 +26,9 @@ import {
   fetchAssignableStaffUsers,
   fetchPvCrmLeadDetail,
   fetchPvCrmLeads,
+  fetchPvCrmLeadStats,
+  togglePvCrmFavourite,
+  displayCrmLeadName,
   PV_CRM_SOURCES,
   updatePvCrmLeadDetails,
   updatePvCrmLeadRemarks,
@@ -55,6 +58,8 @@ import { useCrmLeadStages } from "@/hooks/useCrmLeadStages";
 import { cn } from "@/lib/utils";
 import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
+import { LeadFollowUpTimeline } from "@/components/admin/LeadFollowUpTimeline";
+import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { leadModelLabel, parseStoredModelLine } from "@/data/vinfastModels";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -75,9 +80,17 @@ function formatDateTime(iso?: string) {
 
 const PAGE_SIZE = 20;
 
+function followUpColor(highlight?: string) {
+  if (highlight === "overdue") return "text-red-600 dark:text-red-400";
+  if (highlight === "today") return "text-orange-600 dark:text-orange-400";
+  if (highlight === "none") return "text-emerald-600 dark:text-emerald-400";
+  return "text-muted-foreground";
+}
+
 export default function AdminCrmLeads() {
   const adminUser = getAdminUser();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canCreateVehicleOrder = canPerformAction(adminUser, "stock_delivery", "create");
   const isExecutive = isFieldStaffUser(adminUser);
   const isCre = String(adminUser?.designation || "").toLowerCase() === "cre";
@@ -116,6 +129,19 @@ export default function AdminCrmLeads() {
   // Default CRE list to unassigned so the calling queue is obvious; backend also scopes CRE.
   const [filterExecutive, setFilterExecutive] = useState(isCre ? "unassigned" : "all");
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+  const [favouriteOnly, setFavouriteOnly] = useState(false);
+  const [filterBuyerType, setFilterBuyerType] = useState("all");
+  const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
+  const [favouriteCount, setFavouriteCount] = useState(0);
+  const [buyerTypes, setBuyerTypes] = useState<BuyerTypeDoc[]>([]);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [completeOutcome, setCompleteOutcome] = useState("");
+  const [completeNextAction, setCompleteNextAction] = useState("");
+  const [completeNextAt, setCompleteNextAt] = useState("");
+  const [completeInterest, setCompleteInterest] = useState("");
+  const [completeRemarks, setCompleteRemarks] = useState("");
+  const [followUpNextAction, setFollowUpNextAction] = useState("");
+  const [followUpInterest, setFollowUpInterest] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterDateField, setFilterDateField] = useState<PvCrmLeadDateField>("created");
@@ -157,6 +183,7 @@ export default function AdminCrmLeads() {
   const [editModel, setEditModel] = useState("VF 7");
   const [editVariant, setEditVariant] = useState("");
   const [editSource, setEditSource] = useState("");
+  const [editBuyerType, setEditBuyerType] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -180,7 +207,7 @@ export default function AdminCrmLeads() {
   const [committingImport, setCommittingImport] = useState(false);
 
   const primeEditDrafts = (lead: PvCrmLead) => {
-    setEditName(lead.name ?? "");
+    setEditName(lead.customerName || lead.name || "");
     setEditMobile(lead.mobile ?? "");
     setEditEmail(lead.email ?? "");
     setEditCity(lead.city ?? "");
@@ -189,6 +216,7 @@ export default function AdminCrmLeads() {
     setEditModel(parsed.model === "Both" ? "VF 7" : parsed.model);
     setEditVariant(parsed.model === "Both" ? "" : parsed.variant);
     setEditSource(lead.source ?? "");
+    setEditBuyerType(lead.buyerType ?? "");
   };
 
   const loadStaffUsers = useCallback(async () => {
@@ -214,6 +242,8 @@ export default function AdminCrmLeads() {
         status: filterStatus,
         source: filterSource,
         followUpDue: followUpDueOnly,
+        favourite: favouriteOnly,
+        buyerType: filterBuyerType !== "all" ? filterBuyerType : undefined,
         from: filterDateFrom || undefined,
         to: filterDateTo || undefined,
         dateField: filterDateField,
@@ -235,7 +265,7 @@ export default function AdminCrmLeads() {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, filterSource, followUpDueOnly, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
+  }, [search, filterStatus, filterSource, followUpDueOnly, favouriteOnly, filterBuyerType, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
 
   const hasDateFilter = Boolean(filterDateFrom || filterDateTo);
 
@@ -250,20 +280,55 @@ export default function AdminCrmLeads() {
     void loadLeads();
   }, [loadLeads]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const stats = await fetchPvCrmLeadStats({
+          source: filterSource,
+          assignedTo:
+            canAssignLeads && filterExecutive !== "all"
+              ? filterExecutive === "unassigned"
+                ? "unassigned"
+                : filterExecutive
+              : undefined,
+          from: filterDateFrom || undefined,
+          to: filterDateTo || undefined,
+        });
+        setPipelineCounts(stats.pipeline || {});
+        setFavouriteCount(stats.favouriteCount || 0);
+      } catch {
+        setPipelineCounts({});
+      }
+    })();
+  }, [filterSource, filterExecutive, filterDateFrom, filterDateTo, canAssignLeads, leads]);
+
+  useEffect(() => {
+    void fetchBuyerTypes().then(setBuyerTypes).catch(() => setBuyerTypes([]));
+  }, []);
+
+  useEffect(() => {
+    const id = searchParams.get("lead");
+    if (!id) return;
+    void (async () => {
+      try {
+        const d = await fetchPvCrmLeadDetail(id);
+        setSelected(d.lead);
+        setDetail(d);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [searchParams]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
 
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const s of stageList) counts[s] = 0;
-    const rows = Array.isArray(leads) ? leads : [];
-    for (const l of rows) {
-      const key = normalizeCrmStage(l.status);
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
+    for (const s of stageList) counts[s] = pipelineCounts[s] ?? 0;
     return counts;
-  }, [leads, stageList]);
+  }, [pipelineCounts, stageList]);
 
   const safeLeads = Array.isArray(leads) ? leads : [];
   const staffUsers = Array.isArray(executives) ? executives : [];
@@ -332,6 +397,7 @@ export default function AdminCrmLeads() {
         city: editCity.trim(),
         model: leadModelLabel(editModel, editVariant),
         source: editSource || undefined,
+        buyerType: editBuyerType || undefined,
       });
       toast.success("Lead details updated");
       await refreshDetail(selected._id);
@@ -404,6 +470,10 @@ export default function AdminCrmLeads() {
       toast.error("Enter a follow-up note");
       return;
     }
+    if (followUpCompleted && !followUpOutcome.trim()) {
+      toast.error("Enter the follow-up outcome to complete");
+      return;
+    }
     setSaving(true);
     try {
       await addPvCrmFollowUp(selected._id, {
@@ -411,12 +481,17 @@ export default function AdminCrmLeads() {
         scheduledAt: followUpScheduled || undefined,
         outcome: followUpOutcome.trim() || undefined,
         markCompleted: followUpCompleted,
+        nextAction: followUpNextAction.trim() || undefined,
+        nextFollowUpAt: followUpScheduled || undefined,
+        interestLevel: followUpInterest || undefined,
       });
       toast.success("Follow-up logged");
       setFollowUpNote("");
       setFollowUpScheduled("");
       setFollowUpOutcome("");
       setFollowUpCompleted(false);
+      setFollowUpNextAction("");
+      setFollowUpInterest("");
       await refreshDetail(selected._id);
     } catch (e) {
       toast.error(formatApiErrors(e));
@@ -499,15 +574,50 @@ export default function AdminCrmLeads() {
 
   const handleCompleteFollowUp = async (followUpId: string) => {
     if (!selected) return;
+    if (!completeOutcome.trim()) {
+      toast.error("Enter the follow-up outcome to complete");
+      return;
+    }
+    if (!completeRemarks.trim()) {
+      toast.error("Enter follow-up remarks to complete");
+      return;
+    }
     setSaving(true);
     try {
-      await completePvCrmFollowUp(selected._id, followUpId);
+      await completePvCrmFollowUp(selected._id, followUpId, {
+        outcome: completeOutcome.trim(),
+        note: completeRemarks.trim(),
+        nextAction: completeNextAction.trim() || undefined,
+        nextFollowUpAt: completeNextAt || undefined,
+        interestLevel: completeInterest || undefined,
+      });
       toast.success("Follow-up marked completed");
+      setCompletingId(null);
+      setCompleteOutcome("");
+      setCompleteRemarks("");
+      setCompleteNextAction("");
+      setCompleteNextAt("");
+      setCompleteInterest("");
       await refreshDetail(selected._id);
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleFavourite = async (lead: PvCrmLead, e?: { stopPropagation: () => void }) => {
+    e?.stopPropagation();
+    try {
+      const updated = await togglePvCrmFavourite(lead._id);
+      setLeads((prev) => prev.map((l) => (l._id === lead._id ? { ...l, isFavourite: updated.isFavourite } : l)));
+      if (selected?._id === lead._id) {
+        setSelected((s) => (s ? { ...s, isFavourite: updated.isFavourite } : s));
+        if (detail?.lead) setDetail({ ...detail, lead: { ...detail.lead, isFavourite: updated.isFavourite } });
+      }
+      setFavouriteCount((c) => Math.max(0, c + (updated.isFavourite ? 1 : -1)));
+    } catch (err) {
+      toast.error(formatApiErrors(err));
     }
   };
 
@@ -586,6 +696,7 @@ export default function AdminCrmLeads() {
         from: filterDateFrom || undefined,
         to: filterDateTo || undefined,
         dateField: filterDateField,
+        buyerType: filterBuyerType !== "all" ? filterBuyerType : undefined,
         assignedTo:
           canAssignLeads && filterExecutive !== "all"
             ? filterExecutive === "unassigned"
@@ -822,10 +933,34 @@ export default function AdminCrmLeads() {
 
       <div className="flex flex-wrap gap-2">
         {stageList.map((s) => (
-          <Badge key={s} variant="outline" className={cn("text-xs", stageBadgeClass(s))}>
-            {s}: {stageCounts[s] ?? 0}
-          </Badge>
+          <button
+            key={s}
+            type="button"
+            onClick={() => {
+              setPage(1);
+              setFilterStatus((prev) => (prev === s ? "all" : s));
+            }}
+          >
+            <Badge
+              variant={filterStatus === s ? "default" : "outline"}
+              className={cn("text-xs cursor-pointer", stageBadgeClass(s))}
+            >
+              {s}: {stageCounts[s] ?? 0}
+            </Badge>
+          </button>
         ))}
+        <button
+          type="button"
+          onClick={() => {
+            setPage(1);
+            setFavouriteOnly((v) => !v);
+          }}
+        >
+          <Badge variant={favouriteOnly ? "default" : "outline"} className="text-xs cursor-pointer">
+            <Star className={cn("w-3 h-3 mr-1", favouriteOnly ? "fill-current" : "")} />
+            Favourite / HOT Leads — {favouriteCount}
+          </Badge>
+        </button>
       </div>
 
       <div className={`grid grid-cols-1 gap-3 ${canAssignLeads ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
@@ -872,6 +1007,23 @@ export default function AdminCrmLeads() {
             <SelectItem value="all">All sources</SelectItem>
             {PV_CRM_SOURCES.map((s) => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filterBuyerType}
+          onValueChange={(v) => {
+            setPage(1);
+            setFilterBuyerType(v);
+          }}
+        >
+          <SelectTrigger className="bg-secondary/50">
+            <SelectValue placeholder="Buyer type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All buyer types</SelectItem>
+            {buyerTypes.map((b) => (
+              <SelectItem key={b._id} value={b.label}>{b.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -1037,7 +1189,7 @@ export default function AdminCrmLeads() {
                     />
                   ) : null}
                   <div className="min-w-0">
-                  <p className="font-semibold text-foreground truncate">{lead.name}</p>
+                  <p className="font-semibold text-foreground truncate">{displayCrmLeadName(lead)}</p>
                   <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
                     {lead.leadId ?? "—"} · {lead.customerId ?? "—"} · {lead.opportunityId ?? "—"}
                   </p>
@@ -1046,9 +1198,19 @@ export default function AdminCrmLeads() {
                   </p>
                   </div>
                 </div>
+                <div className="flex items-center gap-1 shrink-0">
                 <Badge variant="outline" className={cn("text-[10px] shrink-0", stageBadgeClass(lead.status))}>
                   {normalizeCrmStage(lead.status)}
                 </Badge>
+                <button
+                  type="button"
+                  aria-label="Toggle favourite"
+                  className="shrink-0 p-0.5 text-muted-foreground hover:text-amber-500"
+                  onClick={(e) => void handleToggleFavourite(lead, e)}
+                >
+                  <Star className={cn("w-4 h-4", lead.isFavourite && "fill-amber-400 text-amber-500")} />
+                </button>
+                </div>
               </div>
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>{lead.model} · {lead.source ?? "Website"}</p>
@@ -1064,11 +1226,16 @@ export default function AdminCrmLeads() {
                   {lead.assignedTo?.name ?? "Unassigned"}
                 </p>
                 {lead.nextFollowUp ? (
-                  <p className={cn(new Date(lead.nextFollowUp) <= new Date() && "text-amber-600 dark:text-amber-400")}>
+                  <p className={followUpColor(lead.followUpHighlight)}>
                     <Clock className="w-3 h-3 inline mr-1" />
                     Follow-up: {formatDateTime(lead.nextFollowUp)}
                   </p>
-                ) : null}
+                ) : (
+                  <p className={followUpColor("none")}>Follow-up completed / none pending</p>
+                )}
+                {lead.buyerType ? <p>Buyer: {lead.buyerType}</p> : null}
+                {lead.remarks ? <p className="line-clamp-2">“{lead.remarks}”</p> : null}
+                <p>Age: {lead.leadAgeDays ?? 0} day{(lead.leadAgeDays ?? 0) === 1 ? "" : "s"}</p>
               </div>
             </Card>
           ))}
@@ -1109,10 +1276,20 @@ export default function AdminCrmLeads() {
         </div>
       ) : null}
 
-      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <Dialog open={!!selected} onOpenChange={(o) => {
+        if (!o) {
+          setSelected(null);
+          setCompletingId(null);
+          if (searchParams.get("lead")) {
+            const next = new URLSearchParams(searchParams);
+            next.delete("lead");
+            setSearchParams(next, { replace: true });
+          }
+        }
+      }}>
         <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">{selected?.name ?? "Lead"}</DialogTitle>
+            <DialogTitle className="font-display">{displayCrmLeadName(selected)}</DialogTitle>
           </DialogHeader>
 
           {detailLoading ? (
@@ -1171,6 +1348,7 @@ export default function AdminCrmLeads() {
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3 rounded-lg border border-border/50 bg-secondary/20 p-4 text-xs">
+                <p><span className="text-muted-foreground">Customer name</span><br />{displayCrmLeadName(detail.lead)}</p>
                 <p><span className="text-muted-foreground">Customer ID</span><br /><span className="font-mono">{detail.lead.customerId || "—"}</span></p>
                 <p><span className="text-muted-foreground">Lead ID</span><br /><span className="font-mono">{detail.lead.leadId || "—"}</span></p>
                 <p><span className="text-muted-foreground">Opportunity ID</span><br /><span className="font-mono">{detail.lead.opportunityId || "—"}</span></p>
@@ -1182,6 +1360,7 @@ export default function AdminCrmLeads() {
                 <p><span className="text-muted-foreground">Email</span><br />{detail.lead.email || "—"}</p>
                 <p><span className="text-muted-foreground">City</span><br />{detail.lead.city || "—"}</p>
                 <p><span className="text-muted-foreground">Source</span><br />{detail.lead.source || "—"}</p>
+                <p><span className="text-muted-foreground">Buyer type</span><br />{detail.lead.buyerType || "—"}</p>
                 <p><span className="text-muted-foreground">Assigned to</span><br />{detail.lead.assignedTo?.name || "—"}</p>
                 <p><span className="text-muted-foreground">Next follow-up</span><br />{formatDateTime(detail.lead.nextFollowUp)}</p>
               </div>
@@ -1348,6 +1527,18 @@ export default function AdminCrmLeads() {
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label className="text-xs">Buyer type</Label>
+                        <Select value={editBuyerType || "none"} onValueChange={(v) => setEditBuyerType(v === "none" ? "" : v)}>
+                          <SelectTrigger className="bg-secondary/50"><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">—</SelectItem>
+                            {buyerTypes.map((b) => (
+                              <SelectItem key={b._id} value={b.label}>{b.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       Changes sync to the customer profile and are recorded in the lead history.
@@ -1500,6 +1691,29 @@ export default function AdminCrmLeads() {
                         />
                       </div>
                     </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Next action</Label>
+                        <Input
+                          value={followUpNextAction}
+                          onChange={(e) => setFollowUpNextAction(e.target.value)}
+                          placeholder="e.g. Call evening"
+                          className="bg-background/80"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Interest</Label>
+                        <Select value={followUpInterest || "none"} onValueChange={(v) => setFollowUpInterest(v === "none" ? "" : v)}>
+                          <SelectTrigger className="bg-background/80"><SelectValue placeholder="HOT / WARM / COLD" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">—</SelectItem>
+                            <SelectItem value="HOT">HOT</SelectItem>
+                            <SelectItem value="WARM">WARM</SelectItem>
+                            <SelectItem value="COLD">COLD</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                     <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                       <input
                         type="checkbox"
@@ -1514,39 +1728,60 @@ export default function AdminCrmLeads() {
                     </Button>
                   </div>
 
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {detailFollowUps.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">No follow-ups yet.</p>
-                    ) : (
-                      detailFollowUps.map((fu) => (
-                        <div key={fu._id} className="rounded-lg border border-border/50 p-3 text-xs space-y-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <Badge variant="outline" className={fu.status === "pending" ? "text-amber-600" : "text-emerald-600"}>
-                              {fu.status}
-                            </Badge>
-                            <span className="text-muted-foreground">{formatDateTime(fu.createdAt)}</span>
-                          </div>
-                          <p className="text-foreground leading-relaxed">{fu.note}</p>
-                          {fu.scheduledAt ? (
-                            <p className="text-muted-foreground">Scheduled: {formatDateTime(fu.scheduledAt)}</p>
-                          ) : null}
-                          {fu.outcome ? <p className="text-muted-foreground">Outcome: {fu.outcome}</p> : null}
-                          <p className="text-muted-foreground">By {fu.createdBy?.name ?? "Staff"}</p>
-                          {fu.status === "pending" ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="mt-2 h-7 text-[10px]"
-                              disabled={saving}
-                              onClick={() => void handleCompleteFollowUp(fu._id)}
-                            >
-                              <CheckCircle2 className="w-3 h-3 mr-1" /> Mark done
-                            </Button>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <LeadFollowUpTimeline
+                    followUps={detailFollowUps}
+                    canUpdate={canUpdate}
+                    saving={saving}
+                    completingId={completingId}
+                    onStartComplete={(id) => {
+                      setCompletingId(id);
+                      setCompleteOutcome("");
+                      setCompleteRemarks("");
+                      setCompleteNextAction("");
+                      setCompleteNextAt("");
+                      setCompleteInterest("");
+                    }}
+                    completeForm={
+                      <div className="mt-2 rounded-md border border-border/60 p-2 space-y-2 bg-background">
+                        <Input
+                          value={completeOutcome}
+                          onChange={(e) => setCompleteOutcome(e.target.value)}
+                          placeholder="Outcome (required)"
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          value={completeRemarks}
+                          onChange={(e) => setCompleteRemarks(e.target.value)}
+                          placeholder="Remarks (required)"
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          value={completeNextAction}
+                          onChange={(e) => setCompleteNextAction(e.target.value)}
+                          placeholder="Next action"
+                          className="h-8 text-xs"
+                        />
+                        <Input
+                          type="datetime-local"
+                          value={completeNextAt}
+                          onChange={(e) => setCompleteNextAt(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                        <Select value={completeInterest || "none"} onValueChange={(v) => setCompleteInterest(v === "none" ? "" : v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Interest" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">—</SelectItem>
+                            <SelectItem value="HOT">HOT</SelectItem>
+                            <SelectItem value="WARM">WARM</SelectItem>
+                            <SelectItem value="COLD">COLD</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button size="sm" className="h-7 text-[10px] w-full" disabled={saving} onClick={() => completingId && void handleCompleteFollowUp(completingId)}>
+                          Save & complete
+                        </Button>
+                      </div>
+                    }
+                  />
                 </TabsContent>
 
                 <TabsContent value="history" className="mt-4 space-y-2 max-h-72 overflow-y-auto">

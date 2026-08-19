@@ -10,6 +10,7 @@ export type AdminModuleKey =
   | "homepage"
   | "crm_leads"
   | "crm_lead_stages"
+  | "crm_buyer_types"
   | "pricing"
   | "delivery_reports"
   | "products"
@@ -95,6 +96,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "homepage", label: "Homepage", path: "/admin/homepage", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "crm_leads", label: "Lead CRM", path: "/admin/crm/leads", group: "Core", actions: ["view", "create", "update", "delete", "assign", "export"] },
   { key: "crm_lead_stages", label: "Lead Stages", path: "/admin/crm/lead-stages", group: "Core", actions: ["view", "create", "update", "delete"] },
+  { key: "crm_buyer_types", label: "Buyer Types", path: "/admin/crm/buyer-types", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "pricing", label: "Pricing", path: "/admin/pricing", group: "Core", actions: ["view", "update"] },
   { key: "products", label: "Products", path: "/admin/products", group: "Core", actions: ["view", "create", "update", "delete"] },
   { key: "offers", label: "Offers", path: "/admin/offers", group: "Core", actions: ["view", "create", "update", "delete"] },
@@ -184,6 +186,7 @@ export const MANAGER_DEFAULT_MODULES: AdminModuleKey[] = [
   "calendar",
   "crm_leads",
   "crm_lead_stages",
+  "crm_buyer_types",
   "my_dashboard",
   "td_my_bookings",
   "td_bookings",

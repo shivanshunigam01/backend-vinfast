@@ -25,6 +25,10 @@ function readLeadFilterQuery(req) {
   return {
     status: req.query.status || req.query.stage || undefined,
     source: req.query.source || undefined,
+    model: req.query.model || undefined,
+    buyerType: req.query.buyerType || undefined,
+    channel: req.query.channel || undefined,
+    designation: req.query.designation || req.query.role || undefined,
   };
 }
 

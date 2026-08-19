@@ -2,17 +2,13 @@ import { useEffect, useState } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
-  Tag, Bell, Home, Image, Layers,
+  Tag, Bell, Home, Image, Layers, Briefcase,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { hasApi } from "@/lib/apiConfig";
-import { adminGet } from "@/lib/api";
-import { dashboardStatsFromApi } from "@/lib/apiMappers";
-import { getEnquiriesAdminInitial, getLeadsAdminInitial, getTestDrivesAdminInitial } from "@/lib/vfLocalStorage";
-import { mockEnquiries, mockLeads, mockTestDrives } from "@/data/mockData";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
@@ -37,11 +33,11 @@ import {
 } from "@/lib/adminAuth";
 import { MODULE_BY_PATH } from "@/lib/adminModules";
 import {
-  dismissNotification,
-  dismissNotifications,
-  isNotificationDismissed,
-  notificationFingerprint,
-} from "@/lib/adminNotifications";
+  fetchStaffNotifications,
+  markAllStaffNotificationsRead,
+  markStaffNotificationRead,
+  type StaffInboxItem,
+} from "@/lib/crmNotificationsApi";
 import { toast } from "sonner";
 
 const ADMIN_SESSION_EXPIRED_TOAST =
@@ -53,6 +49,7 @@ const coreNavItems = [
   { label: "Homepage",  icon: Home,            path: "/admin/homepage" },
   { label: "Lead CRM",  icon: Users,           path: "/admin/crm/leads" },
   { label: "Lead Stages", icon: Layers,        path: "/admin/crm/lead-stages" },
+  { label: "Buyer Types", icon: Briefcase,     path: "/admin/crm/buyer-types" },
   { label: "Pricing",   icon: Tag,             path: "/admin/pricing" },
   { label: "Products",  icon: Car,             path: "/admin/products" },
   { label: "Offers",    icon: Tag,             path: "/admin/offers" },
@@ -98,12 +95,12 @@ const reportsNavItems = [
 
 type HeaderNotification = {
   id: string;
-  /** Unique per current metric so dismissing "3 new leads" doesn't hide "4 new leads". */
   fingerprint: string;
   title: string;
   sub: string;
   icon: React.ElementType;
   path: string;
+  priority?: string;
 };
 
 const NOTIF_POLL_MS = 60_000;
@@ -164,7 +161,7 @@ const AdminLayout = () => {
     const key = MODULE_BY_PATH[path];
     return Boolean(key && restrictedModules.includes(key));
   };
-  const notifEnabled = fullAdmin && canSeePath("/admin/dashboard");
+  const notifEnabled = Boolean(adminUser);
 
   useEffect(() => {
     if (!notifEnabled) {
@@ -176,78 +173,21 @@ const AdminLayout = () => {
     const load = async (showSpinner: boolean) => {
       if (showSpinner) setNotifLoading(true);
       try {
-        let newLeadsToday = 0;
-        let tdPending = 0;
-        let openEnquiries = 0;
-        let pendingFollowUps = 0;
-
-        if (hasApi()) {
-          const res = await adminGet<Record<string, unknown>>("/admin/dashboard/stats");
-          const stats = dashboardStatsFromApi(res.data);
-          newLeadsToday = stats.newLeadsToday;
-          tdPending = (stats.testDrivesByStatus.Pending ?? 0) + (stats.testDrivesByStatus.Scheduled ?? 0);
-          openEnquiries = stats.openEnquiries;
-          pendingFollowUps = stats.pendingFollowUps;
-        } else {
-          const { seedMock: sl, leads } = getLeadsAdminInitial();
-          const L = sl ? mockLeads : leads;
-          const { seedMock: st, bookings } = getTestDrivesAdminInitial();
-          const T = st ? mockTestDrives : bookings;
-          const { seedMock: se, enquiries } = getEnquiriesAdminInitial();
-          const E = se ? mockEnquiries : enquiries;
-          const today = new Date().toISOString().slice(0, 10);
-          newLeadsToday = L.filter((l) => (l.createdAt || "").slice(0, 10) === today).length;
-          tdPending = T.filter((t) => t.status === "Pending" || t.status === "Scheduled").length;
-          openEnquiries = E.filter((e) => e.status === "Open" || e.status === "In Progress").length;
-          pendingFollowUps = L.filter((l) => l.nextFollowUp).length;
+        if (!hasApi()) {
+          if (!cancelled) setNotifications([]);
+          return;
         }
-
-        const todayKey = new Date().toISOString().slice(0, 10);
-        const candidates: HeaderNotification[] = [];
-        if (newLeadsToday > 0) {
-          candidates.push({
-            id: "leads-today",
-            fingerprint: notificationFingerprint("leads-today", `${todayKey}:${newLeadsToday}`),
-            title: `${newLeadsToday} new lead${newLeadsToday === 1 ? "" : "s"} today`,
-            sub: "Review and assign the latest leads",
-            icon: Users,
-            path: "/admin/crm/leads",
-          });
-        }
-        if (tdPending > 0) {
-          candidates.push({
-            id: "td-pending",
-            fingerprint: notificationFingerprint("td-pending", tdPending),
-            title: `${tdPending} test drive${tdPending === 1 ? "" : "s"} awaiting action`,
-            sub: "Pending or scheduled bookings",
-            icon: CalendarCheck,
-            path: "/admin/td/bookings",
-          });
-        }
-        if (openEnquiries > 0) {
-          candidates.push({
-            id: "open-enquiries",
-            fingerprint: notificationFingerprint("open-enquiries", openEnquiries),
-            title: `${openEnquiries} open enquir${openEnquiries === 1 ? "y" : "ies"}`,
-            sub: "Customers waiting for a response",
-            icon: MessageSquare,
-            path: "/admin/enquiries",
-          });
-        }
-        if (pendingFollowUps > 0) {
-          candidates.push({
-            id: "follow-ups",
-            fingerprint: notificationFingerprint("follow-ups", pendingFollowUps),
-            title: `${pendingFollowUps} follow-up${pendingFollowUps === 1 ? "" : "s"} scheduled`,
-            sub: "Leads with a next follow-up date",
-            icon: Clock,
-            path: "/admin/crm/leads",
-          });
-        }
-
-        // Drop anything the admin has already viewed/cleared for this fingerprint.
-        const unread = candidates.filter((n) => !isNotificationDismissed(n.fingerprint));
-        if (!cancelled) setNotifications(unread);
+        const { items } = await fetchStaffNotifications(true);
+        const mapped: HeaderNotification[] = items.map((n: StaffInboxItem) => ({
+          id: n._id,
+          fingerprint: n._id,
+          title: n.title,
+          sub: [n.customerName, n.body].filter(Boolean).join(" · ") || new Date(n.createdAt).toLocaleString("en-IN"),
+          icon: n.priority === "urgent" ? Clock : n.type?.startsWith("td_") ? CalendarCheck : Users,
+          path: n.href || "/admin/crm/leads",
+          priority: n.priority,
+        }));
+        if (!cancelled) setNotifications(mapped);
       } catch {
         if (!cancelled) setNotifications([]);
       } finally {
@@ -256,7 +196,6 @@ const AdminLayout = () => {
     };
 
     void load(true);
-    // Keep the badge live without waiting for the user to reopen the panel.
     const pollId = window.setInterval(() => void load(false), NOTIF_POLL_MS);
     return () => {
       cancelled = true;
@@ -264,20 +203,16 @@ const AdminLayout = () => {
     };
   }, [notifEnabled, notifRev]);
 
-  const dismissAndHide = (fingerprints: string[]) => {
-    dismissNotifications(fingerprints);
-    setNotifications((prev) => prev.filter((n) => !fingerprints.includes(n.fingerprint)));
-  };
-
   const handleNotificationClick = (n: HeaderNotification) => {
-    dismissNotification(n.fingerprint);
-    setNotifications((prev) => prev.filter((item) => item.fingerprint !== n.fingerprint));
+    void markStaffNotificationRead(n.id).catch(() => undefined);
+    setNotifications((prev) => prev.filter((item) => item.id !== n.id));
     setNotifOpen(false);
     navigate(n.path);
   };
 
   const handleClearAllNotifications = () => {
-    dismissAndHide(notifications.map((n) => n.fingerprint));
+    void markAllStaffNotificationsRead().catch(() => undefined);
+    setNotifications([]);
     setNotifOpen(false);
   };
 
@@ -664,7 +599,15 @@ const AdminLayout = () => {
                       key={n.fingerprint}
                       type="button"
                       onClick={() => handleNotificationClick(n)}
-                      className="flex w-full items-start gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-0 hover:bg-secondary/50 touch-manipulation"
+                      className={`flex w-full items-start gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-0 hover:bg-secondary/50 touch-manipulation ${
+                        n.priority === "urgent"
+                          ? "border-l-2 border-l-red-500"
+                          : n.priority === "today"
+                            ? "border-l-2 border-l-orange-500"
+                            : n.priority === "done"
+                              ? "border-l-2 border-l-emerald-500"
+                              : "border-l-2 border-l-sky-500"
+                      }`}
                     >
                       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <n.icon className="h-4 w-4" />

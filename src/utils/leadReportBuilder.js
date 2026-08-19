@@ -10,6 +10,7 @@ const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { assignedToStaffFilter } = require('./leadAssignment');
+const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, WALK_IN_SOURCES } = require('./crmConversion');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
@@ -51,7 +52,7 @@ function isConverted(status) {
   return CONVERTED_STATUSES.includes(normalizeStageLabel(status));
 }
 
-async function buildLeadAdminReport({ from, to, executiveId, status, source } = {}) {
+async function buildLeadAdminReport({ from, to, executiveId, status, source, model, buyerType, channel, designation } = {}) {
   const leadDateFilter = buildLeadDateFilter(from, to);
   const leadQuery = { ...leadDateFilter };
   if (executiveId) {
@@ -64,6 +65,32 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source } = 
   const sourceFilter = source ? String(source).trim() : '';
   if (sourceFilter && sourceFilter.toLowerCase() !== 'all') {
     leadQuery.source = sourceFilter;
+  }
+  const modelFilter = model ? String(model).trim() : '';
+  if (modelFilter && modelFilter.toLowerCase() !== 'all') {
+    leadQuery.model = modelFilter;
+  }
+  const buyerFilter = buyerType ? String(buyerType).trim() : '';
+  if (buyerFilter && buyerFilter.toLowerCase() !== 'all') {
+    leadQuery.buyerType = buyerFilter;
+  }
+  const channelFilter = String(channel || '').trim().toLowerCase();
+  if (!sourceFilter || sourceFilter.toLowerCase() === 'all') {
+    if (channelFilter === 'walk-in' || channelFilter === 'walkin') {
+      leadQuery.source = { $in: [...WALK_IN_SOURCES] };
+    } else if (channelFilter === 'digital') {
+      leadQuery.source = { $nin: [...WALK_IN_SOURCES] };
+    }
+  }
+  const designationFilter = String(designation || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (designationFilter && designationFilter !== 'all' && !executiveId) {
+    const teamStaff = await TDStaff.find({
+      designation: designationFilter,
+      active: { $ne: false },
+    })
+      .select('_id')
+      .lean();
+    leadQuery.assignedTo = { $in: teamStaff.map((s) => s._id) };
   }
 
   const now = new Date();
@@ -299,7 +326,9 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source } = 
         testDrivesCompleted: 0,
         feedbackCount: 0,
         avgExecutiveBehaviour: null,
-        behaviourRatings: []
+        behaviourRatings: [],
+        frtMinutesSum: 0,
+        frtCount: 0,
       });
     }
     return execMap.get(key);
@@ -312,6 +341,10 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source } = 
     const row = ensureExec(execId, lead.assignedTo?.name || 'Unassigned');
     row.leadsAssigned += 1;
     if (isConverted(lead.status)) row.leadsConverted += 1;
+    if (lead.firstRespondedAt && lead.createdAt) {
+      row.frtMinutesSum += (new Date(lead.firstRespondedAt) - new Date(lead.createdAt)) / 60000;
+      row.frtCount += 1;
+    }
   }
 
   for (const h of stageHistory) {
@@ -354,11 +387,14 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source } = 
     .map((e) => ({
       ...e,
       conversionRate: e.leadsAssigned > 0 ? Math.round((e.leadsConverted / e.leadsAssigned) * 100) : 0,
+      avgFirstResponseMinutes: e.frtCount ? Math.round(e.frtMinutesSum / e.frtCount) : null,
       avgExecutiveBehaviour:
         e.behaviourRatings.length > 0
           ? Math.round((e.behaviourRatings.reduce((a, b) => a + b, 0) / e.behaviourRatings.length) * 10) / 10
           : null,
-      behaviourRatings: undefined
+      behaviourRatings: undefined,
+      frtMinutesSum: undefined,
+      frtCount: undefined,
     }))
     .sort((a, b) => b.leadsAssigned - a.leadsAssigned);
 
@@ -602,8 +638,247 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source } = 
     feedbackRows,
     leadDetailRows,
     leadAgeing,
-    stages: stageLabels
+    stages: stageLabels,
+    kpis: buildKpiSummary(leads, followUps, tdBookings, now),
+    conversions: buildConversionSummary(leads, tdBookings),
+    funnelReport: buildFunnelReport(pipeline, stageLabels, stageHistory, leads),
+    sourcePerformance: buildSourcePerformance(leads, tdBookings),
+    modelPerformance: buildModelPerformance(leads, tdBookings),
+    followUpPerformance: buildFollowUpPerformance(followUps, now),
+    tdPerformance: buildTdPerformance(tdBookings),
+    inactivityAgeing: buildInactivityAgeing(leads, now),
   };
+}
+
+function buildKpiSummary(leads, followUps, tdBookings, now) {
+  const todayStart = startOfDay(now);
+  const mtdStart = startOfMonth(now);
+  const inRange = (d, from) => d && new Date(d) >= from;
+  const walkIn = (l) => isWalkInSource(l.source);
+  const tdBooked = tdBookings.filter((b) => b.bookingStatus !== 'CANCELLED');
+  const tdDone = tdBookings.filter((b) => b.bookingStatus === 'COMPLETED');
+  const countToday = (arr, field) => arr.filter((x) => inRange(x[field], todayStart) && new Date(x[field]) <= now).length;
+  return {
+    today: {
+      totalLeads: leads.filter((l) => inRange(l.createdAt, todayStart)).length,
+      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, todayStart)).length,
+      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, todayStart)).length,
+      followUpDue: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) >= todayStart && new Date(f.scheduledAt) <= now).length,
+      overdueFollowUps: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) < todayStart).length,
+      tdBooked: tdBooked.filter((b) => inRange(b.slotDate || b.createdAt, todayStart)).length,
+      tdCompleted: tdDone.filter((b) => inRange(b.updatedAt || b.slotDate, todayStart)).length,
+      negotiation: leads.filter((l) => l.status === 'Negotiation').length,
+      bookings: leads.filter((l) => l.status === 'Booking' && inRange(l.updatedAt, todayStart)).length,
+      deliveries: leads.filter((l) => l.status === 'Delivered' && inRange(l.updatedAt, todayStart)).length,
+      lost: leads.filter((l) => l.status === 'Lost' && inRange(l.updatedAt, todayStart)).length,
+    },
+    mtd: {
+      totalLeads: leads.filter((l) => inRange(l.createdAt, mtdStart)).length,
+      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, mtdStart)).length,
+      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, mtdStart)).length,
+      followUpDue: followUps.filter((f) => f.status === 'pending').length,
+      overdueFollowUps: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) < now).length,
+      tdBooked: tdBooked.length,
+      tdCompleted: tdDone.length,
+      negotiation: leads.filter((l) => l.status === 'Negotiation').length,
+      bookings: leads.filter((l) => ['Booking', 'Delivered'].includes(l.status)).length,
+      deliveries: leads.filter((l) => l.status === 'Delivered').length,
+      lost: leads.filter((l) => l.status === 'Lost').length,
+    },
+  };
+}
+
+function buildConversionSummary(leads, tdBookings) {
+  const eligible = leads.filter((l) => isWalkInSource(l.source) || isDigitalSource(l.source)).length;
+  const tdCompleted = tdBookings.filter((b) => b.bookingStatus === 'COMPLETED').length;
+  const tdBooked = tdBookings.filter((b) => b.bookingStatus !== 'CANCELLED').length;
+  const bookings = leads.filter((l) => ['Booking', 'Delivered'].includes(normalizeStageLabel(l.status))).length;
+  const deliveries = leads.filter((l) => normalizeStageLabel(l.status) === 'Delivered').length;
+  return {
+    eligibleLeads: eligible,
+    tdBooked,
+    tdCompleted,
+    bookings,
+    deliveries,
+    leadToTdPct: safePct(tdCompleted || tdBooked, eligible),
+    tdToBookingPct: safePct(bookings, tdCompleted),
+    leadToBookingPct: safePct(bookings, eligible),
+    bookingToDeliveryPct: safePct(deliveries, bookings),
+  };
+}
+
+function buildFunnelReport(pipeline, stageLabels, stageHistory, leads) {
+  const total = leads.length || 1;
+  const byLead = new Map();
+  for (const h of stageHistory || []) {
+    const id = String(h.leadId?._id || h.leadId || '');
+    if (!id) continue;
+    if (!byLead.has(id)) byLead.set(id, []);
+    byLead.get(id).push(h);
+  }
+  const avgMs = {};
+  for (const rows of byLead.values()) {
+    rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    for (let i = 0; i < rows.length; i += 1) {
+      const from = rows[i].fromStage || rows[i].toStage;
+      const start = rows[i].createdAt;
+      const end = rows[i + 1]?.createdAt;
+      if (!from || !start || !end) continue;
+      const ms = new Date(end) - new Date(start);
+      if (!Number.isFinite(ms) || ms < 0) continue;
+      if (!avgMs[from]) avgMs[from] = [];
+      avgMs[from].push(ms);
+    }
+  }
+  return stageLabels.map((stage, idx) => {
+    const count = pipeline[stage] || 0;
+    const nextCount = idx < stageLabels.length - 1 ? pipeline[stageLabels[idx + 1]] || 0 : count;
+    const samples = avgMs[stage] || [];
+    const avgHours = samples.length
+      ? Math.round((samples.reduce((a, b) => a + b, 0) / samples.length / 36e5) * 10) / 10
+      : 0;
+    return {
+      stage,
+      count,
+      conversionPct: safePct(nextCount, count || total),
+      dropPct: safePct(Math.max(0, count - nextCount), count || total),
+      avgHoursInStage: avgHours,
+      avgDaysInStage: Math.round((avgHours / 24) * 10) / 10,
+    };
+  });
+}
+
+function buildSourcePerformance(leads, tdBookings) {
+  const tdByMobile = new Set(
+    tdBookings.filter((b) => b.bookingStatus === 'COMPLETED').map((b) => b.customerId?.mobile || b.mobile),
+  );
+  const map = new Map();
+  for (const l of leads) {
+    const source = l.source || 'Unknown';
+    if (!map.has(source)) {
+      map.set(source, { source, leads: 0, interested: 0, td: 0, booking: 0, delivery: 0 });
+    }
+    const row = map.get(source);
+    row.leads += 1;
+    const st = normalizeStageLabel(l.status);
+    if (['Interested', 'Test Drive Booked', 'Test Drive Completed', 'Negotiation', 'Booking', 'Delivered'].includes(st)) {
+      row.interested += 1;
+    }
+    if (tdByMobile.has(l.mobile) || ['Test Drive Booked', 'Test Drive Completed'].includes(st)) row.td += 1;
+    if (['Booking', 'Delivered'].includes(st)) row.booking += 1;
+    if (st === 'Delivered') row.delivery += 1;
+  }
+  return [...map.values()].map((r) => ({
+    ...r,
+    leadToBookingPct: safePct(r.booking, r.leads),
+  }));
+}
+
+function buildModelPerformance(leads, tdBookings) {
+  const tdByModel = {};
+  for (const b of tdBookings) {
+    const m = b.preferredModel || b.model || 'Unknown';
+    tdByModel[m] = (tdByModel[m] || 0) + 1;
+  }
+  const map = new Map();
+  for (const l of leads) {
+    const model = l.model || 'Unknown';
+    if (!map.has(model)) {
+      map.set(model, { model, enquiry: 0, interested: 0, td: 0, booking: 0, delivery: 0, lost: 0 });
+    }
+    const row = map.get(model);
+    row.enquiry += 1;
+    const st = normalizeStageLabel(l.status);
+    if (st === 'Interested' || st === 'Negotiation') row.interested += 1;
+    if (['Booking', 'Delivered'].includes(st)) row.booking += 1;
+    if (st === 'Delivered') row.delivery += 1;
+    if (st === 'Lost') row.lost += 1;
+  }
+  return [...map.values()].map((r) => ({
+    ...r,
+    td: tdByModel[r.model] || r.td,
+  }));
+}
+
+function buildTdPerformance(tdBookings) {
+  const map = new Map();
+  for (const b of tdBookings || []) {
+    const exec = b.assignedExecutive;
+    const key = String(exec?._id || exec || 'unassigned');
+    if (!map.has(key)) {
+      map.set(key, {
+        employeeId: key,
+        employee: exec?.name || 'Unassigned',
+        booked: 0,
+        completed: 0,
+        cancelled: 0,
+        rescheduled: 0,
+      });
+    }
+    const row = map.get(key);
+    if (b.bookingStatus === 'CANCELLED') row.cancelled += 1;
+    else row.booked += 1;
+    if (b.bookingStatus === 'COMPLETED') row.completed += 1;
+    if (b.rescheduleCount) row.rescheduled += Number(b.rescheduleCount) || 0;
+  }
+  return [...map.values()].map((r) => ({
+    ...r,
+    completionPct: safePct(r.completed, r.booked),
+  }));
+}
+
+function buildFollowUpPerformance(followUps, now) {
+  const todayStart = startOfDay(now);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setHours(23, 59, 59, 999);
+  const map = new Map();
+  for (const f of followUps) {
+    const key = String(f.createdBy?._id || f.createdBy || 'unknown');
+    if (!map.has(key)) {
+      map.set(key, {
+        employeeId: key,
+        employee: f.createdBy?.name || '—',
+        assigned: 0,
+        dueToday: 0,
+        completed: 0,
+        overdue: 0,
+        rescheduled: 0,
+      });
+    }
+    const row = map.get(key);
+    row.assigned += 1;
+    if (f.status === 'completed') row.completed += 1;
+    if (f.status === 'pending' && f.scheduledAt) {
+      const d = new Date(f.scheduledAt);
+      if (d >= todayStart && d <= todayEnd) row.dueToday += 1;
+      if (d < now) row.overdue += 1;
+    }
+  }
+  return [...map.values()].map((r) => ({
+    ...r,
+    conversionPct: safePct(r.completed, r.assigned),
+  }));
+}
+
+function buildInactivityAgeing(leads, now) {
+  const buckets = { '1 Day': 0, '3 Days': 0, '7+ Days': 0 };
+  for (const l of leads) {
+    if (['Delivered', 'Lost', 'Not Interested'].includes(normalizeStageLabel(l.status))) continue;
+    const last = l.lastActivityAt || l.updatedAt;
+    if (!last) continue;
+    const days = Math.floor((now - new Date(last)) / 86400000);
+    if (days >= 7) buckets['7+ Days'] += 1;
+    else if (days >= 3) buckets['3 Days'] += 1;
+    else if (days >= 1) buckets['1 Day'] += 1;
+  }
+  const responded = leads.filter((l) => l.firstRespondedAt && l.createdAt);
+  const avgFirstResponseMinutes = responded.length
+    ? Math.round(
+        responded.reduce((s, l) => s + (new Date(l.firstRespondedAt) - new Date(l.createdAt)) / 60000, 0) /
+          responded.length,
+      )
+    : 0;
+  return { buckets, avgFirstResponseMinutes, firstResponseSample: responded.length };
 }
 
 module.exports = { buildLeadAdminReport, CONVERTED_STATUSES };

@@ -43,6 +43,15 @@ const tdStaffSchema = new mongoose.Schema(
     designation: { type: String, trim: true, default: 'sales_executive' },
     // Manager this staff member reports to (SE → SM → SH). Null for the top of the chain.
     reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff', default: null },
+    /**
+     * MIS / Action Centre visibility. Empty = derive from designation.
+     * organisation = all teams (Neha, Sales Head, GM/CEO/MD, admin).
+     */
+    reportsScope: {
+      type: String,
+      enum: ['self', 'team', 'organisation'],
+      trim: true,
+    },
     active: { type: Boolean, default: true },
     // Optional named permission template from User Master Roles.
     staffRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffRole', default: null },

@@ -133,6 +133,8 @@ router.use('/td/fleet', fleetHealthRoutes);
 router.use('/crm/leads', crmLeadsRoutes);
 router.use('/crm/customers', crmCustomersRoutes);
 router.use('/crm/lead-stages', leadStagesRoutes);
+router.use('/crm/buyer-types', require('./buyerTypes'));
+router.use('/notifications', require('./notifications'));
 
 // Vehicle pricing (/api/v1/admin/pricing)
 router.use('/pricing', pricingRoutes);

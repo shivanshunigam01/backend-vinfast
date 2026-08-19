@@ -10,6 +10,8 @@ const uploadCrmLeadImport = require('../../middleware/uploadCrmLeadImport');
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
 router.get('/meta/executives', ctrl.listCrmExecutives);
+router.get('/stats', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeadStats);
+router.get('/action-centre', requireModuleAction('crm_leads', 'view'), ctrl.getActionCentre);
 router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getAdminReport);
 router.get('/reports/me', reportCtrl.getExecutiveDashboard);
 router.get('/reports/cre', reportCtrl.getCreReport);
@@ -55,6 +57,8 @@ router.patch(
 router.patch('/:id/details', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadDetails);
 router.patch('/:id/stage', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadStage);
 router.patch('/:id/remarks', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadRemarks);
+router.patch('/:id/favourite', requireModuleAction('crm_leads', 'update'), ctrl.toggleFavourite);
+router.get('/:id/follow-ups', requireModuleAction('crm_leads', 'view'), ctrl.listLeadFollowUps);
 router.post('/:id/follow-ups', requireModuleAction('crm_leads', 'update'), ctrl.addFollowUp);
 router.patch('/:id/follow-ups/:followUpId', requireModuleAction('crm_leads', 'update'), ctrl.updateFollowUp);
 router.delete(

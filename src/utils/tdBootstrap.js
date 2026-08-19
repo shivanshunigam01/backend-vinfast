@@ -28,7 +28,7 @@ const STAFF_SEED = [
   { name: 'Priya Singh', email: 'priya.singh@patliputravinfast.com', designation: 'sales_executive' },
   { name: 'Rohan Verma', email: 'rohan.verma@patliputravinfast.com', designation: 'sales_executive' },
   { name: 'Vikram Rao', email: 'vikram.rao@patliputravinfast.com', designation: 'sales_executive' },
-  { name: 'Neha Kapoor', email: 'neha.kapoor@patliputravinfast.com', designation: 'sales_manager' },
+  { name: 'Neha Kapoor', email: 'neha.kapoor@patliputravinfast.com', designation: 'sales_manager', reportsScope: 'organisation' },
   { name: 'Rajesh Kumar', email: 'rajesh.kumar@patliputravinfast.com', designation: 'branch_manager' },
   { name: 'General Manager', email: 'gm@patliputravinfast.com', designation: 'gm' },
   { name: 'Chief Executive', email: 'ceo@patliputravinfast.com', designation: 'ceo' },
@@ -312,7 +312,13 @@ async function ensureTdStaff() {
   let created = 0;
   for (const row of STAFF_SEED) {
     const exists = await TDStaff.findOne({ email: row.email });
-    if (exists) continue;
+    if (exists) {
+      if (row.reportsScope && exists.reportsScope !== row.reportsScope) {
+        exists.reportsScope = row.reportsScope;
+        await exists.save();
+      }
+      continue;
+    }
     await TDStaff.create({
       name: row.name,
       email: row.email,
@@ -320,6 +326,7 @@ async function ensureTdStaff() {
       designation: row.designation,
       role: staffRole(row.designation),
       active: true,
+      reportsScope: row.reportsScope || undefined,
     });
     created += 1;
   }

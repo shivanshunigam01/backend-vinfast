@@ -19,17 +19,25 @@ export type PvCrmLead = {
   subCustomerName?: string | null;
   vehicleRegistration?: string | null;
   name: string;
+  customerName?: string;
   mobile: string;
   email?: string;
   city?: string;
   area?: string;
   address?: string;
   leadType?: string;
+  buyerType?: string;
+  interestLevel?: string;
   model: string;
   source?: string;
   status: string;
   remarks?: string;
   nextFollowUp?: string;
+  firstRespondedAt?: string | null;
+  leadAgeDays?: number;
+  followUpHighlight?: "overdue" | "today" | "future" | "none";
+  isFavourite?: boolean;
+  followUpCount?: number;
   exchangeNeeded?: boolean;
   financeNeeded?: boolean;
   assignedTo?: { _id: string; name: string; email?: string } | null;
@@ -44,6 +52,11 @@ export type PvCrmLead = {
   /** Present when Booking stage saved but order ensure failed (e.g. missing model). */
   vehicleOrderError?: string;
 };
+
+export function displayCrmLeadName(lead?: { customerName?: string; name?: string } | null): string {
+  if (!lead) return "Lead";
+  return (lead.customerName || lead.name || "Lead").trim() || "Lead";
+}
 
 export type LeadStageHistoryItem = {
   _id: string;
@@ -60,6 +73,9 @@ export type LeadFollowUpItem = {
   scheduledAt?: string;
   completedAt?: string;
   outcome?: string;
+  nextAction?: string;
+  nextFollowUpAt?: string;
+  interestLevel?: "HOT" | "WARM" | "COLD";
   status: "pending" | "completed" | "cancelled";
   createdAt: string;
   createdBy?: { name?: string; email?: string } | null;
@@ -69,6 +85,7 @@ export type PvCrmLeadDetail = {
   lead: PvCrmLead;
   history: LeadStageHistoryItem[];
   followUps: LeadFollowUpItem[];
+  followUpCount?: number;
   siblingLeads?: { leadId?: string; opportunityId?: string; model: string; status: string; source?: string; createdAt?: string }[];
   stages: CrmLeadStage[];
 };
@@ -98,6 +115,7 @@ export type CreatePvCrmLeadPayload = {
   subCustomerName?: string;
   subCustomerMobile?: string;
   vehicleRegistration?: string;
+  buyerType?: string;
 };
 
 export async function createPvCrmLead(payload: CreatePvCrmLeadPayload): Promise<PvCrmLead> {
@@ -122,10 +140,12 @@ export async function fetchPvCrmLeads(params?: {
   status?: string;
   source?: string;
   followUpDue?: boolean;
+  favourite?: boolean;
   assignedTo?: string;
   from?: string;
   to?: string;
   dateField?: PvCrmLeadDateField;
+  buyerType?: string;
   page?: number;
   limit?: number;
 }): Promise<{ leads: PvCrmLead[]; total: number; page: number; limit: number; stages: CrmLeadStage[] }> {
@@ -139,10 +159,12 @@ export async function fetchPvCrmLeads(params?: {
   if (params?.status && params.status !== "all") q.set("status", params.status);
   if (params?.source && params.source !== "all") q.set("source", params.source);
   if (params?.followUpDue) q.set("followUpDue", "true");
+  if (params?.favourite) q.set("favourite", "true");
   if (params?.assignedTo) q.set("assignedTo", params.assignedTo);
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
   if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
+  if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
 
   const res = await adminGet<PvCrmLead[]>(`${CRM_BASE}?${q}`);
   const list = asArray<PvCrmLead>(res.data);
@@ -185,6 +207,8 @@ export type UpdatePvCrmLeadDetailsPayload = {
   source?: string;
   interest?: string;
   vehicleRegistration?: string;
+  buyerType?: string;
+  interestLevel?: string;
   financeNeeded?: boolean;
   exchangeNeeded?: boolean;
 };
@@ -207,16 +231,59 @@ export async function updatePvCrmLeadRemarks(id: string, remarks: string): Promi
 
 export async function addPvCrmFollowUp(
   leadId: string,
-  payload: { note: string; scheduledAt?: string; outcome?: string; markCompleted?: boolean },
+  payload: {
+    note: string;
+    scheduledAt?: string;
+    outcome?: string;
+    markCompleted?: boolean;
+    nextAction?: string;
+    nextFollowUpAt?: string;
+    interestLevel?: string;
+  },
 ): Promise<LeadFollowUpItem> {
   return adminPostJson<LeadFollowUpItem>(`${CRM_BASE}/${leadId}/follow-ups`, payload);
 }
 
-export async function completePvCrmFollowUp(leadId: string, followUpId: string, outcome?: string): Promise<LeadFollowUpItem> {
+export async function completePvCrmFollowUp(
+  leadId: string,
+  followUpId: string,
+  payload?: { outcome?: string; note?: string; nextAction?: string; nextFollowUpAt?: string; interestLevel?: string },
+): Promise<LeadFollowUpItem> {
   return adminPatchJson<LeadFollowUpItem>(`${CRM_BASE}/${leadId}/follow-ups/${followUpId}`, {
     status: "completed",
-    outcome,
+    ...payload,
   });
+}
+
+export async function togglePvCrmFavourite(leadId: string): Promise<PvCrmLead> {
+  return adminPatchJson<PvCrmLead>(`${CRM_BASE}/${leadId}/favourite`, {});
+}
+
+export type CrmLeadStats = {
+  total: number;
+  pipeline: Record<string, number>;
+  stages: string[];
+  favouriteCount: number;
+  followUpDueToday: number;
+  followUpOverdue: number;
+  newEnquiries: number;
+  pendingFollowUps: number;
+};
+
+export async function fetchPvCrmLeadStats(params?: {
+  source?: string;
+  assignedTo?: string;
+  from?: string;
+  to?: string;
+}): Promise<CrmLeadStats> {
+  const q = new URLSearchParams();
+  if (params?.source && params.source !== "all") q.set("source", params.source);
+  if (params?.assignedTo) q.set("assignedTo", params.assignedTo);
+  if (params?.from) q.set("from", params.from);
+  if (params?.to) q.set("to", params.to);
+  const qs = q.toString();
+  const { data } = await adminGet<CrmLeadStats>(`${CRM_BASE}/stats${qs ? `?${qs}` : ""}`);
+  return data;
 }
 
 /** Permanently delete a junk/incorrect CRM lead (managers/superadmins). */
@@ -315,6 +382,7 @@ export async function exportPvCrmLeadsExcel(params?: {
   from?: string;
   to?: string;
   dateField?: PvCrmLeadDateField;
+  buyerType?: string;
 }): Promise<void> {
   const q = new URLSearchParams();
   if (params?.search) q.set("search", params.search);
@@ -324,6 +392,7 @@ export async function exportPvCrmLeadsExcel(params?: {
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
   if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
+  if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
   const qs = q.toString();
   const { blob, filename } = await adminDownloadBlob(
     `${CRM_BASE}/export${qs ? `?${qs}` : ""}`,

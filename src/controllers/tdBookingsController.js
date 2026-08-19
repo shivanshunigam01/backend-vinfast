@@ -168,6 +168,17 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
   }
 
   const fresh = await findBookingById(booking._id);
+  try {
+    const { notifyTdEvent } = require('../utils/staffNotifications');
+    await notifyTdEvent(fresh, {
+      type: 'td_booked',
+      title: 'New test drive booking',
+      actorId: req.admin._id,
+      priority: 'info',
+    });
+  } catch (err) {
+    console.error('[notifyTdEvent td_booked]', err.message);
+  }
   return successResponse(
     res,
     formatTdBooking(fresh),
@@ -347,6 +358,12 @@ exports.updateBooking = asyncHandler(async (req, res) => {
     if (next === 'COMPLETED') {
       const { notifyTestDriveCompleted } = require('../utils/notifications');
       await notifyTestDriveCompleted({ booking: doc, customer: doc.customerId });
+      try {
+        const { notifyTdEvent } = require('../utils/staffNotifications');
+        await notifyTdEvent(doc, { type: 'td_completed', title: 'Test drive completed', actorId: req.admin._id, priority: 'done' });
+      } catch (err) {
+        console.error('[notifyTdEvent td_completed]', err.message);
+      }
     }
     doc.bookingStatus = next;
   }
@@ -506,6 +523,12 @@ exports.cancelBooking = asyncHandler(async (req, res) => {
   doc.cancellationReason = req.body?.reason ? String(req.body.reason).trim() : undefined;
   await doc.save();
   await doc.populate(BOOKING_POPULATE);
+  try {
+    const { notifyTdEvent } = require('../utils/staffNotifications');
+    await notifyTdEvent(doc, { type: 'td_cancelled', title: 'Test drive cancelled', actorId: req.admin._id, priority: 'urgent' });
+  } catch (err) {
+    console.error('[notifyTdEvent td_cancelled]', err.message);
+  }
   return successResponse(res, formatTdBooking(doc), 'Booking cancelled');
 });
 
@@ -687,6 +710,12 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
     executive: staff,
     customer: doc.customerId,
   });
+  try {
+    const { notifyTdEvent } = require('../utils/staffNotifications');
+    await notifyTdEvent(doc, { type: 'td_assigned', title: 'Test drive assigned', actorId: req.admin._id, priority: 'info' });
+  } catch (err) {
+    console.error('[notifyTdEvent td_assigned]', err.message);
+  }
 
   await doc.populate(BOOKING_POPULATE);
   return successResponse(
@@ -923,5 +952,11 @@ exports.rescheduleBooking = asyncHandler(async (req, res) => {
   }
   await doc.save();
   await doc.populate(BOOKING_POPULATE);
+  try {
+    const { notifyTdEvent } = require('../utils/staffNotifications');
+    await notifyTdEvent(doc, { type: 'td_rescheduled', title: 'Test drive rescheduled', actorId: req.admin._id, priority: 'today' });
+  } catch (err) {
+    console.error('[notifyTdEvent td_rescheduled]', err.message);
+  }
   return successResponse(res, formatTdBooking(doc), 'Booking rescheduled');
 });

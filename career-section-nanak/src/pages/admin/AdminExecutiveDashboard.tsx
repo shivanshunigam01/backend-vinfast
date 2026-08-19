@@ -31,6 +31,8 @@ import {
   type MyDashboardPayload,
 } from "@/lib/executiveDashboardApi";
 import { fetchPvCrmLeads, type PvCrmLead } from "@/lib/pvLeadCrmApi";
+import { fetchActionCentre, type ActionCentreData } from "@/lib/crmActionCentreApi";
+import { CrmActionCentre } from "@/components/admin/CrmActionCentre";
 import { STAGE_COLORS, normalizeCrmStage } from "@/lib/leadStages";
 import { cn } from "@/lib/utils";
 import { CreMyDashboard } from "@/pages/admin/CreMyDashboard";
@@ -334,6 +336,7 @@ export default function AdminExecutiveDashboard() {
   const [source, setSource] = useState("all");
   const [managerTab, setManagerTab] = useState("team");
   const [data, setData] = useState<MyDashboardPayload | null>(null);
+  const [actionCentre, setActionCentre] = useState<ActionCentreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -357,6 +360,11 @@ export default function AdminExecutiveDashboard() {
         source: source !== "all" ? source : undefined,
       });
       setData(report);
+      try {
+        setActionCentre(await fetchActionCentre());
+      } catch {
+        setActionCentre(null);
+      }
     } catch (e) {
       setData(null);
       toast.error(formatApiErrors(e));
@@ -605,7 +613,9 @@ export default function AdminExecutiveDashboard() {
 
   if (isCreDashboard(data)) {
     return (
-      <CreMyDashboard
+      <div className="space-y-6">
+        <CrmActionCentre data={actionCentre} />
+        <CreMyDashboard
         data={data}
         year={year}
         setYear={setYear}
@@ -699,6 +709,7 @@ export default function AdminExecutiveDashboard() {
         detailTdLink={detailTdLink}
         closeDetail={closeDetail}
       />
+      </div>
     );
   }
 
@@ -1243,6 +1254,42 @@ export default function AdminExecutiveDashboard() {
         <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
         </Button>
+      </div>
+
+      <CrmActionCentre data={actionCentre} />
+      {isManagerView && actionCentre?.team?.members?.length ? (
+        <Card className="p-4 overflow-x-auto">
+          <p className="text-sm font-semibold mb-3">Team Action Centre</p>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-muted-foreground border-b border-border">
+                <th className="py-2 pr-2">Employee</th>
+                <th className="py-2 pr-2">New Enquiry</th>
+                <th className="py-2 pr-2">Follow-up Today</th>
+                <th className="py-2 pr-2">Overdue</th>
+                <th className="py-2 pr-2">TD Today</th>
+                <th className="py-2 pr-2">HOT</th>
+                <th className="py-2 pr-2">Booking</th>
+                <th className="py-2">Delivery</th>
+              </tr>
+            </thead>
+            <tbody>
+              {actionCentre.team.members.map((m) => (
+                <tr key={m._id} className="border-b border-border/40">
+                  <td className="py-2 pr-2 font-medium">{m.name}</td>
+                  <td className="py-2 pr-2">{m.newEnquiry}</td>
+                  <td className="py-2 pr-2">{m.followUpToday}</td>
+                  <td className="py-2 pr-2">{m.overdue}</td>
+                  <td className="py-2 pr-2">{m.tdToday}</td>
+                  <td className="py-2 pr-2">{m.hot}</td>
+                  <td className="py-2 pr-2">{m.booking}</td>
+                  <td className="py-2">{m.delivery}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ) : null}
       </div>
 
       <Card className="bg-card border-border/50 p-4 space-y-4">

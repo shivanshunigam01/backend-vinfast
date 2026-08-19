@@ -48,6 +48,7 @@ export type LeadExecutivePerformance = {
   testDrivesCompleted: number;
   feedbackCount: number;
   avgExecutiveBehaviour: number | null;
+  avgFirstResponseMinutes?: number | null;
 };
 
 export type LeadActivityRow = {
@@ -149,6 +150,27 @@ export type LeadAdminReport = {
   leadDetailRows: LeadDetailReportRow[];
   leadAgeing: LeadAgeingBucket[];
   stages: string[];
+  kpis?: {
+    today: Record<string, number>;
+    mtd: Record<string, number>;
+  };
+  conversions?: {
+    eligibleLeads: number;
+    tdBooked: number;
+    tdCompleted: number;
+    bookings: number;
+    deliveries: number;
+    leadToTdPct: number;
+    tdToBookingPct: number;
+    leadToBookingPct: number;
+    bookingToDeliveryPct: number;
+  };
+  funnelReport?: Array<{ stage: string; count: number; conversionPct: number; dropPct: number; avgHoursInStage: number; avgDaysInStage?: number }>;
+  sourcePerformance?: Array<{ source: string; leads: number; interested: number; td: number; booking: number; delivery: number; leadToBookingPct: number }>;
+  modelPerformance?: Array<{ model: string; enquiry: number; interested: number; td: number; booking: number; delivery: number; lost: number }>;
+  followUpPerformance?: Array<{ employeeId: string; employee: string; assigned: number; dueToday: number; completed: number; overdue: number; rescheduled: number; conversionPct: number }>;
+  tdPerformance?: Array<{ employeeId: string; employee: string; booked: number; completed: number; cancelled: number; rescheduled: number; completionPct: number }>;
+  inactivityAgeing?: { buckets: Record<string, number>; avgFirstResponseMinutes: number; firstResponseSample: number };
 };
 
 const EMPTY_REPORT: LeadAdminReport = {
@@ -201,6 +223,14 @@ function normalizeLeadReport(raw: LeadAdminReport | null | undefined): LeadAdmin
     leadDetailRows: raw.leadDetailRows ?? [],
     leadAgeing: raw.leadAgeing ?? [],
     stages: raw.stages ?? [],
+    kpis: raw.kpis,
+    conversions: raw.conversions,
+    funnelReport: raw.funnelReport ?? [],
+    sourcePerformance: raw.sourcePerformance ?? [],
+    modelPerformance: raw.modelPerformance ?? [],
+    followUpPerformance: raw.followUpPerformance ?? [],
+    tdPerformance: raw.tdPerformance ?? [],
+    inactivityAgeing: raw.inactivityAgeing,
   };
 }
 
@@ -210,6 +240,10 @@ export async function fetchLeadAdminReport(params?: {
   executiveId?: string;
   status?: string;
   source?: string;
+  model?: string;
+  buyerType?: string;
+  channel?: string;
+  designation?: string;
 }): Promise<LeadAdminReport> {
   const q = new URLSearchParams();
   if (params?.from) q.set("from", params.from);
@@ -217,6 +251,10 @@ export async function fetchLeadAdminReport(params?: {
   if (params?.executiveId) q.set("executiveId", params.executiveId);
   if (params?.status && params.status !== "all") q.set("status", params.status);
   if (params?.source && params.source !== "all") q.set("source", params.source);
+  if (params?.model && params.model !== "all") q.set("model", params.model);
+  if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
+  if (params?.channel && params.channel !== "all") q.set("channel", params.channel);
+  if (params?.designation && params.designation !== "all") q.set("designation", params.designation);
   const { data } = await adminGet<LeadAdminReport>(`/admin/td/leads/reports/admin?${q}`);
   return normalizeLeadReport(data);
 }

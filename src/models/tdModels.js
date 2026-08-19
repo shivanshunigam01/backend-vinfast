@@ -20,5 +20,8 @@ require('./TestDrive');
 require('./Admin');
 require('./LeadFollowUp');
 require('./LeadStageHistory');
+require('./LeadFavourite');
+require('./BuyerType');
+require('./StaffNotification');
 
 module.exports = {};

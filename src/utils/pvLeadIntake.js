@@ -148,6 +148,7 @@ async function intakePvLead(input = {}) {
     leadType,
     area,
     address,
+    buyerType,
   } = input;
 
   const parent = await ensureParentCustomer({ name, mobile, email, city, otherCity });
@@ -178,6 +179,7 @@ async function intakePvLead(input = {}) {
     assignedToEmail: assignedToEmail || undefined,
     createdBy: createdBy || changedBy || undefined,
     leadType: pickStr(leadType) || undefined,
+    buyerType: pickStr(buyerType) || undefined,
     area: pickStr(area, city) || undefined,
     address: pickStr(address) || undefined,
     utmSource,

@@ -51,12 +51,27 @@ const CRM_LEAD_LIST_SORT = { createdAt: -1, lastActivityAt: -1, updatedAt: -1, _
  * Sales Head, Sales Managers, Branch Managers, Executives are limited to their
  * org subtree (self + everyone who reports up to them via reportsTo).
  */
+function resolveReportsScope(admin) {
+  const explicit = String(admin?.reportsScope || '').trim().toLowerCase();
+  if (explicit === 'organisation' || explicit === 'team' || explicit === 'self') return explicit;
+  if (admin?.userType === 'admin' || admin?.role === 'superadmin') return 'organisation';
+  const designation = String(admin?.designation || '').toLowerCase();
+  if (['gm', 'ceo', 'md', 'sales_head', 'cre'].includes(designation)) return 'organisation';
+  if (['sales_manager', 'branch_manager'].includes(designation)) return 'team';
+  return 'self';
+}
+
+function isOrganisationScopedUser(admin) {
+  return resolveReportsScope(admin) === 'organisation';
+}
+
 function isUnrestrictedViewer(admin) {
   if (!admin) return false;
   // Admin-collection logins are not in the TDStaff reporting tree — never team-scope them.
   if (admin.userType === 'admin') return true;
   if (admin.role === 'superadmin') return true;
   if (isCreUser(admin)) return true;
+  if (isOrganisationScopedUser(admin)) return true;
   const designation = String(admin.designation || '').toLowerCase();
   return UNRESTRICTED_DESIGNATIONS.has(designation);
 }
@@ -376,6 +391,8 @@ module.exports = {
   UNRESTRICTED_DESIGNATIONS,
   CRE_ASSIGNABLE_DESIGNATIONS,
   isUnrestrictedViewer,
+  resolveReportsScope,
+  isOrganisationScopedUser,
   isCreUser,
   isCreAssignableDesignation,
   isExecutiveScopedUser,

@@ -62,6 +62,7 @@ import AdminTDRoles from "./pages/admin/AdminTDRoles";
 import AdminFeedbackSubmissions from "./pages/admin/AdminFeedbackSubmissions";
 import AdminCrmLeads from "./pages/admin/AdminCrmLeads";
 import AdminLeadStages from "./pages/admin/AdminLeadStages";
+import AdminBuyerTypes from "./pages/admin/AdminBuyerTypes";
 import AdminPricing from "./pages/admin/AdminPricing";
 import AdminDeliveryReports from "./pages/admin/AdminDeliveryReports";
 import AdminExecutiveDashboard from "./pages/admin/AdminExecutiveDashboard";
@@ -164,6 +165,7 @@ const App = () => {
             <Route path="my-dashboard" element={<AdminExecutiveDashboard />} />
             <Route path="crm/leads" element={<AdminCrmLeads />} />
             <Route path="crm/lead-stages" element={<AdminLeadStages />} />
+            <Route path="crm/buyer-types" element={<AdminBuyerTypes />} />
             <Route path="pricing" element={<AdminPricing />} />
             <Route path="reports/deliveries" element={<AdminDeliveryReports />} />
 

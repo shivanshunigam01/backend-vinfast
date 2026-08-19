@@ -20,6 +20,7 @@ import {
   type CreatePvCrmLeadPayload,
   type PvCrmLead,
 } from "@/lib/pvLeadCrmApi";
+import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
 
@@ -48,6 +49,7 @@ const emptyForm = () => ({
   subCustomerName: "",
   subCustomerMobile: "",
   vehicleRegistration: "",
+  buyerType: "",
 });
 
 export function AddPvLeadDialog({
@@ -60,6 +62,7 @@ export function AddPvLeadDialog({
 }: Props) {
   const [form, setForm] = useState(() => emptyForm());
   const [saving, setSaving] = useState(false);
+  const [buyerTypes, setBuyerTypes] = useState<BuyerTypeDoc[]>([]);
   const staffUsers = Array.isArray(executives) ? executives : [];
 
   // Returning-customer popup: full history shown when a known mobile is entered.
@@ -76,6 +79,7 @@ export function AddPvLeadDialog({
     setExistingHistory(null);
     setShowHistory(false);
     lookedUpMobileRef.current = "";
+    void fetchBuyerTypes().then(setBuyerTypes).catch(() => setBuyerTypes([]));
   }, [open, isExecutive]);
 
   useEffect(() => {
@@ -127,6 +131,7 @@ export function AddPvLeadDialog({
       subCustomerName: form.subCustomerName.trim() || undefined,
       subCustomerMobile: form.subCustomerMobile.trim() || undefined,
       vehicleRegistration: form.vehicleRegistration.trim() || undefined,
+      buyerType: form.buyerType || undefined,
     };
 
     if (canAssignToExecutive && form.executiveId) {
@@ -250,6 +255,19 @@ export function AddPvLeadDialog({
                 <Input value={form.vehicleRegistration} onChange={(e) => setForm((f) => ({ ...f, vehicleRegistration: e.target.value.toUpperCase() }))} className="bg-secondary/50 uppercase" placeholder="e.g. BR01AB1234" />
               </div>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Buyer type</Label>
+            <Select value={form.buyerType || "none"} onValueChange={(buyerType) => setForm((f) => ({ ...f, buyerType: buyerType === "none" ? "" : buyerType }))}>
+              <SelectTrigger className="bg-secondary/50"><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">—</SelectItem>
+                {buyerTypes.map((b) => (
+                  <SelectItem key={b._id} value={b.label}>{b.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1.5">

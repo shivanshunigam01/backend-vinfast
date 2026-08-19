@@ -13,6 +13,7 @@ const { intakePvLead, findOpenLeadForCustomer } = require('../utils/pvLeadIntake
 const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
+const LeadFavourite = require('../models/LeadFavourite');
 const TDStaff = require('../models/TDStaff');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
@@ -52,6 +53,17 @@ const {
   getCustomerTestDriveState,
   findCustomerByMobile,
 } = require('../utils/customerHistoryBuilder');
+const {
+  syncLeadNextFollowUp,
+  ensureNextPendingFollowUp,
+  stampFirstResponse,
+  followUpHighlight,
+  normalizeInterestLevel,
+} = require('../utils/followUpSync');
+const { leadAgeInDays } = require('../utils/crmConversion');
+const { emitStaffNotification, notifyLeadAssignees, leadHref, displayLeadName } = require('../utils/staffNotifications');
+const { buildCrmLeadStats, favouriteLeadIdsForUser } = require('../utils/crmStatsBuilder');
+const { buildActionCentre, buildManagerActionGrid } = require('../utils/actionCentreBuilder');
 
 const LEAD_POPULATE = [
   { path: 'assignedTo', select: 'name email role designation' },
@@ -192,6 +204,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     vehicleRegistration,
     referredByMobile,
     followUps,
+    buyerType,
   } = body;
 
   if (!name || String(name).trim().length < 2) {
@@ -278,6 +291,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     vehicleRegistration: vehicleRegistration?.trim() || undefined,
     createdBy: admin._id,
     leadType: leadTypeValue,
+    buyerType: buyerType ? String(buyerType).trim() : undefined,
     area: areaValue,
     address: addressValue,
     subCustomer: subCustomerName
@@ -296,7 +310,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
   });
 
   if (Array.isArray(followUps) && followUps.length) {
-    for (const fu of followUps.slice(0, 12)) {
+    for (const fu of followUps) {
       const note = String(fu?.note || '').trim();
       if (!note) continue;
       let scheduled = null;
@@ -351,18 +365,27 @@ async function ensureLeadIds(doc) {
   return doc;
 }
 
-function formatCrmLead(doc) {
+function formatCrmLead(doc, extras = {}) {
   const plain = doc.toObject ? doc.toObject() : doc;
   const customer = plain.pvCustomerId;
   const subCustomer = plain.subCustomerId;
+  const resolvedName = (customer && customer.name) || plain.name || '';
   return {
     ...plain,
+    name: resolvedName,
     customerId: customer?.customerId || null,
-    customerName: customer?.name || plain.name,
+    customerName: resolvedName,
     parentCustomerId: customer?.customerId || null,
     subCustomerCode: subCustomer?.customerId || null,
     subCustomerName: subCustomer?.name || null,
     vehicleRegistration: plain.vehicleRegistration || subCustomer?.vehicleRegistration || null,
+    buyerType: plain.buyerType || '',
+    interestLevel: plain.interestLevel || '',
+    firstRespondedAt: plain.firstRespondedAt || null,
+    leadAgeDays: leadAgeInDays(plain.createdAt),
+    followUpHighlight: followUpHighlight(plain.nextFollowUp),
+    isFavourite: Boolean(extras.isFavourite),
+    followUpCount: extras.followUpCount != null ? extras.followUpCount : undefined,
   };
 }
 
@@ -413,6 +436,8 @@ async function buildLeadQuery(admin, queryParams = {}) {
     query.$and.push({ $or: [{ area: areaRx }, { city: areaRx }] });
   }
   if (queryParams.leadType) query.leadType = new RegExp(String(queryParams.leadType).trim(), 'i');
+  if (queryParams.buyerType) query.buyerType = String(queryParams.buyerType).trim();
+  if (queryParams.interestLevel) query.interestLevel = String(queryParams.interestLevel).trim().toUpperCase();
   if (queryParams.address) query.address = new RegExp(String(queryParams.address).trim(), 'i');
   if (queryParams.createdBy) query.createdBy = queryParams.createdBy;
   if (queryParams.from || queryParams.to) {
@@ -454,6 +479,18 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (queryParams.followUpDue === 'true') {
     query.nextFollowUp = { $lte: new Date() };
     query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
+  }
+  if (queryParams.followUpToday === 'true') {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    query.nextFollowUp = { $gte: start, $lte: end };
+    query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
+  }
+  if (queryParams.favourite === 'true' || queryParams.hot === 'true') {
+    const favIds = await favouriteLeadIdsForUser(admin);
+    query._id = { $in: favIds.length ? favIds : [null] };
   }
 
   // CRE work queue: only unassigned, unfollowed, or still-in-calling leads.
@@ -524,9 +561,24 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
   ]);
 
   const data = [];
+  const favIds = await LeadFavourite.find({
+    staffId: req.admin._id,
+    leadId: { $in: docs.map((d) => d._id) },
+  })
+    .select('leadId')
+    .lean();
+  const favSet = new Set(favIds.map((f) => String(f.leadId)));
+  const fuCounts = await LeadFollowUp.aggregate([
+    { $match: { leadId: { $in: docs.map((d) => d._id) } } },
+    { $group: { _id: '$leadId', n: { $sum: 1 } } },
+  ]);
+  const fuMap = new Map(fuCounts.map((r) => [String(r._id), r.n]));
   for (const doc of docs) {
     await ensureLeadIds(doc);
-    data.push(formatCrmLead(doc));
+    data.push(formatCrmLead(doc, {
+      isFavourite: favSet.has(String(doc._id)),
+      followUpCount: fuMap.get(String(doc._id)) || 0,
+    }));
   }
 
   const stages = await getActiveStageLabels();
@@ -539,15 +591,16 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   await assertLeadReadable(lead, req.admin);
   await ensureLeadIds(lead);
 
-  const [history, followUps, siblingLeads, testDriveState] = await Promise.all([
+  const followUpSort = String(req.query.followUpSort || 'asc').toLowerCase() === 'desc' ? { createdAt: -1 } : { createdAt: 1 };
+  const [history, followUps, followUpCount, siblingLeads, testDriveState, fav] = await Promise.all([
     LeadStageHistory.find({ leadId: lead._id })
       .populate('changedBy', 'name email')
       .sort({ createdAt: -1 })
       .limit(50),
     LeadFollowUp.find({ leadId: lead._id })
       .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(100),
+      .sort(followUpSort),
+    LeadFollowUp.countDocuments({ leadId: lead._id }),
     lead.pvCustomerId
       ? Lead.find({ pvCustomerId: lead.pvCustomerId._id || lead.pvCustomerId })
           .select('leadId opportunityId model status source createdAt')
@@ -555,14 +608,16 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
           .limit(20)
       : [],
     getCustomerTestDriveState(lead.mobile),
+    LeadFavourite.findOne({ leadId: lead._id, staffId: req.admin._id }).select('_id').lean(),
   ]);
 
   const stages = await getActiveStageLabels();
   const isAdmin = isCrmManagerLike(req.admin);
   return successResponse(res, {
-    lead: formatCrmLead(lead),
+    lead: formatCrmLead(lead, { isFavourite: Boolean(fav) }),
     history,
     followUps,
+    followUpCount,
     siblingLeads,
     stages,
     // Drives "Book Test Drive" / "Test Drive Done" button visibility in the UI:
@@ -603,6 +658,9 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   }
 
   lead.status = normalizedStage;
+  if (prevStage === 'Enquiry' && normalizedStage !== 'Enquiry') {
+    stampFirstResponse(lead);
+  }
   touchLeadActivity(lead);
   await lead.save();
 
@@ -643,6 +701,20 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   if (vehicleOrderError) {
     leadPayload.vehicleOrderError = vehicleOrderError;
   }
+  await notifyLeadAssignees(lead, {
+    actorId: req.admin._id,
+    type: normalizedStage === 'Delivered' ? 'delivery' : normalizedStage === 'Booking' ? 'booking' : 'stage_changed',
+    title:
+      normalizedStage === 'Delivered'
+        ? 'Lead marked Delivered'
+        : normalizedStage === 'Booking'
+          ? 'Lead moved to Booking'
+          : 'Lead stage changed',
+    body: `${prevStage} → ${normalizedStage}`,
+    customerName: displayLeadName(lead),
+    href: leadHref(lead._id),
+    priority: ['Booking', 'Delivered'].includes(normalizedStage) ? 'done' : 'info',
+  });
   return successResponse(
     res,
     leadPayload,
@@ -682,6 +754,8 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
     vehicleRegistration,
     financeNeeded,
     exchangeNeeded,
+    buyerType,
+    interestLevel,
   } = req.body || {};
 
   const changes = [];
@@ -726,6 +800,15 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
   applyString('source', 'Source', source);
   applyString('interest', 'Interest', interest);
   applyString('vehicleRegistration', 'Registration', vehicleRegistration);
+  applyString('buyerType', 'Buyer type', buyerType);
+
+  if (interestLevel !== undefined) {
+    const nextInterest = normalizeInterestLevel(interestLevel) || String(interestLevel || '').trim() || undefined;
+    if ((lead.interestLevel || '') !== (nextInterest || '')) {
+      changes.push(`Interest level: ${lead.interestLevel || '—'} → ${nextInterest || '—'}`);
+      lead.interestLevel = nextInterest;
+    }
+  }
 
   if (financeNeeded !== undefined && Boolean(financeNeeded) !== Boolean(lead.financeNeeded)) {
     changes.push(`Finance needed: ${lead.financeNeeded ? 'Yes' : 'No'} → ${financeNeeded ? 'Yes' : 'No'}`);
@@ -781,20 +864,35 @@ exports.updateLeadRemarks = asyncHandler(async (req, res) => {
   touchLeadActivity(lead);
   await lead.save();
   await lead.populate(LEAD_POPULATE);
+  await notifyLeadAssignees(lead, {
+    actorId: req.admin._id,
+    type: 'remarks',
+    title: 'New remarks / instruction',
+    body: lead.remarks.slice(0, 180),
+    customerName: displayLeadName(lead),
+    href: leadHref(lead._id),
+    priority: 'info',
+  });
 
   return successResponse(res, formatCrmLead(lead), 'Remarks saved');
 });
 
 exports.addFollowUp = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
-  const { note, scheduledAt, outcome, markCompleted } = req.body;
+  const { note, scheduledAt, outcome, markCompleted, nextAction, nextFollowUpAt, interestLevel } = req.body;
   if (!note || !String(note).trim()) throw new ApiError(400, 'Follow-up note is required');
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
 
-  const scheduled = scheduledAt ? new Date(scheduledAt) : null;
+  const interest = normalizeInterestLevel(interestLevel);
+  const nextAt = nextFollowUpAt ? new Date(nextFollowUpAt) : null;
+  const scheduled = scheduledAt ? new Date(scheduledAt) : (nextAt && !markCompleted ? nextAt : null);
   const isCompleted = Boolean(markCompleted) || !scheduled || scheduled <= new Date();
+
+  if (Boolean(markCompleted) && (!outcome || !String(outcome).trim())) {
+    throw new ApiError(400, 'Follow-up outcome is required when completing a follow-up');
+  }
 
   const followUp = await LeadFollowUp.create({
     leadId: lead._id,
@@ -802,18 +900,55 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
     note: String(note).trim(),
     scheduledAt: scheduled || undefined,
     completedAt: isCompleted ? new Date() : undefined,
-    outcome: outcome || undefined,
+    outcome: outcome ? String(outcome).trim() : undefined,
+    nextAction: nextAction ? String(nextAction).trim() : undefined,
+    nextFollowUpAt: nextAt || undefined,
+    interestLevel: interest,
     status: isCompleted ? 'completed' : 'pending',
   });
 
-  if (scheduled && !isCompleted) {
-    lead.nextFollowUp = scheduled;
+  if (isCompleted && nextAt && nextAt > new Date()) {
+    await ensureNextPendingFollowUp(lead, {
+      createdBy: req.admin._id,
+      nextAt,
+      nextAction,
+    });
   }
+
+  if (interest) lead.interestLevel = interest;
+  stampFirstResponse(lead);
+  await syncLeadNextFollowUp(lead);
   touchLeadActivity(lead);
   await lead.save();
 
   await followUp.populate('createdBy', 'name email');
+  await notifyLeadAssignees(lead, {
+    actorId: req.admin._id,
+    type: isCompleted ? 'follow_up_completed' : 'follow_up_due',
+    title: isCompleted ? 'Follow-up completed' : 'Follow-up scheduled',
+    body: followUp.note,
+    customerName: displayLeadName(lead),
+    href: leadHref(lead._id),
+    priority: isCompleted ? 'done' : 'today',
+  });
   return successResponse(res, followUp, 'Follow-up logged', 201);
+});
+
+exports.listLeadFollowUps = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const lead = await Lead.findById(req.params.id);
+  await assertLeadReadable(lead, req.admin);
+  const { page, limit, skip } = buildPagination(req);
+  const sortDir = String(req.query.sort || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+  const [rows, total] = await Promise.all([
+    LeadFollowUp.find({ leadId: lead._id })
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: sortDir })
+      .skip(skip)
+      .limit(limit),
+    LeadFollowUp.countDocuments({ leadId: lead._id }),
+  ]);
+  return successResponse(res, rows, undefined, 200, { page, limit, total });
 });
 
 exports.updateFollowUp = asyncHandler(async (req, res) => {
@@ -824,19 +959,53 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
   const followUp = await LeadFollowUp.findOne({ _id: req.params.followUpId, leadId: lead._id });
   if (!followUp) throw new ApiError(404, 'Follow-up not found');
 
-  const { note, scheduledAt, outcome, status } = req.body;
+  const { note, scheduledAt, outcome, status, nextAction, nextFollowUpAt, interestLevel } = req.body;
   if (note != null) followUp.note = String(note).trim();
   if (scheduledAt != null) followUp.scheduledAt = scheduledAt ? new Date(scheduledAt) : undefined;
-  if (outcome != null) followUp.outcome = outcome;
-  if (status != null) {
+  if (outcome != null) followUp.outcome = String(outcome).trim();
+  if (nextAction != null) followUp.nextAction = String(nextAction).trim();
+  if (nextFollowUpAt != null) followUp.nextFollowUpAt = nextFollowUpAt ? new Date(nextFollowUpAt) : undefined;
+  const interest = normalizeInterestLevel(interestLevel);
+  if (interest) followUp.interestLevel = interest;
+
+  const nextStatus = status != null ? status : followUp.status;
+  if (nextStatus === 'completed') {
+    const remarks = followUp.note;
+    const out = followUp.outcome;
+    if (!remarks || !String(remarks).trim()) throw new ApiError(400, 'Follow-up remarks are required to complete');
+    if (!out || !String(out).trim()) throw new ApiError(400, 'Follow-up outcome is required to complete');
+    followUp.status = 'completed';
+    if (!followUp.completedAt) followUp.completedAt = new Date();
+  } else if (status != null) {
     followUp.status = status;
-    if (status === 'completed' && !followUp.completedAt) followUp.completedAt = new Date();
   }
 
   await followUp.save();
+
+  if (followUp.status === 'completed' && followUp.nextFollowUpAt && new Date(followUp.nextFollowUpAt) > new Date()) {
+    await ensureNextPendingFollowUp(lead, {
+      createdBy: req.admin._id,
+      nextAt: followUp.nextFollowUpAt,
+      nextAction: followUp.nextAction,
+    });
+  }
+
+  if (interest) lead.interestLevel = interest;
+  stampFirstResponse(lead);
+  await syncLeadNextFollowUp(lead);
   touchLeadActivity(lead);
   await lead.save();
   await followUp.populate('createdBy', 'name email');
+
+  await notifyLeadAssignees(lead, {
+    actorId: req.admin._id,
+    type: followUp.status === 'completed' ? 'follow_up_completed' : 'follow_up_rescheduled',
+    title: followUp.status === 'completed' ? 'Follow-up completed' : 'Follow-up updated',
+    body: followUp.outcome || followUp.note,
+    customerName: displayLeadName(lead),
+    href: leadHref(lead._id),
+    priority: followUp.status === 'completed' ? 'done' : 'info',
+  });
 
   return successResponse(res, followUp, 'Follow-up updated');
 });
@@ -893,6 +1062,20 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     reason: `Assignment: ${prevLabel} → ${assignLabel}`,
   });
 
+  if (assignee?._id) {
+    await emitStaffNotification({
+      recipientId: assignee._id,
+      actorId: req.admin._id,
+      type: 'lead_assigned',
+      title: prevAssignee ? 'Lead reassigned to you' : 'New enquiry assigned',
+      body: `${displayLeadName(updated)} · ${updated.model || ''}`.trim(),
+      customerName: displayLeadName(updated),
+      leadId: updated._id,
+      href: leadHref(updated._id),
+      priority: 'info',
+    });
+  }
+
   return successResponse(
     res,
     formatCrmLead(updated),
@@ -910,6 +1093,44 @@ exports.getCrmStages = asyncHandler(async (req, res) => {
 exports.getCrmSources = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   return successResponse(res, Lead.LEAD_SOURCES || []);
+});
+
+exports.getCrmLeadStats = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const query = await buildLeadQuery(req.admin, req.query);
+  const data = await buildCrmLeadStats({ admin: req.admin, leadQuery: query });
+  return successResponse(res, data);
+});
+
+exports.getActionCentre = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const query = await buildLeadQuery(req.admin, { ...req.query, creView: isCreUser(req.admin) ? 'all' : req.query.creView });
+  const data = await buildActionCentre({ admin: req.admin, leadQuery: query });
+  if (['manager', 'superadmin'].includes(req.admin.role) || req.admin.userType === 'admin' || isCrmManagerLike(req.admin)) {
+    data.team = await buildManagerActionGrid({ admin: req.admin, leadQuery: query });
+  }
+  return successResponse(res, data);
+});
+
+exports.toggleFavourite = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const lead = await Lead.findById(req.params.id);
+  await assertLeadReadable(lead, req.admin);
+  const existing = await LeadFavourite.findOne({ leadId: lead._id, staffId: req.admin._id });
+  let isFavourite;
+  if (existing) {
+    await LeadFavourite.deleteOne({ _id: existing._id });
+    isFavourite = false;
+  } else {
+    await LeadFavourite.create({ leadId: lead._id, staffId: req.admin._id });
+    isFavourite = true;
+  }
+  await lead.populate(LEAD_POPULATE);
+  return successResponse(
+    res,
+    formatCrmLead(lead, { isFavourite }),
+    isFavourite ? 'Marked as Favourite / HOT' : 'Removed from favourites',
+  );
 });
 
 exports.createCrmLead = asyncHandler(async (req, res) => {
@@ -1364,6 +1585,8 @@ exports.exportCrmLeads = asyncHandler(async (req, res) => {
     City: l.city || '',
     Model: l.model || '',
     Source: l.source || '',
+    BuyerType: l.buyerType || '',
+    InterestLevel: l.interestLevel || '',
     Status: l.status || '',
     Remarks: l.remarks || '',
     AssignedToEmail: l.assignedToEmail || l.assignedTo?.email || '',
@@ -1426,7 +1649,7 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
 
   let nextPending = lead.nextFollowUp ? new Date(lead.nextFollowUp) : null;
 
-  for (const fu of followUps.slice(0, 12)) {
+  for (const fu of followUps) {
     const note = String(fu?.note || '').trim();
     if (!note) continue;
     let scheduled = null;

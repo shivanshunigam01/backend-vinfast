@@ -18,14 +18,15 @@ import { fetchAssignableStaffUsers, type AssignableStaffUser } from "@/lib/leadC
 import ReportPeriodPresets, { type ReportPeriod } from "@/components/admin/ReportPeriodPresets";
 import ReportStageSourceFilters from "@/components/admin/ReportStageSourceFilters";
 import { resolvePeriodRange } from "@/lib/reportPeriod";
-import {
-  fetchLeadAdminReport,
+import { fetchLeadAdminReport,
   type LeadAdminReport,
   type LeadActivityRow,
   type LeadDetailReportRow,
   type LeadFollowUpReportRow,
   type LeadFeedbackReportRow,
 } from "@/lib/leadReportApi";
+import { CRM_IMPORT_MODEL_OPTIONS } from "@/lib/pvLeadCrmApi";
+import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
 import { STAGE_COLORS, normalizeCrmStage } from "@/lib/leadStages";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +79,44 @@ function fmtDateTime(iso?: string) {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
+const WALK_IN_SOURCES = new Set([
+  "Walk-in", "Walk-In", "Walk in", "Executive", "Tele-In", "Tele-Out",
+  "Event / BTL", "Outdoor Activity", "Management Referral", "Employee Referral", "Existing Customer Referral",
+]);
+
+function isWalkInSource(source?: string) {
+  const s = String(source || "").trim();
+  if (WALK_IN_SOURCES.has(s)) return true;
+  return /^walk[\s-]?in$/i.test(s);
+}
+
+function kpiLeadRows(key: string, rows: LeadDetailReportRow[]): LeadDetailReportRow[] {
+  switch (key) {
+    case "walkIn":
+      return rows.filter((r) => isWalkInSource(r.source));
+    case "digital":
+      return rows.filter((r) => !isWalkInSource(r.source));
+    case "negotiation":
+      return rows.filter((r) => r.status === "Negotiation");
+    case "bookings":
+      return rows.filter((r) => r.status === "Booking" || r.status === "Delivered");
+    case "deliveries":
+      return rows.filter((r) => r.status === "Delivered");
+    case "lost":
+      return rows.filter((r) => r.status === "Lost");
+    case "tdBooked":
+      return rows.filter((r) => r.testDriveBooked);
+    case "tdCompleted":
+      return rows.filter((r) => r.testDriveDone);
+    case "followUpDue":
+      return rows.filter((r) => r.nextFollowUp);
+    case "overdueFollowUps":
+      return rows.filter((r) => r.delayStatus === "Overdue" || r.followUpsPending > 0);
+    default:
+      return rows;
+  }
+}
+
 function activityIcon(type: LeadActivityRow["type"]) {
   switch (type) {
     case "follow_up": return MessageSquare;
@@ -100,6 +139,11 @@ export default function AdminTDLeadReports() {
   const [executiveId, setExecutiveId] = useState("all");
   const [status, setStatus] = useState("all");
   const [source, setSource] = useState("all");
+  const [model, setModel] = useState("all");
+  const [buyerType, setBuyerType] = useState("all");
+  const [channel, setChannel] = useState("all");
+  const [designation, setDesignation] = useState("all");
+  const [buyerTypes, setBuyerTypes] = useState<BuyerTypeDoc[]>([]);
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupMode, setPopupMode] = useState<"leads" | "followups" | "feedback">("leads");
@@ -136,6 +180,11 @@ export default function AdminTDLeadReports() {
       } catch {
         setStaff([]);
       }
+      try {
+        setBuyerTypes(await fetchBuyerTypes());
+      } catch {
+        setBuyerTypes([]);
+      }
     })();
   }, []);
 
@@ -149,6 +198,10 @@ export default function AdminTDLeadReports() {
         executiveId: executiveId !== "all" ? executiveId : undefined,
         status: status !== "all" ? status : undefined,
         source: source !== "all" ? source : undefined,
+        model: model !== "all" ? model : undefined,
+        buyerType: buyerType !== "all" ? buyerType : undefined,
+        channel: channel !== "all" ? channel : undefined,
+        designation: designation !== "all" ? designation : undefined,
       });
       setData(report);
     } catch (e) {
@@ -159,7 +212,7 @@ export default function AdminTDLeadReports() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, executiveId, status, source]);
+  }, [from, to, executiveId, status, source, model, buyerType, channel, designation]);
 
   useEffect(() => { void fetchReport(); }, [fetchReport]);
 
@@ -230,9 +283,20 @@ export default function AdminTDLeadReports() {
     leadDetailRows = [],
     leadAgeing = [],
   } = data;
+  const funnelReport = data.funnelReport || [];
+  const sourcePerformance = data.sourcePerformance || [];
+  const modelPerformance = data.modelPerformance || [];
+  const followUpPerformance = data.followUpPerformance || [];
+  const tdPerformance = data.tdPerformance || [];
 
   return (
     <div className="space-y-6">
+      <style>{`
+        @media print {
+          nav, aside, header, .print\\:hidden { display: none !important; }
+          body { background: white !important; }
+        }
+      `}</style>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <Link to="/admin/td/leads" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mb-2">
@@ -245,13 +309,18 @@ export default function AdminTDLeadReports() {
             Executive activity, pipeline, follow-ups, feedback & conversion — admin view
           </p>
         </div>
-        <Button onClick={() => void fetchReport()} variant="outline" size="sm" disabled={loading}>
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Refresh
-        </Button>
+        <div className="flex gap-2 print:hidden">
+          <Button onClick={() => void fetchReport()} variant="outline" size="sm" disabled={loading}>
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            Print / PDF
+          </Button>
+        </div>
       </div>
 
-      <Card className="bg-card border-border/50 p-4 space-y-4">
+      <Card className="bg-card border-border/50 p-4 space-y-4 print:hidden">
         <ReportPeriodPresets
           value={period}
           onChange={setPeriod}
@@ -268,6 +337,56 @@ export default function AdminTDLeadReports() {
           onStatusChange={setStatus}
           onSourceChange={setSource}
         />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="space-y-1.5 min-w-0">
+            <Label className="text-xs">Model</Label>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="w-full bg-secondary/50"><SelectValue placeholder="All models" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All models</SelectItem>
+                {CRM_IMPORT_MODEL_OPTIONS.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <Label className="text-xs">Buyer type</Label>
+            <Select value={buyerType} onValueChange={setBuyerType}>
+              <SelectTrigger className="w-full bg-secondary/50"><SelectValue placeholder="All buyer types" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All buyer types</SelectItem>
+                {buyerTypes.map((b) => (
+                  <SelectItem key={b._id} value={b.label}>{b.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <Label className="text-xs">Walk-in vs digital</Label>
+            <Select value={channel} onValueChange={setChannel}>
+              <SelectTrigger className="w-full bg-secondary/50"><SelectValue placeholder="All channels" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All channels</SelectItem>
+                <SelectItem value="walk-in">Walk-in</SelectItem>
+                <SelectItem value="digital">Digital</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 min-w-0">
+            <Label className="text-xs">Team / role</Label>
+            <Select value={designation} onValueChange={setDesignation}>
+              <SelectTrigger className="w-full bg-secondary/50"><SelectValue placeholder="All roles" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All roles</SelectItem>
+                <SelectItem value="sales_executive">Sales Executive</SelectItem>
+                <SelectItem value="sales_manager">Sales Manager</SelectItem>
+                <SelectItem value="cre">CRE</SelectItem>
+                <SelectItem value="sales_head">Sales Head</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         {/* Phone: dates side by side, staff + buttons full width.
             Tablet (sm–lg): dates row, then staff + buttons aligned on one row.
             Desktop (lg+): everything on a single row. */}
@@ -297,6 +416,12 @@ export default function AdminTDLeadReports() {
                 setFrom(range.from);
                 setTo(range.to);
                 setExecutiveId("all");
+                setStatus("all");
+                setSource("all");
+                setModel("all");
+                setBuyerType("all");
+                setChannel("all");
+                setDesignation("all");
               }}
               variant="outline"
               className="flex-1 lg:flex-none shrink-0"
@@ -306,6 +431,47 @@ export default function AdminTDLeadReports() {
           </div>
         </div>
       </Card>
+
+      {data.kpis ? (
+        <div className="space-y-2 print:block">
+          <p className="text-xs font-semibold text-muted-foreground">Management KPI — Today / MTD</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-2">
+            {Object.keys(data.kpis.mtd).map((k) => (
+              <Card
+                key={k}
+                className="p-3 border-border/50 cursor-pointer hover:bg-secondary/20 transition-colors print:cursor-default"
+                role="button"
+                tabIndex={0}
+                onClick={() => openLeadPopup(`KPI · ${k.replace(/([A-Z])/g, " $1")}`, kpiLeadRows(k, leadDetailRows))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    openLeadPopup(`KPI · ${k.replace(/([A-Z])/g, " $1")}`, kpiLeadRows(k, leadDetailRows));
+                  }
+                }}
+              >
+                <p className="text-[10px] text-muted-foreground capitalize">{k.replace(/([A-Z])/g, " $1")}</p>
+                <p className="text-lg font-bold">{data.kpis?.today?.[k] ?? 0} <span className="text-xs font-normal text-muted-foreground">/ {data.kpis?.mtd?.[k] ?? 0}</span></p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {data.conversions ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <Card className="p-3">Lead→TD {Number(data.conversions.leadToTdPct).toFixed(2)}%</Card>
+          <Card className="p-3">TD→Booking {Number(data.conversions.tdToBookingPct).toFixed(2)}%</Card>
+          <Card className="p-3">Lead→Booking {Number(data.conversions.leadToBookingPct).toFixed(2)}%</Card>
+          <Card className="p-3">Booking→Delivery {Number(data.conversions.bookingToDeliveryPct).toFixed(2)}%</Card>
+        </div>
+      ) : null}
+      {data.inactivityAgeing ? (
+        <p className="text-xs text-muted-foreground">
+          No action: 1 day {data.inactivityAgeing.buckets["1 Day"] ?? 0} · 3 days {data.inactivityAgeing.buckets["3 Days"] ?? 0} · 7+ days {data.inactivityAgeing.buckets["7+ Days"] ?? 0}
+          {data.inactivityAgeing.firstResponseSample
+            ? ` · Avg first response ${data.inactivityAgeing.avgFirstResponseMinutes} min`
+            : ""}
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
@@ -555,6 +721,11 @@ export default function AdminTDLeadReports() {
           <TabsTrigger value="executives">Executive performance</TabsTrigger>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="followups">Follow-ups</TabsTrigger>
+          <TabsTrigger value="fu-perf">Follow-up performance</TabsTrigger>
+          <TabsTrigger value="td-perf">TD performance</TabsTrigger>
+          <TabsTrigger value="funnel-mis">Funnel MIS</TabsTrigger>
+          <TabsTrigger value="source-mis">Source MIS</TabsTrigger>
+          <TabsTrigger value="model-mis">Model MIS</TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
           <TabsTrigger value="feedback">Feedback</TabsTrigger>
           <TabsTrigger value="leads">All leads</TabsTrigger>
@@ -794,6 +965,7 @@ export default function AdminTDLeadReports() {
                   <span>Pending / overdue: {e.followUpsPending} / {e.followUpsOverdue}</span>
                   <span>TDs completed: {e.testDrivesCompleted}</span>
                   <span>Feedback captured: {e.feedbackCount}</span>
+                  <span>First response: {e.avgFirstResponseMinutes != null ? `${e.avgFirstResponseMinutes} min` : "—"}</span>
                 </div>
               </Card>
             ))
@@ -874,6 +1046,159 @@ export default function AdminTDLeadReports() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fu-perf" className="mt-4">
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-3">Employee</th>
+                  <th className="p-3">Assigned</th>
+                  <th className="p-3">Due today</th>
+                  <th className="p-3">Completed</th>
+                  <th className="p-3">Overdue</th>
+                  <th className="p-3">Conversion %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {followUpPerformance.length === 0 ? (
+                  <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No follow-up performance data</td></tr>
+                ) : followUpPerformance.map((r) => (
+                  <tr key={r.employeeId} className="border-b border-border/30">
+                    <td className="p-3">{r.employee}</td>
+                    <td className="p-3">{r.assigned}</td>
+                    <td className="p-3">{r.dueToday}</td>
+                    <td className="p-3">{r.completed}</td>
+                    <td className="p-3">{r.overdue}</td>
+                    <td className="p-3">{Number(r.conversionPct).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="td-perf" className="mt-4">
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-3">Employee</th>
+                  <th className="p-3">Booked</th>
+                  <th className="p-3">Completed</th>
+                  <th className="p-3">Cancelled</th>
+                  <th className="p-3">Rescheduled</th>
+                  <th className="p-3">Completion %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tdPerformance.length === 0 ? (
+                  <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No test-drive performance data</td></tr>
+                ) : tdPerformance.map((r) => (
+                  <tr key={r.employeeId} className="border-b border-border/30">
+                    <td className="p-3">{r.employee}</td>
+                    <td className="p-3">{r.booked}</td>
+                    <td className="p-3">{r.completed}</td>
+                    <td className="p-3">{r.cancelled}</td>
+                    <td className="p-3">{r.rescheduled}</td>
+                    <td className="p-3">{Number(r.completionPct).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="funnel-mis" className="mt-4">
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-3">Stage</th>
+                  <th className="p-3">Count</th>
+                  <th className="p-3">Conversion %</th>
+                  <th className="p-3">Drop %</th>
+                  <th className="p-3">Avg hours in stage</th>
+                  <th className="p-3">Avg days in stage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {funnelReport.map((r) => (
+                  <tr key={r.stage} className="border-b border-border/30">
+                    <td className="p-3">{r.stage}</td>
+                    <td className="p-3">{r.count}</td>
+                    <td className="p-3">{Number(r.conversionPct).toFixed(2)}%</td>
+                    <td className="p-3">{Number(r.dropPct).toFixed(2)}%</td>
+                    <td className="p-3">{r.avgHoursInStage}</td>
+                    <td className="p-3">{r.avgDaysInStage ?? Math.round((r.avgHoursInStage / 24) * 10) / 10}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="source-mis" className="mt-4">
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-3">Source</th>
+                  <th className="p-3">Leads</th>
+                  <th className="p-3">Interested</th>
+                  <th className="p-3">TD</th>
+                  <th className="p-3">Booking</th>
+                  <th className="p-3">Delivery</th>
+                  <th className="p-3">Lead→Booking %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourcePerformance.map((r) => (
+                  <tr key={r.source} className="border-b border-border/30">
+                    <td className="p-3">{r.source}</td>
+                    <td className="p-3">{r.leads}</td>
+                    <td className="p-3">{r.interested}</td>
+                    <td className="p-3">{r.td}</td>
+                    <td className="p-3">{r.booking}</td>
+                    <td className="p-3">{r.delivery}</td>
+                    <td className="p-3">{Number(r.leadToBookingPct).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="model-mis" className="mt-4">
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="p-3">Model</th>
+                  <th className="p-3">Enquiry</th>
+                  <th className="p-3">Interested</th>
+                  <th className="p-3">TD</th>
+                  <th className="p-3">Booking</th>
+                  <th className="p-3">Delivery</th>
+                  <th className="p-3">Lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modelPerformance.map((r) => (
+                  <tr key={r.model} className="border-b border-border/30">
+                    <td className="p-3">{r.model}</td>
+                    <td className="p-3">{r.enquiry}</td>
+                    <td className="p-3">{r.interested}</td>
+                    <td className="p-3">{r.td}</td>
+                    <td className="p-3">{r.booking}</td>
+                    <td className="p-3">{r.delivery}</td>
+                    <td className="p-3">{r.lost}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </Card>
         </TabsContent>
 

@@ -15,6 +15,26 @@ const {
   backfillBookingVehicleOrders,
 } = require('../utils/ensureVehicleOrder');
 
+async function notifyLeadCrmEvent(leadId, admin, { type, title, priority }) {
+  if (!leadId) return;
+  try {
+    const { notifyLeadAssignees, leadHref, displayLeadName } = require('../utils/staffNotifications');
+    const lead = await Lead.findById(leadId);
+    if (!lead) return;
+    await notifyLeadAssignees(lead, {
+      actorId: admin?._id,
+      type,
+      title,
+      body: displayLeadName(lead),
+      customerName: displayLeadName(lead),
+      href: leadHref(lead._id),
+      priority,
+    });
+  } catch (err) {
+    console.error('[notifyLeadCrmEvent]', err.message);
+  }
+}
+
 async function nextCounter(key, prefix, pad = 4) {
   const doc = await Counter.findOneAndUpdate(
     { key },
@@ -510,6 +530,11 @@ exports.retailSale = asyncHandler(async (req, res) => {
   await order.save();
 
   await syncLeadStage(order.leadId?._id || order.leadId, 'Delivered', req.admin, 'Retail sale recorded');
+  await notifyLeadCrmEvent(order.leadId?._id || order.leadId, req.admin, {
+    type: 'booking',
+    title: 'Retail / booking completed',
+    priority: 'done',
+  });
   return successResponse(res, await findOrderOrThrow(order._id), 'Retail sale recorded');
 });
 
@@ -536,6 +561,12 @@ exports.deliverOrder = asyncHandler(async (req, res) => {
       await lead.save();
     }
   }
+
+  await notifyLeadCrmEvent(leadId, req.admin, {
+    type: 'delivery',
+    title: 'Vehicle delivered',
+    priority: 'done',
+  });
 
   return successResponse(res, await findOrderOrThrow(order._id), 'Vehicle delivered');
 });

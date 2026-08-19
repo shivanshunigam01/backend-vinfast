@@ -214,6 +214,12 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
     booking,
     changedBy: executiveIdFromReq(req),
   }).catch((err) => console.error('[syncLeadFromTDCompletion]', err));
+  try {
+    const { notifyTdEvent } = require('../utils/staffNotifications');
+    await notifyTdEvent(booking, { type: 'td_completed', title: 'Test drive completed', actorId: executiveIdFromReq(req), priority: 'done' });
+  } catch (err) {
+    console.error('[notifyTdEvent td_completed log]', err.message);
+  }
 
   await log.populate([
     { path: 'bookingId', select: 'bookingId slotDate slotTime' },

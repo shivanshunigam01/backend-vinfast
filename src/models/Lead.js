@@ -69,6 +69,12 @@ const leadSchema = new mongoose.Schema(
     lastActivityAt: { type: Date, index: true },
     nextFollowUp: { type: Date },
     remarks: { type: String, trim: true },
+    /** Configurable buyer type (Individual / Corporate / …) from Buyer Type master. */
+    buyerType: { type: String, trim: true, index: true },
+    /** Sales interest from follow-up discipline (HOT / WARM / COLD). Separate from CRE leadType. */
+    interestLevel: { type: String, trim: true, index: true },
+    /** First valid CRM action after lead received (follow-up logged or stage moved off Enquiry). */
+    firstRespondedAt: { type: Date },
     financeNeeded: { type: Boolean, default: false },
     exchangeNeeded: { type: Boolean, default: false },
     utmSource: String,
