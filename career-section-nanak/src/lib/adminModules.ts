@@ -62,7 +62,14 @@ export type AdminModule = {
   key: AdminModuleKey;
   label: string;
   path: string;
-  group: "Core" | "Employee portal" | "Feedback" | "TD Management" | "Reports";
+  group:
+    | "Core"
+    | "Employee portal"
+    | "Feedback"
+    | "TD Management"
+    | "Reports"
+    | "User Master"
+    | "Stock / Vehicle Management";
   actions: AdminModuleAction[];
 };
 
@@ -113,15 +120,15 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_bookings", label: "TD Bookings", path: "/admin/td/bookings", group: "TD Management", actions: ["view", "create", "update", "assign", "reschedule_approve", "verify_dl", "start_drive", "cancel"] },
   { key: "td_reschedule_history", label: "Reschedule History", path: "/admin/td/reschedule-history", group: "TD Management", actions: ["view", "approve"] },
   { key: "td_fleet_health", label: "Fleet Charging & Health", path: "/admin/td/fleet-health", group: "TD Management", actions: ["view", "schedule_charge", "log_maintenance"] },
-  { key: "td_users", label: "User Master", path: "/admin/td/users", group: "TD Management", actions: ["view", "create", "update", "delete", "view_password"] },
+  { key: "td_users", label: "User Master", path: "/admin/td/users", group: "User Master", actions: ["view", "create", "update", "delete", "view_password"] },
   { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management", actions: ["view", "create", "update", "delete"] },
-  { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "TD Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
+  { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
   {
     key: "stock_delivery",
     label: "Stock & Delivery",
     path: "/admin/stock/orders",
-    group: "TD Management",
+    group: "Stock / Vehicle Management",
     actions: ["view", "create", "update", "delete", "receive", "allocate", "pdi", "deliver"],
   },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
@@ -139,7 +146,15 @@ MODULE_BY_PATH["/admin/stock/purchase-orders"] = "stock_delivery";
 MODULE_BY_PATH["/admin/stock/orders"] = "stock_delivery";
 MODULE_BY_PATH["/admin/stock/deliveries"] = "stock_delivery";
 
-export const MODULE_GROUPS = ["Core", "Employee portal", "Feedback", "Reports", "TD Management"] as const;
+export const MODULE_GROUPS = [
+  "Core",
+  "Employee portal",
+  "Feedback",
+  "Reports",
+  "TD Management",
+  "User Master",
+  "Stock / Vehicle Management",
+] as const;
 
 export function modulesForGroup(group: AdminModule["group"]) {
   return ADMIN_MODULES.filter((m) => m.group === group);

@@ -96,6 +96,7 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
   const now = new Date();
 
   const [
+    totalLeadCount,
     leads,
     leadsByStatus,
     leadsBySource,
@@ -107,10 +108,11 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
     feedbacks,
     bookingsWithExec
   ] = await Promise.all([
+    Lead.countDocuments(leadQuery),
     Lead.find(leadQuery)
       .populate('assignedTo', 'name email role designation')
       .sort({ updatedAt: -1 })
-      .limit(500)
+      .limit(10000)
       .lean(),
     Lead.aggregate([
       { $match: leadQuery },
@@ -229,9 +231,15 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
 
   const leadByMobile = new Map(leads.map((l) => [l.mobile, l]));
 
-  const totalLeads = leads.length;
-  const convertedCount = leads.filter((l) => isConverted(l.status)).length;
-  const activeLeads = leads.filter((l) => !TERMINAL_STATUSES.includes(normalizeStageLabel(l.status))).length;
+  const totalLeads = totalLeadCount;
+  const convertedCount = leadsByStatus.reduce(
+    (sum, row) => sum + (isConverted(row._id) ? row.count : 0),
+    0,
+  );
+  const activeLeads = leadsByStatus.reduce(
+    (sum, row) => sum + (TERMINAL_STATUSES.includes(normalizeStageLabel(row._id)) ? 0 : row.count),
+    0,
+  );
 
   const followUpsPending = followUps.filter((f) => f.status === 'pending').length;
   const followUpsCompleted = followUps.filter((f) => f.status === 'completed').length;
@@ -636,7 +644,7 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
     })),
     activityLog: activityLog.slice(0, 150),
     feedbackRows,
-    leadDetailRows,
+    leadDetailRows: leadDetailRows.slice(0, 2000),
     leadAgeing,
     stages: stageLabels,
     kpis: buildKpiSummary(leads, followUps, tdBookings, now),

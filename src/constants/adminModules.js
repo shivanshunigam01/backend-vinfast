@@ -12,7 +12,7 @@ const ADMIN_MODULE_KEYS = [
   'crm_lead_stages',
   'crm_buyer_types',
   'pricing',
-  'delivery_reports',
+  'delivery_reports', // Reports group in sidebar / User Master ACL UI
   'products',
   'offers',
   'content',
@@ -24,19 +24,22 @@ const ADMIN_MODULE_KEYS = [
   // Customer feedback
   'feedback_test_drive',
   'feedback_post_delivery',
-  // TD Management
+  // Reports
   'td_lead_reports',
+  'td_reports',
+  // TD Management
   'td_bookings',
-  'td_users',
   'td_vehicles',
   'td_models',
-  'vehicle_stock',
-  'stock_delivery',
-  'td_reports',
   'td_config',
   'calendar',
   'td_reschedule_history',
   'td_fleet_health',
+  // User Master (ACL key td_users unchanged; Roles shares this key)
+  'td_users',
+  // Stock / Vehicle Management (keys vehicle_stock, stock_delivery unchanged)
+  'vehicle_stock',
+  'stock_delivery',
 ];
 
 /** Actions available on each module. `view` is always first (required to open the module). */
@@ -125,10 +128,22 @@ function allActionTokensForModules(moduleKeys) {
   return out;
 }
 
+/** Sidebar / User Master ACL UI group labels (keys stay the same). */
+const MODULE_GROUPS = [
+  'Core',
+  'Employee portal',
+  'Feedback',
+  'Reports',
+  'TD Management',
+  'User Master',
+  'Stock / Vehicle Management',
+];
+
 module.exports = {
   ADMIN_MODULE_KEYS,
   ADMIN_MODULE_ACTIONS,
   ACTION_LABELS,
+  MODULE_GROUPS,
   actionToken,
   parseActionToken,
   isValidActionToken,

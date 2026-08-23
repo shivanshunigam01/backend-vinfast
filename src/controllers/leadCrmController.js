@@ -8,6 +8,7 @@ const {
   normalizeLeadModelForStorage,
   isValidLeadModel,
   isAmbiguousLeadModel,
+  baseProductModel,
 } = require('../utils/leadModel');
 const { intakePvLead, findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 const { assignPvIds } = require('../utils/pvLeadIntake');
@@ -1622,18 +1623,34 @@ exports.exportCrmLeads = asyncHandler(async (req, res) => {
   return res.status(200).send(buffer);
 });
 
+function importModelsMatch(stored, incomingNorm) {
+  const incoming = String(incomingNorm || '').trim();
+  if (!incoming) return false;
+  const storedRaw = String(stored || '').trim();
+  if (!storedRaw) return false;
+  const storedNorm = normalizeCreImportModel(storedRaw);
+  const storedStorage = normalizeLeadModelForStorage(storedRaw);
+  if (storedNorm === incoming || storedStorage === incoming || storedRaw === incoming) return true;
+  return baseProductModel(storedRaw) === baseProductModel(incoming);
+}
+
 async function findLeadByMobileAndModel(mobile, modelNorm) {
   const variants = mobileVariants(mobile);
+  const mobiles = variants.length ? variants : [mobile];
   const candidates = await Lead.find({
-    mobile: { $in: variants.length ? variants : [mobile] },
-  })
-    .sort({ createdAt: -1 })
-    .limit(50);
+    mobile: { $in: mobiles },
+  }).sort({ createdAt: -1 });
 
-  const match = candidates.find(
-    (l) => normalizeCreImportModel(l.model) === modelNorm || String(l.model || '').trim() === modelNorm,
-  );
-  return match || null;
+  const modelMatch = candidates.find((l) => importModelsMatch(l.model, modelNorm));
+  if (modelMatch) return modelMatch;
+
+  const openAmbiguous = candidates.find((l) => {
+    const st = normalizeStageLabel(l.status);
+    if (CLOSED_STATUSES.includes(st)) return false;
+    const m = String(l.model || '').trim();
+    return !m || isAmbiguousLeadModel(m) || m === 'Both';
+  });
+  return openAmbiguous || null;
 }
 
 async function syncImportFollowUps(lead, followUps, admin, results) {
@@ -1819,15 +1836,31 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
       seenInBatch.add(batchKey);
 
       if (dryRun) {
-        pushImportRow(results, {
-          row: rowNum,
-          status: 'valid',
-          name: String(name).trim(),
-          mobile,
-          model: modelForStorage,
-          modelRaw: parsed.modelRaw || model,
-          message: 'Ready to import',
-        });
+        const existing = await findLeadByMobileAndModel(mobile, modelForStorage);
+        if (existing) {
+          results.updated += 1;
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'would_update',
+            name: String(name).trim(),
+            mobile,
+            model: modelForStorage,
+            modelRaw: parsed.modelRaw || model,
+            leadId: existing.leadId || String(existing._id),
+            message: `Will update existing lead (${existing.leadId || existing._id}, ${existing.status})`,
+          });
+        } else {
+          results.created += 1;
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'would_create',
+            name: String(name).trim(),
+            mobile,
+            model: modelForStorage,
+            modelRaw: parsed.modelRaw || model,
+            message: 'Will create new lead',
+          });
+        }
         continue;
       }
 
@@ -1976,7 +2009,7 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
  * Body JSON: { leads: [...], followUps: [...] } OR multipart file.
  * Query/body dryRun=true|1 validates only (valid | needs_model | invalid), no writes.
  * Optional modelCorrections: { "<rowNumber>": "VF 7" } applied before commit/validate.
- * Auto-detects CRE Current Format (upsert by mobile + model) vs simple create-only import.
+ * Auto-detects CRE Current Format vs simple Excel. Both upsert on mobile + normalized model.
  */
 exports.importCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
@@ -2007,8 +2040,8 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
   if (!leadRows.length) {
     throw new ApiError(400, 'No lead rows found to import. Provide a Leads sheet or leads array.');
   }
-  if (leadRows.length > 500) {
-    throw new ApiError(400, 'Maximum 500 leads per import.');
+  if (leadRows.length > 2000) {
+    throw new ApiError(400, 'Maximum 2000 leads per import.');
   }
 
   if (isCurrentFormatSheet(leadRows)) {
@@ -2017,7 +2050,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       modelCorrections,
     });
     const msg = dryRun
-      ? `Validated ${leadRows.length} row(s): ${results.rows.filter((r) => r.status === 'valid').length} valid, ${results.needsModel} need model, ${results.failed.length} invalid.`
+      ? `Validated ${leadRows.length} row(s): ${results.created} will create, ${results.updated} will update, ${results.needsModel} need model, ${results.failed.length} invalid.`
       : `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`;
     return successResponse(res, results, msg, 200, {
       total: leadRows.length,
@@ -2056,11 +2089,6 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
       if (!name || !mobile) {
         throw Object.assign(new Error('Name and Mobile are required'), { code: 'invalid' });
       }
-      if (seenInBatch.has(mobile)) {
-        throw Object.assign(new Error('Duplicate mobile within this import file'), { code: 'invalid' });
-      }
-      seenInBatch.add(mobile);
-
       const modelRaw =
         modelCorrections[String(rowNum)] ||
         cellStr(raw.model ?? raw.Model) ||
@@ -2104,48 +2132,43 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         throw modelErr;
       }
 
+      const batchKey = `${mobile}|${modelForStorage}`;
+      if (seenInBatch.has(batchKey)) {
+        throw Object.assign(
+          new Error(`Duplicate mobile + model within this import file (${mobile} / ${modelForStorage})`),
+          { code: 'invalid' },
+        );
+      }
+      seenInBatch.add(batchKey);
+
+      const existing = await findLeadByMobileAndModel(mobile, modelForStorage);
+
       if (dryRun) {
-        const variants = mobileVariants(mobile);
-        const existing = await Lead.findOne({
-          mobile: { $in: variants.length ? variants : [mobile] },
-        }).sort({ createdAt: -1 });
         if (existing) {
-          results.failed.push({
-            row: rowNum,
-            name: String(name).trim(),
-            mobile,
-            message: `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
-          });
+          results.updated += 1;
           pushImportRow(results, {
             row: rowNum,
-            status: 'invalid',
+            status: 'would_update',
             name: String(name).trim(),
             mobile,
             model: modelForStorage,
-            message: `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
+            modelRaw,
+            leadId: existing.leadId || String(existing._id),
+            message: `Will update existing lead (${existing.leadId || existing._id}, ${existing.status})`,
           });
-          continue;
+        } else {
+          results.created += 1;
+          pushImportRow(results, {
+            row: rowNum,
+            status: 'would_create',
+            name: String(name).trim(),
+            mobile,
+            model: modelForStorage,
+            modelRaw,
+            message: 'Will create new lead',
+          });
         }
-        pushImportRow(results, {
-          row: rowNum,
-          status: 'valid',
-          name: String(name).trim(),
-          mobile,
-          model: modelForStorage,
-          modelRaw,
-          message: 'Ready to import',
-        });
         continue;
-      }
-
-      const variants = mobileVariants(mobile);
-      const existing = await Lead.findOne({
-        mobile: { $in: variants.length ? variants : [mobile] },
-      }).sort({ createdAt: -1 });
-      if (existing) {
-        throw new Error(
-          `Duplicate mobile — lead already exists (${existing.leadId || existing.opportunityId || existing._id}, stage: ${existing.status})`,
-        );
       }
 
       const email =
@@ -2185,34 +2208,80 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         cellStr(raw.exchangeNeeded ?? raw.ExchangeNeeded) ||
         headerKey(raw, ['exchange', 'exchange needed']);
 
-      const { lead } = await intakePvLead({
-        name,
-        mobile,
-        email,
-        city,
-        model: modelForStorage,
-        source,
-        status: normalizeStageLabel(status) || 'Enquiry',
-        remarks,
-        assignedTo: assignedTo || undefined,
-        assignedToEmail: assignedEmail || undefined,
-        financeNeeded: /^(yes|y|true|1)$/i.test(financeRaw),
-        exchangeNeeded: /^(yes|y|true|1)$/i.test(exchangeRaw),
-        changedBy: req.admin._id,
-        historyReason: `Lead imported from Excel by ${req.admin.name}`,
-      });
+      let lead;
+      if (existing) {
+        const incomingStatus = normalizeStageLabel(status) || 'Enquiry';
+        const prevStage = existing.status;
+        const nextStage = await pickForwardStage(prevStage, incomingStatus);
+        existing.name = String(name).trim();
+        if (email) existing.email = email;
+        existing.city = String(city || existing.city || 'Patna').trim();
+        existing.model = modelForStorage;
+        if (source) existing.source = source;
+        if (remarks) existing.remarks = remarks;
+        if (assignedTo) {
+          existing.assignedTo = assignedTo;
+          existing.assignedToEmail = assignedEmail;
+        }
+        if (financeRaw) existing.financeNeeded = /^(yes|y|true|1)$/i.test(financeRaw);
+        if (exchangeRaw) existing.exchangeNeeded = /^(yes|y|true|1)$/i.test(exchangeRaw);
+        existing.status = nextStage;
+        touchLeadActivity(existing);
+        await existing.save();
+        if (normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)) {
+          await LeadStageHistory.create({
+            leadId: existing._id,
+            fromStage: prevStage,
+            toStage: nextStage,
+            changedBy: req.admin._id,
+            reason: `Stage updated from Excel import by ${req.admin.name}`,
+          });
+        }
+        lead = existing;
+        results.updated += 1;
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'updated',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          leadId: lead.leadId || String(lead._id),
+          message:
+            normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)
+              ? `Updated · stage ${prevStage} → ${nextStage}`
+              : 'Existing lead updated',
+        });
+      } else {
+        const created = await intakePvLead({
+          name,
+          mobile,
+          email,
+          city,
+          model: modelForStorage,
+          source,
+          status: normalizeStageLabel(status) || 'Enquiry',
+          remarks,
+          assignedTo: assignedTo || undefined,
+          assignedToEmail: assignedEmail || undefined,
+          financeNeeded: /^(yes|y|true|1)$/i.test(financeRaw),
+          exchangeNeeded: /^(yes|y|true|1)$/i.test(exchangeRaw),
+          changedBy: req.admin._id,
+          historyReason: `Lead imported from Excel by ${req.admin.name}`,
+        });
+        lead = created.lead;
+        results.created += 1;
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'created',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          leadId: lead.leadId || String(lead._id),
+          message: 'New lead created',
+        });
+      }
 
       createdByMobile.set(mobile, lead._id);
-      results.created += 1;
-      pushImportRow(results, {
-        row: rowNum,
-        status: 'created',
-        name: String(name).trim(),
-        mobile,
-        model: modelForStorage,
-        leadId: lead.leadId || String(lead._id),
-        message: 'New lead created',
-      });
 
       // Optional next follow-up date on lead row
       const nextFu =
@@ -2250,7 +2319,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
     return successResponse(
       res,
       results,
-      `Validated ${leadRows.length} row(s): ${results.rows.filter((r) => r.status === 'valid').length} valid, ${results.needsModel} need model, ${results.failed.length} invalid.`,
+      `Validated ${leadRows.length} row(s): ${results.created} will create, ${results.updated} will update, ${results.needsModel} need model, ${results.failed.length} invalid.`,
       200,
       {
         total: leadRows.length,
@@ -2344,7 +2413,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
   return successResponse(
     res,
     results,
-    `Imported ${results.created} lead(s), ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`,
+    `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`,
     200,
     { total: leadRows.length, failed: results.failed.length },
   );

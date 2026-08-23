@@ -308,6 +308,8 @@ export type CrmLeadImportFailure = {
 export type CrmLeadImportRowStatus =
   | "created"
   | "updated"
+  | "would_create"
+  | "would_update"
   | "failed"
   | "valid"
   | "needs_model"

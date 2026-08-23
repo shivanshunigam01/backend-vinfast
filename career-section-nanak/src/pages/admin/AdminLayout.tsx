@@ -75,16 +75,43 @@ const tdNavItems = [
   { label: "Reschedule History", icon: Clock, path: "/admin/td/reschedule-history", staff: false },
   { label: "Delete History", icon: Trash2, path: "/admin/td/delete-history", staff: false },
   { label: "Fleet Health",   icon: Gauge,         path: "/admin/td/fleet-health", staff: false },
-  { label: "User Master",    icon: Users,         path: "/admin/td/users",       staff: false },
-  { label: "Roles",          icon: Shield,        path: "/admin/td/roles",       staff: false },
   { label: "Demo Fleet",     icon: Gauge,         path: "/admin/td/vehicles",    staff: false },
   { label: "Model Master",   icon: Car,           path: "/admin/td/models",      staff: false },
-  { label: "Vehicle Stock",  icon: Warehouse,     path: "/admin/stock",          staff: false },
+  { label: "Slot Config",    icon: Building2,     path: "/admin/td/config",      staff: false },
+];
+
+const userMasterNavItems = [
+  { label: "User Master", icon: Users, path: "/admin/td/users", staff: false },
+  { label: "Roles", icon: Shield, path: "/admin/td/roles", staff: false },
+];
+
+const stockNavItems = [
+  { label: "Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
   { label: "Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
   { label: "Vehicle Orders", icon: Car, path: "/admin/stock/orders", staff: false },
   { label: "Deliveries", icon: PackageCheck, path: "/admin/stock/deliveries", staff: false },
-  { label: "Slot Config",    icon: Building2,     path: "/admin/td/config",      staff: false },
 ];
+
+function isReportsPath(pathname: string) {
+  return (
+    pathname.startsWith("/admin/reports") ||
+    pathname.startsWith("/admin/td/leads/reports") ||
+    pathname.startsWith("/admin/td/reports") ||
+    pathname === "/admin/my-dashboard"
+  );
+}
+
+function isUserMasterPath(pathname: string) {
+  return pathname.startsWith("/admin/td/users") || pathname.startsWith("/admin/td/roles");
+}
+
+function isStockPath(pathname: string) {
+  return pathname.startsWith("/admin/stock");
+}
+
+function isTdManagementPath(pathname: string) {
+  return pathname.startsWith("/admin/td") && !isReportsPath(pathname) && !isUserMasterPath(pathname);
+}
 
 const reportsNavItems = [
   { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: false },
@@ -110,18 +137,16 @@ const AdminLayout = () => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tdMenuOpen, setTdMenuOpen] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      (window.location.pathname.startsWith("/admin/td") ||
-        window.location.pathname.startsWith("/admin/stock")),
+    () => typeof window !== "undefined" && isTdManagementPath(window.location.pathname),
   );
   const [reportsMenuOpen, setReportsMenuOpen] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      (window.location.pathname.startsWith("/admin/reports") ||
-        window.location.pathname.startsWith("/admin/td/leads/reports") ||
-        window.location.pathname.startsWith("/admin/td/reports") ||
-        window.location.pathname === "/admin/my-dashboard"),
+    () => typeof window !== "undefined" && isReportsPath(window.location.pathname),
+  );
+  const [userMasterMenuOpen, setUserMasterMenuOpen] = useState(
+    () => typeof window !== "undefined" && isUserMasterPath(window.location.pathname),
+  );
+  const [stockMenuOpen, setStockMenuOpen] = useState(
+    () => typeof window !== "undefined" && isStockPath(window.location.pathname),
   );
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
@@ -138,20 +163,10 @@ const AdminLayout = () => {
   }, []);
 
   useEffect(() => {
-    if (
-      location.pathname.startsWith("/admin/td") ||
-      location.pathname.startsWith("/admin/stock")
-    ) {
-      setTdMenuOpen(true);
-    }
-    if (
-      location.pathname.startsWith("/admin/reports") ||
-      location.pathname.startsWith("/admin/td/leads/reports") ||
-      location.pathname.startsWith("/admin/td/reports") ||
-      location.pathname === "/admin/my-dashboard"
-    ) {
-      setReportsMenuOpen(true);
-    }
+    if (isTdManagementPath(location.pathname)) setTdMenuOpen(true);
+    if (isReportsPath(location.pathname)) setReportsMenuOpen(true);
+    if (isUserMasterPath(location.pathname)) setUserMasterMenuOpen(true);
+    if (isStockPath(location.pathname)) setStockMenuOpen(true);
   }, [location.pathname]);
   const fullAdmin = canAccessFullAdmin(adminUser);
   // Per-user module access configured in User Master (null = no restriction).
@@ -258,7 +273,15 @@ const AdminLayout = () => {
     navigate(loginPath);
   };
 
-  const visibleTdItems = tdNavItems.filter((item) => (item.staff || fullAdmin) && canSeePath(item.path));
+  const visibleTdItems = tdNavItems.filter(
+    (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
+  );
+  const visibleUserMasterItems = userMasterNavItems.filter(
+    (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
+  );
+  const visibleStockItems = stockNavItems.filter(
+    (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
+  );
   const visibleReportsItems = reportsNavItems.filter(
     (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
   );
@@ -424,10 +447,7 @@ const AdminLayout = () => {
                     type="button"
                     onClick={() => setReportsMenuOpen((o) => !o)}
                     className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
-                      location.pathname.startsWith("/admin/reports") ||
-                      location.pathname.startsWith("/admin/td/leads/reports") ||
-                      location.pathname.startsWith("/admin/td/reports") ||
-                      location.pathname === "/admin/my-dashboard"
+                      isReportsPath(location.pathname)
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     }`}
@@ -471,7 +491,7 @@ const AdminLayout = () => {
                     type="button"
                     onClick={() => setTdMenuOpen((o) => !o)}
                     className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
-                      location.pathname.startsWith("/admin/td") || location.pathname.startsWith("/admin/stock")
+                      isTdManagementPath(location.pathname)
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                     }`}
@@ -486,6 +506,94 @@ const AdminLayout = () => {
                   {tdMenuOpen ? (
                     <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
                       {visibleTdItems.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {visibleUserMasterItems.length > 0 && (
+                <div className="pt-0.5">
+                  <div className="mx-1 my-1 border-t border-border/50" />
+                  <button
+                    type="button"
+                    onClick={() => setUserMasterMenuOpen((o) => !o)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                      isUserMasterPath(location.pathname)
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                    }`}
+                    aria-expanded={userMasterMenuOpen}
+                  >
+                    <Users className="h-4 w-4 shrink-0 opacity-90" />
+                    <span className="truncate flex-1 text-left">User Master</span>
+                    <ChevDown
+                      className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${userMasterMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {userMasterMenuOpen ? (
+                    <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
+                      {visibleUserMasterItems.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="h-4 w-4 shrink-0 opacity-90" />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {visibleStockItems.length > 0 && (
+                <div className="pt-0.5">
+                  <div className="mx-1 my-1 border-t border-border/50" />
+                  <button
+                    type="button"
+                    onClick={() => setStockMenuOpen((o) => !o)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium leading-tight transition-colors touch-manipulation ${
+                      isStockPath(location.pathname)
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                    }`}
+                    aria-expanded={stockMenuOpen}
+                  >
+                    <Warehouse className="h-4 w-4 shrink-0 opacity-90" />
+                    <span className="truncate flex-1 text-left">Stock / Vehicle Management</span>
+                    <ChevDown
+                      className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${stockMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {stockMenuOpen ? (
+                    <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
+                      {visibleStockItems.map((item) => {
                         const isActive = location.pathname === item.path;
                         return (
                           <Link

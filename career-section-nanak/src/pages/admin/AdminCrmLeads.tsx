@@ -777,8 +777,8 @@ export default function AdminCrmLeads() {
         setImportRows(rows);
         setImportFailures(preview.failed ?? []);
         setImportSummary({
-          created: 0,
-          updated: 0,
+          created: preview.created ?? 0,
+          updated: preview.updated ?? 0,
           followUps: 0,
           failed: (preview.failed ?? []).length,
           total: rows.length,
@@ -838,6 +838,12 @@ export default function AdminCrmLeads() {
 
   const filteredImportRows = useMemo(() => {
     if (importListFilter === "all") return importRows;
+    if (importListFilter === "created") {
+      return importRows.filter((r) => r.status === "created" || r.status === "would_create");
+    }
+    if (importListFilter === "updated") {
+      return importRows.filter((r) => r.status === "updated" || r.status === "would_update");
+    }
     return importRows.filter((r) => r.status === importListFilter);
   }, [importRows, importListFilter]);
 
@@ -1962,6 +1968,15 @@ export default function AdminCrmLeads() {
             <p className="text-sm text-muted-foreground">
               These rows use &quot;Both&quot; or multi-model values (slash/comma). Choose a single model
               for each, then import. Valid rows import together in the same pass.
+              {importSummary?.dryRun ? (
+                <>
+                  {" "}
+                  Preview of the other rows:{" "}
+                  <strong className="text-foreground">{importSummary.created}</strong> will create,{" "}
+                  <strong className="text-foreground">{importSummary.updated}</strong> will update
+                  existing leads (same mobile + model).
+                </>
+              ) : null}
             </p>
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
               {modelMapRows.map((row) => (
@@ -2052,7 +2067,7 @@ export default function AdminCrmLeads() {
                   },
                   {
                     key: "created" as const,
-                    label: "Created",
+                    label: importSummary?.dryRun ? "Will create" : "Created",
                     value: importSummary?.created ?? 0,
                     active: "border-emerald-500/50 bg-emerald-500/15 ring-1 ring-emerald-500/30",
                     idle: "border-border/60 bg-emerald-500/10",
@@ -2060,7 +2075,7 @@ export default function AdminCrmLeads() {
                   },
                   {
                     key: "updated" as const,
-                    label: "Updated",
+                    label: importSummary?.dryRun ? "Will update" : "Updated",
                     value: importSummary?.updated ?? 0,
                     active: "border-sky-500/50 bg-sky-500/15 ring-1 ring-sky-500/30",
                     idle: "border-border/60 bg-sky-500/10",
@@ -2157,9 +2172,9 @@ export default function AdminCrmLeads() {
                             variant="outline"
                             className={cn(
                               "capitalize",
-                              r.status === "created" &&
+                              (r.status === "created" || r.status === "would_create") &&
                                 "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
-                              r.status === "updated" &&
+                              (r.status === "updated" || r.status === "would_update") &&
                                 "border-sky-500/40 text-sky-700 dark:text-sky-400",
                               r.status === "failed" && "border-destructive/40 text-destructive",
                             )}
