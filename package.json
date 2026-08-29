@@ -23,6 +23,7 @@
     "test:stock-lifecycle": "node --test tests/stock-lifecycle/*.test.js",
     "migrate:stock-pipeline": "node src/scripts/migrateStockToSpecPipeline.js",
     "seed:stock-module": "node src/scripts/seedStockModule.js",
+    "seed:stock-pipeline-demo": "node src/scripts/seedStockPipelineDemo.js",
     "lint": "node -e \"console.log('No linter configured')\""
   },
   "dependencies": {
