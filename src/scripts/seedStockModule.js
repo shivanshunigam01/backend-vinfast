@@ -149,16 +149,16 @@ async function mergeRoleOntoStaff(staff, role) {
       }
     }
 
-    // Leadership (MD/CEO) get GM-level stock visibility for approvals
+    // Leadership (GM / MD / CEO / Sales Head) get PO approval + stock visibility
     const leadershipRole = roleMap['GM / Dealer Head'];
     if (leadershipRole) {
       const leaders = await TDStaff.find({
         active: { $ne: false },
-        designation: { $in: ['md', 'ceo'] },
+        designation: { $in: ['md', 'ceo', 'gm', 'sales_head'] },
       });
       for (const staff of leaders) {
         await mergeRoleOntoStaff(staff, leadershipRole);
-        console.log(`  ~ GM stock access → ${staff.name} <${staff.email}>`);
+        console.log(`  ~ GM stock / PO approve → ${staff.name} <${staff.email}>`);
       }
     }
 

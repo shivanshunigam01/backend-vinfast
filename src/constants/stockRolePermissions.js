@@ -53,7 +53,7 @@ const STOCK_ROLE_TEMPLATES = [
   },
   {
     name: 'Stock / Procurement',
-    description: 'PO, dispatch, GRN, receipt, vehicle stock',
+    description: 'Create & submit PO, dispatch, GRN, receipt (approval by GM / leadership)',
     authRole: 'manager',
     allowedModules: [
       'stock_inventory', 'stock_po', 'stock_dispatch', 'stock_gate', 'stock_grn',
@@ -120,14 +120,15 @@ const STOCK_ROLE_TEMPLATES = [
   },
   {
     name: 'Sales Manager',
-    description: 'VIN allocation and delivery',
+    description: 'VIN allocation, delivery, and PO approval (Sales Head)',
     authRole: 'manager',
-    allowedModules: ['stock_allocation', 'stock_delivery', 'vehicle_stock', 'stock_inventory', 'stock_final_pdi', 'stock_retail', 'crm_leads'],
+    allowedModules: ['stock_allocation', 'stock_delivery', 'stock_po', 'vehicle_stock', 'stock_inventory', 'stock_final_pdi', 'stock_retail', 'crm_leads'],
     allowedActions: tokens(
-      ['stock_allocation', 'stock_delivery', 'vehicle_stock', 'stock_inventory', 'crm_leads'],
+      ['stock_allocation', 'stock_delivery', 'stock_po', 'vehicle_stock', 'stock_inventory', 'crm_leads'],
       {
         stock_allocation: ['view', 'allocate', 'update', 'deliver'],
         stock_delivery: ['view', 'create', 'update', 'allocate', 'pdi', 'deliver'],
+        stock_po: ['view', 'approve'],
         stock_final_pdi: ['view', 'pdi'],
         stock_retail: ['view', 'deliver'],
         vehicle_stock: ['view'],
