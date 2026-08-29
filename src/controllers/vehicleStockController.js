@@ -58,10 +58,11 @@ function parseOptionalDate(value) {
   return d;
 }
 
-function formatStock(doc) {
+function formatStock(doc, holdMeta) {
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   const branch = plain.branchId && typeof plain.branchId === 'object' ? plain.branchId : null;
   const demoVehicle = plain.demoVehicleId && typeof plain.demoVehicleId === 'object' ? plain.demoVehicleId : null;
+  const meta = holdMeta && typeof holdMeta === 'object' ? holdMeta : {};
   return {
     _id: plain._id,
     stockId: plain.stockId,
@@ -79,6 +80,14 @@ function formatStock(doc) {
     batteryStatus: plain.batteryStatus || 'OK',
     location: plain.location || null,
     status: plain.status,
+    vehicleStatus: plain.vehicleStatus || null,
+    holdStatus: Boolean(plain.holdStatus),
+    holdReason: plain.holdReason || null,
+    holdFeedback: plain.holdFeedback || meta.holdFeedback || null,
+    holdSource: plain.holdSource || null,
+    lastPdiResult: plain.lastPdiResult || null,
+    pdiNumber: meta.pdiNumber || null,
+    pdiPerformedAt: meta.pdiPerformedAt || null,
     isDemo: Boolean(plain.isDemo),
     demoVehicleId: demoVehicle
       ? { _id: demoVehicle._id, vehicleId: demoVehicle.vehicleId, status: demoVehicle.status }
@@ -105,6 +114,10 @@ exports.listStock = asyncHandler(async (req, res) => {
   if (req.query.model && req.query.model !== 'all') query.model = String(req.query.model).trim();
   if (req.query.demo === 'true') query.isDemo = true;
   if (req.query.demo === 'false') query.isDemo = false;
+  if (req.query.hold === 'true') query.holdStatus = true;
+  if (req.query.vehicleStatus && req.query.vehicleStatus !== 'all') {
+    query.vehicleStatus = String(req.query.vehicleStatus).trim().toUpperCase();
+  }
   if (req.query.search) {
     const regex = new RegExp(String(req.query.search).trim(), 'i');
     query.$or = [
@@ -121,19 +134,41 @@ exports.listStock = asyncHandler(async (req, res) => {
     ];
   }
 
-  const [docs, total, statusCounts] = await Promise.all([
+  const [docs, total, statusCounts, holdCount] = await Promise.all([
     VehicleStock.find(query).populate(STOCK_POPULATE).sort({ createdAt: -1 }).skip(skip).limit(limit),
     VehicleStock.countDocuments(query),
     VehicleStock.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+    VehicleStock.countDocuments({ holdStatus: true }),
   ]);
 
-  return successResponse(res, docs.map(formatStock), undefined, 200, {
+  const holdIds = docs.filter((d) => d.holdStatus).map((d) => d._id);
+  let pdiByStock = {};
+  if (holdIds.length) {
+    const StockPdi = require('../models/StockPdi');
+    const pdis = await StockPdi.find({
+      vehicleStockId: { $in: holdIds },
+      type: 'PRE_STOCK',
+    }).sort({ performedAt: -1 }).lean();
+    for (const p of pdis) {
+      const key = String(p.vehicleStockId);
+      if (!pdiByStock[key]) {
+        pdiByStock[key] = {
+          holdFeedback: p.notes,
+          pdiNumber: p.pdiNumber,
+          pdiPerformedAt: p.performedAt,
+        };
+      }
+    }
+  }
+
+  return successResponse(res, docs.map((d) => formatStock(d, pdiByStock[String(d._id)])), undefined, 200, {
     page,
     limit,
     total,
     statuses: STOCK_STATUSES,
     batteryStatuses: BATTERY_STATUSES,
     byStatus: Object.fromEntries(statusCounts.map((r) => [r._id, r.count])),
+    holdCount,
   });
 });
 

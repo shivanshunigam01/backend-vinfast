@@ -277,17 +277,25 @@ exports.listDispatches = asyncHandler(async (req, res) => {
   return successResponse(res, docs, undefined, 200, { page, limit, total });
 });
 
-exports.createDispatch = asyncHandler(async (req, res) => {
-  const po = await PurchaseOrder.findById(req.body?.purchaseOrderId || req.params.poId);
-  if (!po) throw new ApiError(404, 'Purchase order not found');
-  if (!['RELEASED', 'PART_SUPPLIED'].includes(po.status)) {
-    throw new ApiError(400, 'PO must be RELEASED or PART_SUPPLIED to create dispatch');
+function validateShipmentTransport(body, label) {
+  if (!body.oemInvoiceNumber || !body.lrNumber || !body.truckNumber || !body.transporter) {
+    throw new ApiError(400, `${label}: OEM invoice, transporter, LR number and truck number are required`);
   }
-  const items = Array.isArray(req.body?.items) ? req.body.items : [];
-  if (!items.length) throw new ApiError(400, 'Provide at least one VIN in dispatch');
+  if (!body.oemInvoiceDate) {
+    throw new ApiError(400, `${label}: OEM invoice date is required`);
+  }
+}
+
+async function buildDispatchShipment(po, shipmentBody, admin) {
+  const items = Array.isArray(shipmentBody.items) ? shipmentBody.items : [];
+  if (!items.length) return null;
+
+  const lineLabel = shipmentBody.poLineId ? `PO line ${shipmentBody.poLineId}` : 'Shipment';
+  validateShipmentTransport(shipmentBody, lineLabel);
 
   const createdStocks = [];
   const dispatchItems = [];
+  let primaryPoLineId = shipmentBody.poLineId;
 
   for (const item of items) {
     const vin = String(item.vin || '').trim().toUpperCase();
@@ -299,6 +307,9 @@ exports.createDispatch = asyncHandler(async (req, res) => {
     if (item.poLineId) {
       poLine = po.lines.id(item.poLineId);
       if (!poLine) throw new ApiError(400, `Invalid PO line id ${item.poLineId}`);
+    } else if (shipmentBody.poLineId) {
+      poLine = po.lines.id(shipmentBody.poLineId);
+      if (!poLine) throw new ApiError(400, `Invalid PO line id ${shipmentBody.poLineId}`);
     } else {
       poLine = po.lines.find(
         (l) => l.model === item.model &&
@@ -307,6 +318,8 @@ exports.createDispatch = asyncHandler(async (req, res) => {
       ) || po.lines.find((l) => l.model === item.model);
     }
     if (!poLine) throw new ApiError(400, `No PO line for model ${item.model}`);
+
+    primaryPoLineId = primaryPoLineId || poLine._id;
 
     const dispatched = Number(poLine.dispatchedQty) || 0;
     if (dispatched >= poLine.qty) {
@@ -333,7 +346,7 @@ exports.createDispatch = asyncHandler(async (req, res) => {
       status: 'IN_TRANSIT',
       pdiStatus: 'NONE',
       purchaseOrderId: po._id,
-      createdBy: actorId(req.admin),
+      createdBy: actorId(admin),
     });
     createdStocks.push(stock);
     dispatchItems.push({
@@ -342,7 +355,56 @@ exports.createDispatch = asyncHandler(async (req, res) => {
       vehicleStockId: stock._id, poLineId: poLine._id, configMatch: match,
     });
     poLine.dispatchedQty = dispatched + 1;
-    await logStatusChange('VehicleStock', stock._id, null, 'IN_TRANSIT', req.admin, 'Dispatch created');
+    await logStatusChange('VehicleStock', stock._id, null, 'IN_TRANSIT', admin, 'Dispatch created');
+  }
+
+  const dispatch = await Dispatch.create({
+    dispatchNumber: await nextDispatchNumber(),
+    purchaseOrderId: po._id,
+    poNumber: po.poNumber,
+    poLineId: primaryPoLineId,
+    oemInvoiceNumber: shipmentBody.oemInvoiceNumber,
+    oemInvoiceDate: new Date(shipmentBody.oemInvoiceDate),
+    dispatchDate: shipmentBody.dispatchDate ? new Date(shipmentBody.dispatchDate) : new Date(),
+    transporter: shipmentBody.transporter,
+    lrNumber: shipmentBody.lrNumber,
+    truckNumber: shipmentBody.truckNumber,
+    driverName: shipmentBody.driverName,
+    driverMobile: shipmentBody.driverMobile,
+    ewayBill: shipmentBody.ewayBill,
+    expectedArrival: shipmentBody.expectedArrival ? new Date(shipmentBody.expectedArrival) : undefined,
+    items: dispatchItems,
+    createdBy: actorId(admin),
+  });
+
+  for (const stock of createdStocks) {
+    stock.dispatchId = dispatch._id;
+    await stock.save();
+  }
+
+  return { dispatch, createdStocks };
+}
+
+exports.createDispatch = asyncHandler(async (req, res) => {
+  const po = await PurchaseOrder.findById(req.body?.purchaseOrderId || req.params.poId);
+  if (!po) throw new ApiError(404, 'Purchase order not found');
+  if (!['RELEASED', 'PART_SUPPLIED'].includes(po.status)) {
+    throw new ApiError(400, 'PO must be RELEASED or PART_SUPPLIED to create dispatch');
+  }
+
+  const lineShipments = Array.isArray(req.body?.lineShipments) ? req.body.lineShipments : [];
+  const results = [];
+
+  if (lineShipments.length) {
+    for (const shipment of lineShipments) {
+      const built = await buildDispatchShipment(po, shipment, req.admin);
+      if (built) results.push(built);
+    }
+    if (!results.length) throw new ApiError(400, 'Provide at least one PO line shipment with VIN(s)');
+  } else {
+    const built = await buildDispatchShipment(po, { ...req.body, items: req.body.items || [] }, req.admin);
+    if (!built) throw new ApiError(400, 'Provide at least one VIN in dispatch');
+    results.push(built);
   }
 
   const allDispatched = po.lines.every((l) => (Number(l.dispatchedQty) || 0) >= l.qty);
@@ -351,30 +413,18 @@ exports.createDispatch = asyncHandler(async (req, res) => {
   }
   await po.save();
 
-  const dispatch = await Dispatch.create({
-    dispatchNumber: await nextDispatchNumber(),
-    purchaseOrderId: po._id,
-    poNumber: po.poNumber,
-    oemInvoiceNumber: req.body.oemInvoiceNumber,
-    oemInvoiceDate: new Date(req.body.oemInvoiceDate),
-    dispatchDate: req.body.dispatchDate ? new Date(req.body.dispatchDate) : new Date(),
-    transporter: req.body.transporter,
-    lrNumber: req.body.lrNumber,
-    truckNumber: req.body.truckNumber,
-    driverName: req.body.driverName,
-    driverMobile: req.body.driverMobile,
-    ewayBill: req.body.ewayBill,
-    expectedArrival: req.body.expectedArrival ? new Date(req.body.expectedArrival) : undefined,
-    items: dispatchItems,
-    createdBy: actorId(req.admin),
-  });
-
-  for (const stock of createdStocks) {
-    stock.dispatchId = dispatch._id;
-    await stock.save();
+  if (results.length === 1) {
+    return successResponse(res, { dispatch: results[0].dispatch, stock: results[0].createdStocks }, 'Dispatch created', 201);
   }
-
-  return successResponse(res, { dispatch, stock: createdStocks }, 'Dispatch created', 201);
+  return successResponse(
+    res,
+    {
+      dispatches: results.map((r) => r.dispatch),
+      stock: results.flatMap((r) => r.createdStocks),
+    },
+    `${results.length} line dispatch(es) created`,
+    201,
+  );
 });
 
 exports.updateDispatch = asyncHandler(async (req, res) => {
@@ -779,6 +829,20 @@ exports.listPdis = asyncHandler(async (req, res) => {
   return successResponse(res, docs);
 });
 
+function pdiResultToHoldReason(result) {
+  switch (String(result || '').toUpperCase()) {
+    case 'TECHNICAL_HOLD':
+      return 'TECHNICAL';
+    case 'OEM_HOLD':
+      return 'OEM_CAMPAIGN';
+    case 'FAIL':
+      return 'TECHNICAL';
+    default:
+      return 'OTHER';
+  }
+}
+
+
 exports.createPreStockPdi = asyncHandler(async (req, res) => {
   const stock = await VehicleStock.findById(req.params.id || req.body.vehicleStockId);
   if (!stock) throw new ApiError(404, 'Vehicle not found');
@@ -842,6 +906,11 @@ exports.createPreStockPdi = asyncHandler(async (req, res) => {
   if (passResults.includes(result) || (result === 'PASS_WITH_OBSERVATION' && req.body.managerApproval)) {
     stock.vehicleStatus = 'AVAILABLE';
     stock.pdiStatus = 'YARD_PASSED';
+    stock.holdStatus = false;
+    stock.holdReason = undefined;
+    stock.holdFeedback = undefined;
+    stock.holdSource = undefined;
+    stock.lastPdiResult = result;
     stock.grnDate = stock.grnDate || new Date();
     stock.stockAgeDays = computeStockAgeDays(stock.grnDate);
     stock.ageingBucket = computeAgeingBucket(stock.grnDate);
@@ -850,6 +919,18 @@ exports.createPreStockPdi = asyncHandler(async (req, res) => {
   } else {
     stock.vehicleStatus = ['TECHNICAL_HOLD', 'OEM_HOLD'].includes(result) ? 'PDI_HOLD' : 'PDI_FAIL';
     stock.pdiStatus = 'YARD_PENDING';
+    stock.holdStatus = true;
+    stock.holdReason = req.body.holdReason || pdiResultToHoldReason(result);
+    stock.holdFeedback = req.body.notes || req.body.holdFeedback || `Pre-stock PDI: ${result}`;
+    stock.holdSource = 'PRE_STOCK_PDI';
+    stock.lastPdiResult = result;
+    await VehicleHold.create({
+      vehicleStockId: stock._id,
+      vin: stock.vinNo,
+      holdReason: stock.holdReason,
+      remarks: stock.holdFeedback,
+      placedBy: actorId(req.admin),
+    });
     await Rectification.create({
       rectificationNo: await nextRectificationNumber(),
       vehicleStockId: stock._id,
@@ -882,7 +963,16 @@ exports.deletePdi = asyncHandler(async (req, res) => {
 
     stock.vehicleStatus = 'PDI_PENDING';
     stock.pdiStatus = 'YARD_PENDING';
+    stock.holdStatus = false;
+    stock.holdReason = undefined;
+    stock.holdFeedback = undefined;
+    stock.holdSource = undefined;
+    stock.lastPdiResult = undefined;
     stock.status = mapVehicleStatusToLegacy('PDI_PENDING');
+    await VehicleHold.updateMany(
+      { vehicleStockId: stock._id, active: true },
+      { active: false, releasedAt: new Date(), releasedBy: actorId(req.admin), releaseRemarks: 'Pre-stock PDI deleted' },
+    );
     await stock.save();
     await logStatusChange('VehicleStock', stock._id, pdi.result, 'PDI_PENDING', req.admin, 'Pre-stock PDI deleted');
   }

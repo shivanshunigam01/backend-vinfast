@@ -101,6 +101,7 @@ const stockNavItems = [
   { label: "10 · Retail & Invoice", icon: Receipt, path: "/admin/stock/retail", staff: false },
   { label: "11 · Delivery & Handover", icon: PackageCheck, path: "/admin/stock/delivery-handover", staff: false },
   { label: "Rectifications", icon: AlertTriangle, path: "/admin/stock/rectifications", staff: false },
+  { label: "Vendor Master", icon: Building2, path: "/admin/stock/vendors", staff: false },
   { label: "Stock Configuration", icon: Settings, path: "/admin/stock/config", staff: false },
 ];
 

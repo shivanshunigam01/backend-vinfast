@@ -1290,7 +1290,6 @@ export default function AdminExecutiveDashboard() {
           </table>
         </Card>
       ) : null}
-      </div>
 
       <Card className="bg-card border-border/50 p-4 space-y-4">
         <ReportPeriodPresets

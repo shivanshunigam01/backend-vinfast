@@ -42,6 +42,7 @@ export type AdminModuleKey =
   | "stock_retail"
   | "stock_reports"
   | "stock_config"
+  | "stock_vendors"
   | "td_reports"
   | "td_config"
   | "calendar"
@@ -150,6 +151,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "stock_final_pdi", label: "Final PDI", path: "/admin/stock/final-pdi", group: "Stock / Vehicle Management", actions: ["view", "pdi"] },
   { key: "stock_retail", label: "Retail & Invoice", path: "/admin/stock/retail", group: "Stock / Vehicle Management", actions: ["view", "deliver"] },
   { key: "stock_config", label: "Stock Config", path: "/admin/stock/config", group: "Stock / Vehicle Management", actions: ["view", "update"] },
+  { key: "stock_vendors", label: "Vendor Master", path: "/admin/stock/vendors", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete"] },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
@@ -176,6 +178,7 @@ MODULE_BY_PATH["/admin/stock/receipt"] = "stock_receipt";
 MODULE_BY_PATH["/admin/stock/pre-stock-pdi"] = "stock_pdi";
 MODULE_BY_PATH["/admin/stock/rectifications"] = "stock_rectification";
 MODULE_BY_PATH["/admin/stock/config"] = "stock_config";
+MODULE_BY_PATH["/admin/stock/vendors"] = "stock_vendors";
 
 export const MODULE_GROUPS = [
   "Core",

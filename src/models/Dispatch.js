@@ -20,6 +20,7 @@ const dispatchSchema = new mongoose.Schema(
     dispatchNumber: { type: String, required: true, unique: true, trim: true, index: true },
     purchaseOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseOrder', required: true, index: true },
     poNumber: { type: String, trim: true },
+    poLineId: { type: mongoose.Schema.Types.ObjectId },
     oemInvoiceNumber: { type: String, required: true, trim: true },
     oemInvoiceDate: { type: Date, required: true },
     dispatchDate: { type: Date, required: true },

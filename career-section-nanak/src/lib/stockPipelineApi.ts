@@ -1,4 +1,4 @@
-import { adminGet, adminPostJson, adminPutJson, adminPatchJson } from "@/lib/api";
+import { adminGet, adminPostJson, adminPutJson, adminPatchJson, adminDeleteJson } from "@/lib/api";
 
 const BASE = "/admin/stock/pipeline";
 
@@ -12,6 +12,7 @@ export type PoLine = {
   modelYear?: number;
   qty: number;
   receivedQty?: number;
+  dispatchedQty?: number;
   basicPrice?: number;
   gstAmount?: number;
   freight?: number;
@@ -26,6 +27,7 @@ export type PurchaseOrder = {
   poType?: string;
   status: string;
   supplier?: string;
+  supplierId?: string | { _id: string; name: string; legalName?: string; gstin?: string; type?: string; code?: string };
   deliveryLocation?: string;
   paymentTerms?: string;
   fundingBank?: string;
@@ -42,15 +44,52 @@ export type DispatchRecord = {
   dispatchNumber: string;
   purchaseOrderId: string | PurchaseOrder;
   poNumber?: string;
+  poLineId?: string;
   oemInvoiceNumber: string;
   oemInvoiceDate: string;
   dispatchDate: string;
   transporter: string;
   lrNumber: string;
   truckNumber: string;
+  driverName?: string;
+  driverMobile?: string;
   status: string;
-  items: Array<{ vin: string; model: string; variant?: string; colour?: string; configMatch?: string }>;
+  items: Array<{ vin: string; model: string; variant?: string; colour?: string; configMatch?: string; poLineId?: string }>;
 };
+
+export type LineTransport = {
+  oemInvoiceNumber: string;
+  oemInvoiceDate: string;
+  transporter: string;
+  lrNumber: string;
+  truckNumber: string;
+  driverName: string;
+  driverMobile: string;
+};
+
+export type LineShipmentPayload = LineTransport & {
+  poLineId: string;
+  items: Array<{
+    poLineId: string;
+    vin: string;
+    model: string;
+    variant?: string;
+    colour?: string;
+    motorNo?: string;
+  }>;
+};
+
+export function emptyLineTransport(): LineTransport {
+  return {
+    oemInvoiceNumber: "",
+    oemInvoiceDate: new Date().toISOString().slice(0, 10),
+    transporter: "VinFast Logistics",
+    lrNumber: "",
+    truckNumber: "",
+    driverName: "",
+    driverMobile: "",
+  };
+}
 
 export type StockUnit = {
   _id: string;
@@ -65,6 +104,9 @@ export type StockUnit = {
   ageingBucket?: string;
   lastSoc?: number;
   holdStatus?: boolean;
+  holdReason?: string;
+  holdFeedback?: string;
+  lastPdiResult?: string;
   location?: string;
 };
 
@@ -108,12 +150,20 @@ export async function approvePurchaseOrder(id: string, remarks?: string) {
   return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/approve`, { remarks });
 }
 
+export async function rejectPurchaseOrder(id: string, remarks?: string) {
+  return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/reject`, { remarks });
+}
+
 export async function releasePurchaseOrder(id: string, remarks?: string) {
   return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/release`, { remarks });
 }
 
 export async function cancelPurchaseOrder(id: string, remarks?: string) {
   return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/cancel`, { remarks });
+}
+
+export async function deletePurchaseOrder(id: string) {
+  return adminDeleteJson(`${BASE}/purchase-orders/${id}`);
 }
 
 export async function fetchDispatches(limit = 50) {
@@ -125,14 +175,30 @@ export async function createDispatch(body: Record<string, unknown>) {
   return adminPostJson(`${BASE}/dispatches`, body);
 }
 
+export async function updateDispatch(id: string, body: Record<string, unknown>) {
+  return adminPutJson<DispatchRecord>(`${BASE}/dispatches/${id}`, body);
+}
+
+export async function deleteDispatch(id: string) {
+  return adminDeleteJson(`${BASE}/dispatches/${id}`);
+}
+
 export async function fetchGateEntries(limit = 50) {
   const { data } = await adminGet(`${BASE}/gate-entries?limit=${limit}`);
   return data ?? [];
 }
 
+export async function deleteGateEntry(id: string) {
+  return adminDeleteJson(`${BASE}/gate-entries/${id}`);
+}
+
 export async function fetchGrns(limit = 50) {
   const { data } = await adminGet(`${BASE}/grns?limit=${limit}`);
   return data ?? [];
+}
+
+export async function deleteGrn(id: string) {
+  return adminDeleteJson(`${BASE}/grns/${id}`);
 }
 
 export async function fetchReceiptQueue() {
@@ -144,13 +210,51 @@ export async function createReceipt(body: Record<string, unknown>) {
   return adminPostJson(`${BASE}/receipts`, body);
 }
 
+export type ReceiptRecord = {
+  _id: string;
+  receiptNo?: string;
+  vin?: string;
+  receiptStatus?: string;
+  vehicleStockId?: string;
+  createdAt?: string;
+};
+
+export async function fetchReceipts(limit = 50) {
+  const { data } = await adminGet<ReceiptRecord[]>(`${BASE}/receipts?limit=${limit}`);
+  return data ?? [];
+}
+
+export async function deleteReceipt(id: string) {
+  return adminDeleteJson(`${BASE}/receipts/${id}`);
+}
+
 export async function fetchPdiQueue() {
   const { data } = await adminGet<StockUnit[]>(`${BASE}/pdi/queue`);
   return data ?? [];
 }
 
+export type StockPdiRecord = {
+  _id: string;
+  pdiNumber?: string;
+  type?: string;
+  result?: string;
+  vin?: string;
+  vehicleStockId?: string;
+  performedAt?: string;
+  notes?: string;
+};
+
+export async function fetchPdis(type = "PRE_STOCK") {
+  const { data } = await adminGet<StockPdiRecord[]>(`${BASE}/pdi?type=${encodeURIComponent(type)}&limit=50`);
+  return data ?? [];
+}
+
 export async function submitPreStockPdi(stockId: string, body: Record<string, unknown>) {
   return adminPostJson(`${BASE}/pdi/${stockId}/pre-stock`, body);
+}
+
+export async function deletePdi(id: string) {
+  return adminDeleteJson(`${BASE}/pdi/${id}`);
 }
 
 export async function fetchRectifications(status?: string) {
@@ -161,6 +265,10 @@ export async function fetchRectifications(status?: string) {
 
 export async function updateRectification(id: string, body: Record<string, unknown>) {
   return adminPatchJson(`${BASE}/rectifications/${id}`, body);
+}
+
+export async function deleteRectification(id: string) {
+  return adminDeleteJson(`${BASE}/rectifications/${id}`);
 }
 
 export async function fetchVehicle360(id: string) {

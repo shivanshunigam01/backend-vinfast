@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Warehouse, Plus, RefreshCw, Search, Loader2, Pencil, Trash2,
-  BatteryCharging, MapPin, Car, Gauge, CheckCircle2, CalendarDays,
+  BatteryCharging, MapPin, Car, Gauge, CheckCircle2, CalendarDays, AlertTriangle,
 } from "lucide-react";
 import { adminGet, adminPostJson, adminPatchJson, adminRequest, formatApiErrors } from "@/lib/api";
 import { getAdminUser, canPerformManagerAction, canPerformAction } from "@/lib/adminAuth";
 import { submitYardPdi } from "@/lib/stockDeliveryApi";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import {
-  exteriorColoursForModel,
+  exteriorColoursFor,
   interiorColoursFor,
   needsDualMotorNumbers,
 } from "@/data/stockColourOptions";
@@ -40,6 +40,14 @@ type StockItem = {
   batteryStatus: string;
   location: string | null;
   status: string;
+  vehicleStatus?: string | null;
+  holdStatus?: boolean;
+  holdReason?: string | null;
+  holdFeedback?: string | null;
+  holdSource?: string | null;
+  lastPdiResult?: string | null;
+  pdiNumber?: string | null;
+  pdiPerformedAt?: string | null;
   isDemo: boolean;
   demoVehicleId: { _id: string; vehicleId: string; status: string } | string | null;
   branchId: { _id: string; name: string; code?: string } | string | null;
@@ -56,6 +64,20 @@ const STATUS_COLORS: Record<string, string> = {
   RESERVED: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
   SOLD: "bg-muted text-muted-foreground border-border",
   IN_TRANSIT: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
+  PDI_HOLD: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
+  PDI_FAIL: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
+};
+
+const HOLD_REASON_LABELS: Record<string, string> = {
+  TECHNICAL: "Technical",
+  DAMAGE: "Damage",
+  OEM_CAMPAIGN: "OEM campaign",
+  DOCUMENTATION: "Documentation",
+  BATTERY: "Battery / HV",
+  COMMERCIAL: "Commercial",
+  MANAGEMENT: "Management",
+  INSURANCE: "Insurance",
+  OTHER: "Other",
 };
 
 const emptyForm = () => ({
@@ -93,10 +115,12 @@ export default function AdminVehicleStock() {
 
   const [items, setItems] = useState<StockItem[]>([]);
   const [byStatus, setByStatus] = useState<Record<string, number>>({});
+  const [holdCount, setHoldCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterModel, setFilterModel] = useState("all");
+  const [filterHold, setFilterHold] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<StockItem | null>(null);
@@ -106,10 +130,10 @@ export default function AdminVehicleStock() {
   const [demoBusyId, setDemoBusyId] = useState<string | null>(null);
 
   const exteriorOptions = useMemo(() => {
-    const base = exteriorColoursForModel(form.model);
+    const base = exteriorColoursFor(form.model, form.variant);
     if (form.colour && !base.includes(form.colour)) return [form.colour, ...base];
     return base;
-  }, [form.model, form.colour]);
+  }, [form.model, form.variant, form.colour]);
   const interiorOptions = useMemo(() => {
     const base = interiorColoursFor(form.model, form.variant);
     if (form.interiorColour && !base.includes(form.interiorColour)) return [form.interiorColour, ...base];
@@ -119,22 +143,25 @@ export default function AdminVehicleStock() {
 
   const applyModelChange = (model: string) => {
     const nextVariant = trimsFor(model)[0] ?? "";
+    const nextExterior = exteriorColoursFor(model, nextVariant)[0] ?? "";
     const nextInterior = interiorColoursFor(model, nextVariant)[0] ?? "";
     setForm((f) => ({
       ...f,
       model,
       variant: nextVariant,
-      colour: "",
+      colour: nextExterior,
       interiorColour: nextInterior,
       motorNo2: needsDualMotorNumbers(model, nextVariant) ? f.motorNo2 : "",
     }));
   };
 
   const applyVariantChange = (variant: string) => {
+    const nextExteriorOptions = exteriorColoursFor(form.model, variant);
     const nextInteriorOptions = interiorColoursFor(form.model, variant);
     setForm((f) => ({
       ...f,
       variant,
+      colour: nextExteriorOptions.includes(f.colour) ? f.colour : (nextExteriorOptions[0] ?? ""),
       interiorColour: nextInteriorOptions.includes(f.interiorColour)
         ? f.interiorColour
         : (nextInteriorOptions[0] ?? ""),
@@ -149,16 +176,18 @@ export default function AdminVehicleStock() {
       if (search.trim()) q.set("search", search.trim());
       if (filterStatus !== "all") q.set("status", filterStatus);
       if (filterModel !== "all") q.set("model", filterModel);
+      if (filterHold) q.set("hold", "true");
       const res = await adminGet<StockItem[]>(`/admin/stock/vehicles?${q}`);
       setItems(Array.isArray(res.data) ? res.data : []);
       setByStatus(((res.meta as { byStatus?: Record<string, number> } | undefined)?.byStatus) ?? {});
+      setHoldCount(Number((res.meta as { holdCount?: number } | undefined)?.holdCount) || 0);
     } catch (e) {
       toast.error(formatApiErrors(e));
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, filterModel]);
+  }, [search, filterStatus, filterModel, filterHold]);
 
   useEffect(() => {
     const t = setTimeout(() => void fetchStock(), search ? 350 : 0);
@@ -173,6 +202,7 @@ export default function AdminVehicleStock() {
       ...emptyForm(),
       model,
       variant,
+      colour: exteriorColoursFor(model, variant)[0] ?? "",
       interiorColour: interiorColoursFor(model, variant)[0] ?? "",
     });
     setShowForm(true);
@@ -283,7 +313,7 @@ export default function AdminVehicleStock() {
             <Warehouse className="w-6 h-6 text-primary" /> Vehicle Stock
           </h1>
           <p className="text-muted-foreground text-sm">
-            Stock register — tag a unit as demo to make it available for test drives.
+            Stock register — hold units from pre-stock PDI show with issue feedback for replacement tracking.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -298,7 +328,20 @@ export default function AdminVehicleStock() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+        <button
+          type="button"
+          onClick={() => setFilterHold((h) => !h)}
+          className={cn(
+            "rounded-lg border px-3 py-2 text-left transition-colors col-span-2 sm:col-span-1",
+            filterHold ? "border-red-500 bg-red-500/10" : "border-border/50 bg-secondary/20 hover:bg-secondary/40",
+          )}
+        >
+          <p className="text-lg font-bold text-foreground leading-tight">{holdCount}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> Hold stock
+          </p>
+        </button>
         {STOCK_STATUSES.map((s) => (
           <button
             key={s}
@@ -356,7 +399,13 @@ export default function AdminVehicleStock() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((item) => (
-            <Card key={item._id} className="p-4 space-y-3 bg-card border-border/50">
+            <Card
+              key={item._id}
+              className={cn(
+                "p-4 space-y-3 bg-card border-border/50 overflow-hidden",
+                item.holdStatus && "border-red-500/40 bg-red-500/[0.03]",
+              )}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground font-mono">{item.stockId}</p>
@@ -368,9 +417,14 @@ export default function AdminVehicleStock() {
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <Badge className={`text-[10px] border ${STATUS_COLORS[item.status] ?? "bg-secondary"}`}>
-                    {(item as { vehicleStatus?: string }).vehicleStatus?.replace(/_/g, " ") || item.status.replace("_", " ")}
+                  <Badge className={`text-[10px] border ${STATUS_COLORS[item.vehicleStatus ?? item.status] ?? "bg-secondary"}`}>
+                    {item.vehicleStatus?.replace(/_/g, " ") || item.status.replace("_", " ")}
                   </Badge>
+                  {item.holdStatus ? (
+                    <Badge className="text-[10px] border bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30">
+                      <AlertTriangle className="w-3 h-3 mr-1" /> ON HOLD
+                    </Badge>
+                  ) : null}
                   {item.isDemo ? (
                     <Badge className="text-[10px] border bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30">
                       <Gauge className="w-3 h-3 mr-1" /> DEMO
@@ -378,6 +432,27 @@ export default function AdminVehicleStock() {
                   ) : null}
                 </div>
               </div>
+
+              {item.holdStatus ? (
+                <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 space-y-1.5 text-xs">
+                  <p className="font-semibold text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    Hold stock — {HOLD_REASON_LABELS[item.holdReason ?? ""] ?? item.holdReason ?? "Unknown reason"}
+                    {item.lastPdiResult ? ` · ${item.lastPdiResult.replace(/_/g, " ")}` : ""}
+                  </p>
+                  {item.holdFeedback ? (
+                    <p className="text-muted-foreground whitespace-pre-wrap">{item.holdFeedback}</p>
+                  ) : null}
+                  <p className="text-[10px] text-muted-foreground">
+                    {item.holdSource === "PRE_STOCK_PDI" ? "From pre-stock PDI" : item.holdSource || "Hold placed"}
+                    {item.pdiNumber ? ` · ${item.pdiNumber}` : ""}
+                    {item.pdiPerformedAt ? ` · ${new Date(item.pdiPerformedAt).toLocaleDateString()}` : ""}
+                  </p>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                    Not available for sale — track for OEM replacement / rectification
+                  </p>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-2 text-xs border-t border-border/30 pt-3">
                 <div className="flex items-center gap-1.5 text-muted-foreground col-span-2">
@@ -418,11 +493,11 @@ export default function AdminVehicleStock() {
               </div>
 
               {canTagDemo || canUpdate || canDelete || canYardPdi ? (
-                <div className="flex gap-2 border-t border-border/30 pt-3">
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/30 pt-3">
                   {canYardPdi && item.status === "IN_TRANSIT" ? (
                     <Button
                       size="sm"
-                      className="flex-1 text-xs h-8"
+                      className="flex-1 min-w-[7rem] text-xs h-8"
                       disabled={yardBusyId === item._id}
                       onClick={() =>
                         void (async () => {
@@ -452,7 +527,7 @@ export default function AdminVehicleStock() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 text-xs h-8"
+                        className="flex-1 min-w-[7rem] text-xs h-8"
                         disabled={demoBusyId === item._id}
                         onClick={() => void handleTagDemo(item, false)}
                       >
@@ -463,7 +538,7 @@ export default function AdminVehicleStock() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="flex-1 text-xs h-8"
+                        className="flex-1 min-w-[7rem] text-xs h-8"
                         disabled={demoBusyId === item._id || item.status === "SOLD"}
                         onClick={() => void handleTagDemo(item, true)}
                       >
@@ -472,21 +547,25 @@ export default function AdminVehicleStock() {
                       </Button>
                     )
                   ) : null}
-                  {canUpdate ? (
-                    <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => openEdit(item)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : null}
-                  {canDelete && !item.isDemo ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-8 text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(item)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : null}
+                  <div className="flex gap-2 ml-auto shrink-0">
+                    {canUpdate ? (
+                      <Button size="sm" variant="outline" className="text-xs h-8 px-3" onClick={() => openEdit(item)}>
+                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                        Edit
+                      </Button>
+                    ) : null}
+                    {canDelete && !item.isDemo ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-8 px-3 text-destructive hover:text-destructive border-destructive/30"
+                        onClick={() => setDeleteTarget(item)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </Card>
