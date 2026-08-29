@@ -333,9 +333,6 @@ exports.tagDemo = asyncHandler(async (req, res) => {
 });
 
 exports.deleteStock = asyncHandler(async (req, res) => {
-  if (req.admin.role !== 'superadmin') {
-    throw new ApiError(403, 'Only admins can delete stock entries');
-  }
   const doc = await VehicleStock.findById(req.params.id);
   if (!doc) throw new ApiError(404, 'Stock item not found');
   if (doc.isDemo) throw new ApiError(400, 'Untag the demo vehicle before deleting this stock entry');

@@ -14,6 +14,13 @@ function mod(action) {
   ]);
 }
 
+function modDelete(moduleKey) {
+  return requireAnyModuleAction([
+    [`stock_${moduleKey}`, 'delete'],
+    ['stock_delivery', 'delete'],
+  ]);
+}
+
 /** Config */
 router.get('/config', mod('view'), configCtrl.getConfig);
 router.put('/config', requireAnyModuleAction([['stock_config', 'update'], ['stock_delivery', 'update']]), configCtrl.updateConfig);
@@ -33,32 +40,40 @@ router.post('/purchase-orders/:id/approve', mongoIdParam, validate, requireAnyMo
 router.post('/purchase-orders/:id/reject', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'approve'], ['stock_delivery', 'update']]), ctrl.rejectPurchaseOrder);
 router.post('/purchase-orders/:id/release', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.releasePurchaseOrder);
 router.post('/purchase-orders/:id/cancel', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.cancelPurchaseOrder);
+router.delete('/purchase-orders/:id', mongoIdParam, validate, modDelete('po'), ctrl.deletePurchaseOrder);
 
 /** Dispatch */
 router.get('/dispatches', mod('view'), ctrl.listDispatches);
 router.post('/dispatches', requireAnyModuleAction([['stock_dispatch', 'create'], ['stock_delivery', 'create']]), ctrl.createDispatch);
+router.put('/dispatches/:id', mongoIdParam, validate, requireAnyModuleAction([['stock_dispatch', 'update'], ['stock_delivery', 'update']]), ctrl.updateDispatch);
+router.delete('/dispatches/:id', mongoIdParam, validate, modDelete('dispatch'), ctrl.deleteDispatch);
 
 /** Gate Entry */
 router.get('/gate-entries', mod('view'), ctrl.listGateEntries);
 router.post('/gate-entries', requireAnyModuleAction([['stock_gate', 'create'], ['stock_delivery', 'receive']]), uploadStockPhotos, ctrl.createGateEntry);
+router.delete('/gate-entries/:id', mongoIdParam, validate, modDelete('gate'), ctrl.deleteGateEntry);
 
 /** GRN */
 router.get('/grns', mod('view'), ctrl.listGrns);
 router.post('/grns', requireAnyModuleAction([['stock_grn', 'create'], ['stock_delivery', 'receive']]), uploadStockPhotos, ctrl.createGrn);
+router.delete('/grns/:id', mongoIdParam, validate, modDelete('grn'), ctrl.deleteGrn);
 
 /** Receipt */
 router.get('/receipts', mod('view'), ctrl.listReceipts);
 router.get('/receipts/queue', mod('view'), ctrl.listReceiptQueue);
 router.post('/receipts', requireAnyModuleAction([['stock_receipt', 'create'], ['stock_delivery', 'receive']]), ctrl.createReceipt);
+router.delete('/receipts/:id', mongoIdParam, validate, modDelete('receipt'), ctrl.deleteReceipt);
 
 /** Pre-Stock PDI */
 router.get('/pdi/queue', mod('view'), ctrl.listPdiQueue);
 router.get('/pdi', mod('view'), ctrl.listPdis);
 router.post('/pdi/:id/pre-stock', mongoIdParam, validate, requireAnyModuleAction([['stock_pdi', 'create'], ['stock_delivery', 'pdi']]), ctrl.createPreStockPdi);
+router.delete('/pdi/:id', mongoIdParam, validate, modDelete('pdi'), ctrl.deletePdi);
 
 /** Rectification */
 router.get('/rectifications', mod('view'), ctrl.listRectifications);
 router.patch('/rectifications/:id', mongoIdParam, validate, requireAnyModuleAction([['stock_rectification', 'update'], ['stock_delivery', 'update']]), ctrl.updateRectification);
+router.delete('/rectifications/:id', mongoIdParam, validate, modDelete('rectification'), ctrl.deleteRectification);
 
 /** Stock ops */
 router.post('/vehicles/:id/hold', mongoIdParam, validate, requireAnyModuleAction([['stock_inventory', 'update'], ['stock_delivery', 'update']]), ctrl.placeHold);

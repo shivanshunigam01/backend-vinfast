@@ -29,6 +29,7 @@ const {
 } = require('../services/vehicleLifecycleService');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { getOrCreateConfig } = require('./stockConfigController');
+const { resolveVendorFromBody, ensureDefaultVendors } = require('./vendorController');
 
 function actorId(admin) {
   return admin?._id;
@@ -64,8 +65,8 @@ async function uploadPhotos(files, folder) {
   return out;
 }
 
-function normalizePoLines(lines) {
-  return (lines || []).map((l) => ({
+function normalizePoLineFields(l) {
+  return {
     model: String(l.model || '').trim(),
     variant: String(l.variant || '').trim() || undefined,
     colour: String(l.colour || '').trim() || undefined,
@@ -73,12 +74,36 @@ function normalizePoLines(lines) {
     batteryConfig: String(l.batteryConfig || '').trim() || undefined,
     modelYear: l.modelYear ? Number(l.modelYear) : undefined,
     qty: Math.max(1, Number(l.qty) || 1),
-    receivedQty: Number(l.receivedQty) || 0,
     basicPrice: Number(l.basicPrice) || 0,
     gstAmount: Number(l.gstAmount) || 0,
     freight: Number(l.freight) || 0,
     discount: Number(l.discount) || 0,
+  };
+}
+
+function normalizePoLines(lines) {
+  return (lines || []).map((l) => ({
+    ...normalizePoLineFields(l),
+    receivedQty: Number(l.receivedQty) || 0,
+    dispatchedQty: Number(l.dispatchedQty) || 0,
   }));
+}
+
+function mergePoLines(existingLines, incomingLines) {
+  return (incomingLines || []).map((l) => {
+    const fields = normalizePoLineFields(l);
+    const lineId = l._id || l.id;
+    const prev = lineId ? existingLines.id(lineId) : null;
+    if (prev) {
+      return {
+        ...fields,
+        _id: prev._id,
+        receivedQty: Number(prev.receivedQty) || 0,
+        dispatchedQty: Number(prev.dispatchedQty) || 0,
+      };
+    }
+    return { ...fields, receivedQty: 0, dispatchedQty: 0 };
+  });
 }
 
 function applyPoHeader(doc, body) {
@@ -96,7 +121,9 @@ function applyPoHeader(doc, body) {
   if (body.bookingNumber) doc.bookingNumber = body.bookingNumber;
   if (body.leadId) doc.leadId = body.leadId;
   if (body.remarks !== undefined) doc.remarks = body.remarks;
-  if (body.lines) doc.lines = normalizePoLines(body.lines);
+  if (body.supplierId) doc.supplierId = body.supplierId;
+  if (body.supplier) doc.supplier = body.supplier;
+  if (body.lines) doc.lines = mergePoLines(doc.lines, body.lines);
 }
 
 function pushApproval(doc, action, status, admin, remarks) {
@@ -112,7 +139,12 @@ exports.listPurchaseOrders = asyncHandler(async (req, res) => {
   const query = {};
   if (req.query.status) query.status = String(req.query.status).toUpperCase();
   const [docs, total] = await Promise.all([
-    PurchaseOrder.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    PurchaseOrder.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('supplierId', 'name legalName gstin type code')
+      .lean(),
     PurchaseOrder.countDocuments(query),
   ]);
   return successResponse(res, docs, undefined, 200, { page, limit, total });
@@ -125,19 +157,24 @@ exports.getPurchaseOrder = asyncHandler(async (req, res) => {
 });
 
 exports.createPurchaseOrder = asyncHandler(async (req, res) => {
+  await ensureDefaultVendors();
   const lines = normalizePoLines(req.body?.lines);
   if (!lines.length) throw new ApiError(400, 'Provide at least one PO line');
   if (lines.some((l) => !l.model)) throw new ApiError(400, 'Each line needs a model');
   if (req.body?.bookingLinked && !req.body?.bookingNumber) {
     throw new ApiError(400, 'bookingNumber required when bookingLinked is true');
   }
+  const vendorInfo = await resolveVendorFromBody(req.body);
   const doc = new PurchaseOrder({
     poNumber: await nextPoNumber(),
     status: 'DRAFT',
-    supplier: req.body?.supplier || 'VinFast',
+    supplier: vendorInfo.supplier,
+    supplierId: vendorInfo.supplierId,
     createdBy: actorId(req.admin),
   });
   applyPoHeader(doc, req.body);
+  doc.supplier = vendorInfo.supplier;
+  doc.supplierId = vendorInfo.supplierId;
   await doc.save();
   return successResponse(res, doc, 'Purchase order created', 201);
 });
@@ -147,6 +184,11 @@ exports.updatePurchaseOrder = asyncHandler(async (req, res) => {
   if (!doc) throw new ApiError(404, 'Purchase order not found');
   if (doc.locked || !['DRAFT', 'SUBMITTED', 'REJECTED'].includes(doc.status)) {
     throw new ApiError(400, 'PO cannot be edited in current status');
+  }
+  if (req.body?.supplierId || req.body?.supplier) {
+    const vendorInfo = await resolveVendorFromBody(req.body);
+    doc.supplierId = vendorInfo.supplierId;
+    doc.supplier = vendorInfo.supplier;
   }
   applyPoHeader(doc, req.body);
   await doc.save();
@@ -206,6 +248,16 @@ exports.cancelPurchaseOrder = asyncHandler(async (req, res) => {
   return successResponse(res, doc, 'PO cancelled');
 });
 
+exports.deletePurchaseOrder = asyncHandler(async (req, res) => {
+  const doc = await PurchaseOrder.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Purchase order not found');
+  if (doc.status !== 'DRAFT') throw new ApiError(400, 'Only DRAFT purchase orders can be deleted');
+  const dispatchCount = await Dispatch.countDocuments({ purchaseOrderId: doc._id });
+  if (dispatchCount) throw new ApiError(400, 'Cannot delete PO with existing dispatches');
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id }, 'Purchase order deleted');
+});
+
 /* ─── Dispatch ────────────────────────────────────────────────────── */
 
 exports.listDispatches = asyncHandler(async (req, res) => {
@@ -214,7 +266,12 @@ exports.listDispatches = asyncHandler(async (req, res) => {
   if (req.query.status) query.status = req.query.status;
   if (req.query.poId) query.purchaseOrderId = req.query.poId;
   const [docs, total] = await Promise.all([
-    Dispatch.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('purchaseOrderId', 'poNumber status').lean(),
+    Dispatch.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('purchaseOrderId', 'poNumber status supplier supplierId')
+      .lean(),
     Dispatch.countDocuments(query),
   ]);
   return successResponse(res, docs, undefined, 200, { page, limit, total });
@@ -320,13 +377,69 @@ exports.createDispatch = asyncHandler(async (req, res) => {
   return successResponse(res, { dispatch, stock: createdStocks }, 'Dispatch created', 201);
 });
 
+exports.updateDispatch = asyncHandler(async (req, res) => {
+  const dispatch = await Dispatch.findById(req.params.id);
+  if (!dispatch) throw new ApiError(404, 'Dispatch not found');
+  const gate = await GateEntry.findOne({ dispatchId: dispatch._id });
+  if (gate) throw new ApiError(400, 'Cannot edit dispatch after gate entry');
+
+  const fields = [
+    'oemInvoiceNumber', 'transporter', 'lrNumber', 'truckNumber',
+    'driverName', 'driverMobile', 'ewayBill',
+  ];
+  for (const f of fields) {
+    if (req.body[f] !== undefined) dispatch[f] = req.body[f];
+  }
+  if (req.body.oemInvoiceDate) dispatch.oemInvoiceDate = new Date(req.body.oemInvoiceDate);
+  if (req.body.dispatchDate) dispatch.dispatchDate = new Date(req.body.dispatchDate);
+  if (req.body.expectedArrival) dispatch.expectedArrival = new Date(req.body.expectedArrival);
+  await dispatch.save();
+  return successResponse(res, dispatch, 'Dispatch updated');
+});
+
+exports.deleteDispatch = asyncHandler(async (req, res) => {
+  const dispatch = await Dispatch.findById(req.params.id);
+  if (!dispatch) throw new ApiError(404, 'Dispatch not found');
+  const gate = await GateEntry.findOne({ dispatchId: dispatch._id });
+  if (gate) throw new ApiError(400, 'Cannot delete dispatch with gate entry — remove gate entry first');
+
+  for (const item of dispatch.items) {
+    if (!item.vehicleStockId) continue;
+    const stock = await VehicleStock.findById(item.vehicleStockId);
+    if (!stock) continue;
+    if (stock.grnId) throw new ApiError(400, `Cannot delete dispatch — VIN ${stock.vinNo} has GRN`);
+    const receipt = await ReceiptVerification.findOne({ vehicleStockId: stock._id });
+    if (receipt) throw new ApiError(400, `Cannot delete dispatch — VIN ${stock.vinNo} has receipt verification`);
+    await stock.deleteOne();
+  }
+
+  const po = await PurchaseOrder.findById(dispatch.purchaseOrderId);
+  if (po) {
+    for (const item of dispatch.items) {
+      if (!item.poLineId) continue;
+      const line = po.lines.id(item.poLineId);
+      if (line) line.dispatchedQty = Math.max(0, (Number(line.dispatchedQty) || 0) - 1);
+    }
+    const allDispatched = po.lines.every((l) => (Number(l.dispatchedQty) || 0) >= l.qty);
+    if (!allDispatched && po.status === 'PART_SUPPLIED') po.status = 'RELEASED';
+    await po.save();
+  }
+
+  await dispatch.deleteOne();
+  return successResponse(res, { _id: dispatch._id }, 'Dispatch deleted');
+});
+
 /* ─── Gate Entry ──────────────────────────────────────────────────── */
 
 exports.listGateEntries = asyncHandler(async (req, res) => {
   const docs = await GateEntry.find()
     .sort({ arrivalDatetime: -1 })
     .limit(Number(req.query.limit) || 50)
-    .populate('dispatchId', 'dispatchNumber truckNumber status')
+    .populate({
+      path: 'dispatchId',
+      select: 'dispatchNumber truckNumber status poNumber',
+      populate: { path: 'purchaseOrderId', select: 'poNumber supplier supplierId' },
+    })
     .lean();
   return successResponse(res, docs);
 });
@@ -385,10 +498,40 @@ exports.createGateEntry = asyncHandler(async (req, res) => {
   return successResponse(res, gate, 'Gate entry recorded', 201);
 });
 
+exports.deleteGateEntry = asyncHandler(async (req, res) => {
+  const gate = await GateEntry.findById(req.params.id);
+  if (!gate) throw new ApiError(404, 'Gate entry not found');
+  const grn = await Grn.findOne({ gateEntryId: gate._id });
+  if (grn) throw new ApiError(400, 'Cannot delete gate entry with GRN — remove GRN first');
+
+  const dispatch = await Dispatch.findById(gate.dispatchId);
+  if (dispatch) {
+    dispatch.status = 'IN_TRANSIT';
+    await dispatch.save();
+    for (const item of dispatch.items) {
+      if (!item.vehicleStockId) continue;
+      const stock = await VehicleStock.findById(item.vehicleStockId);
+      if (stock && stock.vehicleStatus === 'ARRIVED') {
+        stock.vehicleStatus = 'IN_TRANSIT';
+        stock.status = mapVehicleStatusToLegacy('IN_TRANSIT');
+        await stock.save();
+        await logStatusChange('VehicleStock', stock._id, 'ARRIVED', 'IN_TRANSIT', req.admin, 'Gate entry deleted');
+      }
+    }
+  }
+
+  await gate.deleteOne();
+  return successResponse(res, { _id: gate._id }, 'Gate entry deleted');
+});
+
 /* ─── GRN ─────────────────────────────────────────────────────────── */
 
 exports.listGrns = asyncHandler(async (req, res) => {
-  const docs = await Grn.find().sort({ grnDatetime: -1 }).limit(Number(req.query.limit) || 50).lean();
+  const docs = await Grn.find()
+    .sort({ grnDatetime: -1 })
+    .limit(Number(req.query.limit) || 50)
+    .populate('purchaseOrderId', 'poNumber supplier supplierId')
+    .lean();
   return successResponse(res, docs);
 });
 
@@ -481,6 +624,36 @@ exports.createGrn = asyncHandler(async (req, res) => {
   return successResponse(res, grn, hasException ? 'GRN recorded with exceptions' : 'GRN recorded', 201);
 });
 
+exports.deleteGrn = asyncHandler(async (req, res) => {
+  const grn = await Grn.findById(req.params.id);
+  if (!grn) throw new ApiError(404, 'GRN not found');
+
+  for (const item of grn.items || []) {
+    if (!item.vehicleStockId) continue;
+    const receipt = await ReceiptVerification.findOne({ vehicleStockId: item.vehicleStockId });
+    if (receipt) throw new ApiError(400, `Cannot delete GRN — VIN ${item.vin} has receipt verification`);
+    const stock = await VehicleStock.findById(item.vehicleStockId);
+    if (stock) {
+      const from = stock.vehicleStatus;
+      stock.grnId = undefined;
+      stock.grnDate = undefined;
+      stock.vehicleStatus = 'ARRIVED';
+      stock.status = mapVehicleStatusToLegacy('ARRIVED');
+      await stock.save();
+      await logStatusChange('VehicleStock', stock._id, from, 'ARRIVED', req.admin, 'GRN deleted');
+    }
+  }
+
+  const gate = await GateEntry.findById(grn.gateEntryId);
+  if (gate) {
+    gate.status = 'ARRIVED';
+    await gate.save();
+  }
+
+  await grn.deleteOne();
+  return successResponse(res, { _id: grn._id }, 'GRN deleted');
+});
+
 /* ─── Receipt Verification ────────────────────────────────────────── */
 
 exports.listReceipts = asyncHandler(async (req, res) => {
@@ -555,6 +728,37 @@ exports.createReceipt = asyncHandler(async (req, res) => {
   }
 
   return successResponse(res, doc, 'Receipt verification saved', 201);
+});
+
+exports.deleteReceipt = asyncHandler(async (req, res) => {
+  const doc = await ReceiptVerification.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Receipt verification not found');
+  const stock = await VehicleStock.findById(doc.vehicleStockId);
+  if (!stock) {
+    await doc.deleteOne();
+    return successResponse(res, { _id: doc._id }, 'Receipt verification deleted');
+  }
+
+  const pdi = await StockPdi.findOne({ vehicleStockId: stock._id, type: 'PRE_STOCK' });
+  if (pdi) throw new ApiError(400, 'Cannot delete receipt — pre-stock PDI already recorded');
+
+  const blocked = ['ALLOCATED', 'RESERVED', 'INVOICED', 'DELIVERY_READY', 'DELIVERED', 'SOLD'];
+  const from = stock.vehicleStatus;
+  if (blocked.includes(stock.vehicleStatus)) {
+    throw new ApiError(400, 'Cannot delete receipt — vehicle already allocated or sold');
+  }
+
+  stock.vehicleStatus = 'RECEIVED';
+  stock.holdStatus = false;
+  stock.holdReason = undefined;
+  stock.pdiStatus = 'NONE';
+  stock.status = mapVehicleStatusToLegacy('RECEIVED');
+  await stock.save();
+  await logStatusChange('VehicleStock', stock._id, from, 'RECEIVED', req.admin, 'Receipt deleted');
+
+  await Rectification.deleteMany({ vehicleStockId: stock._id, source: 'Receipt', status: 'OPEN' });
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id }, 'Receipt verification deleted');
 });
 
 /* ─── Pre-Stock PDI ───────────────────────────────────────────────── */
@@ -666,6 +870,29 @@ exports.createPreStockPdi = asyncHandler(async (req, res) => {
   return successResponse(res, { pdi, stock }, `Pre-Stock PDI ${result}`);
 });
 
+exports.deletePdi = asyncHandler(async (req, res) => {
+  const pdi = await StockPdi.findById(req.params.id);
+  if (!pdi) throw new ApiError(404, 'PDI record not found');
+  if (pdi.type !== 'PRE_STOCK') throw new ApiError(400, 'Only pre-stock PDI records can be deleted here');
+
+  const stock = await VehicleStock.findById(pdi.vehicleStockId);
+  if (stock) {
+    const allocation = await VehicleAllocation.findOne({ vehicleStockId: stock._id, status: { $in: ['ACTIVE', 'RESERVED'] } });
+    if (allocation) throw new ApiError(400, 'Cannot delete PDI — vehicle is allocated');
+
+    stock.vehicleStatus = 'PDI_PENDING';
+    stock.pdiStatus = 'YARD_PENDING';
+    stock.status = mapVehicleStatusToLegacy('PDI_PENDING');
+    await stock.save();
+    await logStatusChange('VehicleStock', stock._id, pdi.result, 'PDI_PENDING', req.admin, 'Pre-stock PDI deleted');
+  }
+
+  await VehicleDiagnostic.deleteMany({ pdiId: pdi._id });
+  await Rectification.deleteMany({ vehicleStockId: pdi.vehicleStockId, source: 'PDI', status: 'OPEN' });
+  await pdi.deleteOne();
+  return successResponse(res, { _id: pdi._id }, 'Pre-stock PDI deleted');
+});
+
 /* ─── Rectification ───────────────────────────────────────────────── */
 
 exports.listRectifications = asyncHandler(async (req, res) => {
@@ -698,6 +925,16 @@ exports.updateRectification = asyncHandler(async (req, res) => {
     }
   }
   return successResponse(res, doc, 'Rectification updated');
+});
+
+exports.deleteRectification = asyncHandler(async (req, res) => {
+  const doc = await Rectification.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Rectification not found');
+  if (!['OPEN', 'IN_PROGRESS'].includes(doc.status)) {
+    throw new ApiError(400, 'Only open rectifications can be deleted');
+  }
+  await doc.deleteOne();
+  return successResponse(res, { _id: doc._id }, 'Rectification deleted');
 });
 
 /* ─── Holds ───────────────────────────────────────────────────────── */

@@ -40,6 +40,7 @@ const purchaseOrderSchema = new mongoose.Schema(
     poType: { type: String, trim: true, default: 'Regular' },
     status: { type: String, enum: PO_STATUSES, default: 'DRAFT', index: true },
     supplier: { type: String, trim: true, default: 'VinFast' },
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', index: true },
     deliveryLocation: { type: String, trim: true },
     deliveryLocationId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDBranch' },
     paymentTerms: { type: String, trim: true, default: 'Advance' },

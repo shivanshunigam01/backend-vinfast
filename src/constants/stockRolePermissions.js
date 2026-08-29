@@ -27,7 +27,7 @@ const STOCK_ROLE_TEMPLATES = [
     allowedModules: [
       'stock_inventory', 'stock_po', 'stock_dispatch', 'stock_gate', 'stock_grn',
       'stock_receipt', 'stock_pdi', 'stock_rectification', 'vehicle_stock',
-      'stock_delivery', 'stock_allocation', 'stock_reports', 'stock_config',
+      'stock_delivery', 'stock_allocation', 'stock_reports', 'stock_config', 'stock_vendors',
     ],
   },
   {
@@ -62,12 +62,13 @@ const STOCK_ROLE_TEMPLATES = [
     allowedActions: tokens(
       ['stock_inventory', 'stock_po', 'stock_dispatch', 'stock_gate', 'stock_grn', 'stock_receipt', 'vehicle_stock', 'stock_reports'],
       {
-        stock_po: ['view', 'create', 'update'],
-        stock_dispatch: ['view', 'create', 'update'],
-        stock_gate: ['view', 'create'],
-        stock_grn: ['view', 'create', 'update'],
-        stock_receipt: ['view', 'create', 'update'],
-        vehicle_stock: ['view', 'create', 'update', 'tag_demo'],
+        stock_po: ['view', 'create', 'update', 'delete'],
+        stock_vendors: ['view'],
+        stock_dispatch: ['view', 'create', 'update', 'delete'],
+        stock_gate: ['view', 'create', 'delete'],
+        stock_grn: ['view', 'create', 'update', 'delete'],
+        stock_receipt: ['view', 'create', 'update', 'delete'],
+        vehicle_stock: ['view', 'create', 'update', 'delete', 'tag_demo'],
         stock_inventory: ['view', 'update', 'export'],
         stock_reports: ['view', 'export'],
       },
@@ -97,8 +98,8 @@ const STOCK_ROLE_TEMPLATES = [
     allowedActions: tokens(
       ['stock_pdi', 'stock_rectification', 'vehicle_stock', 'stock_inventory'],
       {
-        stock_pdi: ['view', 'create', 'update'],
-        stock_rectification: ['view', 'create', 'update'],
+        stock_pdi: ['view', 'create', 'update', 'delete'],
+        stock_rectification: ['view', 'create', 'update', 'delete'],
         vehicle_stock: ['view'],
         stock_inventory: ['view'],
       },
@@ -112,7 +113,7 @@ const STOCK_ROLE_TEMPLATES = [
     allowedActions: tokens(
       ['stock_rectification', 'stock_pdi', 'vehicle_stock'],
       {
-        stock_rectification: ['view', 'create', 'update'],
+        stock_rectification: ['view', 'create', 'update', 'delete'],
         stock_pdi: ['view'],
         vehicle_stock: ['view'],
       },

@@ -141,6 +141,7 @@ router.use('/pricing', pricingRoutes);
 
 // Vehicle stock register with demo tagging (/api/v1/admin/stock/vehicles)
 router.use('/stock/vehicles', vehicleStockRoutes);
+router.use('/stock/vendors', require('./vendors'));
 // Stock pipeline — PO → Dispatch → Gate → GRN → Receipt → PDI (/api/v1/admin/stock/pipeline)
 router.use('/stock/pipeline', require('./stockPipeline'));
 // Stock-to-Delivery ops (/api/v1/admin/stock-delivery/*)

@@ -85,6 +85,9 @@ async function mergeRoleOntoStaff(staff, role) {
 (async () => {
   try {
     await connectDB();
+    const { ensureDefaultVendors } = require('../controllers/vendorController');
+    await ensureDefaultVendors();
+    console.log('  ✓ Default vendors (VinFast)');
 
     console.log('Creating / updating Stock module roles…');
     const roleMap = {};
