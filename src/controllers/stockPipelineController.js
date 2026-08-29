@@ -238,12 +238,23 @@ exports.createDispatch = asyncHandler(async (req, res) => {
     const exists = await VehicleStock.findOne({ vinNo: vin });
     if (exists) throw new ApiError(409, `Duplicate VIN ${vin} (AC-01)`);
 
-    const poLine = po.lines.find(
-      (l) => l.model === item.model &&
-        (!item.variant || l.variant === item.variant) &&
-        (!item.colour || l.colour === item.colour),
-    ) || po.lines.find((l) => l.model === item.model);
+    let poLine;
+    if (item.poLineId) {
+      poLine = po.lines.id(item.poLineId);
+      if (!poLine) throw new ApiError(400, `Invalid PO line id ${item.poLineId}`);
+    } else {
+      poLine = po.lines.find(
+        (l) => l.model === item.model &&
+          (!item.variant || l.variant === item.variant) &&
+          (!item.colour || l.colour === item.colour),
+      ) || po.lines.find((l) => l.model === item.model);
+    }
     if (!poLine) throw new ApiError(400, `No PO line for model ${item.model}`);
+
+    const dispatched = Number(poLine.dispatchedQty) || 0;
+    if (dispatched >= poLine.qty) {
+      throw new ApiError(400, `PO line ${poLine.model}${poLine.variant ? ` ${poLine.variant}` : ''} already fully dispatched (${poLine.qty}/${poLine.qty})`);
+    }
 
     const match = compareConfig(
       { model: poLine.model, variant: poLine.variant, colour: poLine.colour, batteryConfig: poLine.batteryConfig },
@@ -271,10 +282,17 @@ exports.createDispatch = asyncHandler(async (req, res) => {
     dispatchItems.push({
       vin, model: stock.model, variant: stock.variant, colour: stock.colour,
       batteryConfig: stock.batteryConfig, mfgMonthYear: item.mfgMonthYear,
-      vehicleStockId: stock._id, configMatch: match,
+      vehicleStockId: stock._id, poLineId: poLine._id, configMatch: match,
     });
+    poLine.dispatchedQty = dispatched + 1;
     await logStatusChange('VehicleStock', stock._id, null, 'IN_TRANSIT', req.admin, 'Dispatch created');
   }
+
+  const allDispatched = po.lines.every((l) => (Number(l.dispatchedQty) || 0) >= l.qty);
+  if (allDispatched && po.status === 'RELEASED') {
+    po.status = 'PART_SUPPLIED';
+  }
+  await po.save();
 
   const dispatch = await Dispatch.create({
     dispatchNumber: await nextDispatchNumber(),

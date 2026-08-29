@@ -9,6 +9,7 @@ const dispatchItemSchema = new mongoose.Schema(
     batteryConfig: { type: String, trim: true },
     mfgMonthYear: { type: String, trim: true },
     vehicleStockId: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleStock' },
+    poLineId: { type: mongoose.Schema.Types.ObjectId },
     configMatch: { type: String, enum: ['MATCH', 'MISMATCH', 'PENDING'], default: 'PENDING' },
   },
   { _id: true },

@@ -23,6 +23,7 @@ const poLineSchema = new mongoose.Schema(
     modelYear: { type: Number },
     qty: { type: Number, required: true, min: 1, default: 1 },
     receivedQty: { type: Number, default: 0, min: 0 },
+    dispatchedQty: { type: Number, default: 0, min: 0 },
     basicPrice: { type: Number, default: 0, min: 0 },
     gstAmount: { type: Number, default: 0, min: 0 },
     freight: { type: Number, default: 0, min: 0 },
