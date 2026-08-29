@@ -1,26 +1,22 @@
 const router = require('express').Router();
 const ctrl = require('../../controllers/stockDeliveryController');
+const pipeline = require('../../controllers/stockPipelineController');
 const { mongoIdParam } = require('../../validators/adminValidators');
 const validate = require('../../middleware/validate');
 const { requireModuleAction } = require('../../utils/modulePermissions');
 
-/** Static paths before /:id */
-router.get('/purchase-orders', requireModuleAction('stock_delivery', 'view'), ctrl.listPurchaseOrders);
-router.post('/purchase-orders', requireModuleAction('stock_delivery', 'create'), ctrl.createPurchaseOrder);
+/** Legacy PO paths — delegate to pipeline controller */
+router.get('/purchase-orders', requireModuleAction('stock_delivery', 'view'), pipeline.listPurchaseOrders);
+router.post('/purchase-orders', requireModuleAction('stock_delivery', 'create'), pipeline.createPurchaseOrder);
 router.post(
-  '/purchase-orders/:id/raise',
+  '/purchase-orders/:id/release',
   mongoIdParam,
   validate,
   requireModuleAction('stock_delivery', 'update'),
-  ctrl.raisePurchaseOrder,
+  pipeline.releasePurchaseOrder,
 );
-router.post(
-  '/purchase-orders/:id/receive-transit',
-  mongoIdParam,
-  validate,
-  requireModuleAction('stock_delivery', 'receive'),
-  ctrl.receiveTransit,
-);
+
+router.get('/orders/availability', requireModuleAction('stock_delivery', 'view'), ctrl.availability);
 
 router.post(
   '/stock/:id/yard-pdi',
@@ -29,8 +25,6 @@ router.post(
   requireModuleAction('stock_delivery', 'pdi'),
   ctrl.yardPdi,
 );
-
-router.get('/orders/availability', requireModuleAction('stock_delivery', 'view'), ctrl.availability);
 router.get('/orders', requireModuleAction('stock_delivery', 'view'), ctrl.listOrders);
 router.post('/orders', requireModuleAction('stock_delivery', 'create'), ctrl.createOrder);
 router.post(
@@ -87,6 +81,13 @@ router.post(
   validate,
   requireModuleAction('stock_delivery', 'deliver'),
   ctrl.retailSale,
+);
+router.post(
+  '/orders/:id/delivery-ready',
+  mongoIdParam,
+  validate,
+  requireModuleAction('stock_delivery', 'deliver'),
+  ctrl.markDeliveryReady,
 );
 router.post(
   '/orders/:id/deliver',

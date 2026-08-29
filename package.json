@@ -20,6 +20,9 @@
     "dedupe:leads": "node src/scripts/dedupeLeadsByMobile.js",
     "check:login": "node src/scripts/checkLogin.js",
     "test:permissions": "node src/scripts/testModulePermissions.js",
+    "test:stock-lifecycle": "node --test tests/stock-lifecycle/*.test.js",
+    "migrate:stock-pipeline": "node src/scripts/migrateStockToSpecPipeline.js",
+    "seed:stock-module": "node src/scripts/seedStockModule.js",
     "lint": "node -e \"console.log('No linter configured')\""
   },
   "dependencies": {

@@ -26,6 +26,28 @@ const PORT = process.env.PORT || 2000;
       }
     }
 
+    if (process.env.STOCK_AUTO_BOOTSTRAP !== 'false') {
+      try {
+        const { ensureStockConfigReady } = require('./src/utils/stockBootstrap');
+        await ensureStockConfigReady();
+      } catch (bootstrapErr) {
+        console.error('[Stock bootstrap] startup seed skipped:', bootstrapErr.message);
+      }
+    }
+
+    if (process.env.STOCK_ALERTS_ENABLED !== 'false') {
+      const { runStockAlerts, expireReservations } = require('./src/services/stockAlertService');
+      const intervalMs = Number(process.env.STOCK_ALERT_INTERVAL_MS) || 3600000;
+      setInterval(async () => {
+        try {
+          await expireReservations();
+          await runStockAlerts();
+        } catch (err) {
+          console.error('[Stock alerts]', err.message);
+        }
+      }, intervalMs);
+    }
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

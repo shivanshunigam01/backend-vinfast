@@ -369,7 +369,7 @@ export default function AdminVehicleStock() {
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <Badge className={`text-[10px] border ${STATUS_COLORS[item.status] ?? "bg-secondary"}`}>
-                    {item.status.replace("_", " ")}
+                    {(item as { vehicleStatus?: string }).vehicleStatus?.replace(/_/g, " ") || item.status.replace("_", " ")}
                   </Badge>
                   {item.isDemo ? (
                     <Badge className="text-[10px] border bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30">

@@ -3,6 +3,7 @@ const PurchaseOrder = require('../models/PurchaseOrder');
 const StockPdi = require('../models/StockPdi');
 const VehicleOrder = require('../models/VehicleOrder');
 const VehicleStock = require('../models/VehicleStock');
+const VehicleAllocation = require('../models/VehicleAllocation');
 const Lead = require('../models/Lead');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const asyncHandler = require('../utils/asyncHandler');
@@ -14,6 +15,16 @@ const {
   ensureVehicleOrderForLead,
   backfillBookingVehicleOrders,
 } = require('../utils/ensureVehicleOrder');
+const { nextOrderNumber } = require('../utils/stockCounter');
+const { getOrCreateConfig } = require('./stockConfigController');
+const {
+  assertAvailableForAllocation,
+  mapVehicleStatusToLegacy,
+  computeAgeingBucket,
+  computeStockAgeDays,
+} = require('../services/vehicleLifecycleService');
+const { logStatusChange } = require('../services/auditService');
+const { recordMovement } = require('./stockPipelineController');
 
 async function notifyLeadCrmEvent(leadId, admin, { type, title, priority }) {
   if (!leadId) return;
@@ -35,22 +46,8 @@ async function notifyLeadCrmEvent(leadId, admin, { type, title, priority }) {
   }
 }
 
-async function nextCounter(key, prefix, pad = 4) {
-  const doc = await Counter.findOneAndUpdate(
-    { key },
-    { $inc: { seq: 1 } },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  );
-  return `${prefix}${String(doc.seq).padStart(pad, '0')}`;
-}
-
-async function nextStockId() {
-  return nextCounter('vehicle_stock', 'STK', 4);
-}
-
-async function nextPoNumber() {
-  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  return nextCounter(`po_${ymd}`, `PO-${ymd}-`, 3);
+async function nextVoNumber() {
+  return nextOrderNumber();
 }
 
 function actorId(admin) {
@@ -96,152 +93,7 @@ async function findOrderOrThrow(id) {
   return doc;
 }
 
-/* ─── Purchase Orders ─────────────────────────────────────────────── */
-
-exports.listPurchaseOrders = asyncHandler(async (req, res) => {
-  const { page, limit, skip } = buildPagination(req);
-  const query = {};
-  if (req.query.status) query.status = String(req.query.status).toUpperCase();
-  const [docs, total] = await Promise.all([
-    PurchaseOrder.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-    PurchaseOrder.countDocuments(query),
-  ]);
-  return successResponse(res, docs, undefined, 200, { page, limit, total });
-});
-
-exports.createPurchaseOrder = asyncHandler(async (req, res) => {
-  const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
-  if (!lines.length) throw new ApiError(400, 'Provide at least one PO line');
-  const normalized = lines.map((l) => ({
-    model: String(l.model || '').trim(),
-    variant: String(l.variant || '').trim() || undefined,
-    colour: String(l.colour || '').trim() || undefined,
-    qty: Math.max(1, Number(l.qty) || 1),
-    receivedQty: 0,
-  }));
-  if (normalized.some((l) => !l.model)) throw new ApiError(400, 'Each line needs a model');
-
-  const doc = await PurchaseOrder.create({
-    poNumber: await nextPoNumber(),
-    status: 'DRAFT',
-    supplier: req.body?.supplier || 'VinFast',
-    expectedDate: req.body?.expectedDate ? new Date(req.body.expectedDate) : undefined,
-    remarks: req.body?.remarks,
-    lines: normalized,
-    createdBy: actorId(req.admin),
-  });
-  return successResponse(res, doc, 'Purchase order created', 201);
-});
-
-exports.raisePurchaseOrder = asyncHandler(async (req, res) => {
-  const doc = await PurchaseOrder.findById(req.params.id);
-  if (!doc) throw new ApiError(404, 'Purchase order not found');
-  if (doc.status !== 'DRAFT') throw new ApiError(400, 'Only DRAFT POs can be raised');
-  doc.status = 'RAISED';
-  doc.raisedAt = new Date();
-  await doc.save();
-  return successResponse(res, doc, 'Purchase order raised');
-});
-
-exports.receiveTransit = asyncHandler(async (req, res) => {
-  const po = await PurchaseOrder.findById(req.params.id);
-  if (!po) throw new ApiError(404, 'Purchase order not found');
-  if (!['RAISED', 'PARTIAL'].includes(po.status)) {
-    throw new ApiError(400, 'PO must be RAISED or PARTIAL to receive stock');
-  }
-
-  const units = Array.isArray(req.body?.units) ? req.body.units : [];
-  if (!units.length) throw new ApiError(400, 'Provide units [{ model, vinNo, ... }]');
-
-  const created = [];
-  for (const unit of units) {
-    const model = String(unit.model || '').trim();
-    const vinNo = String(unit.vinNo || '').trim().toUpperCase();
-    if (!model || !vinNo) throw new ApiError(400, 'Each unit needs model and vinNo');
-    const exists = await VehicleStock.findOne({ vinNo });
-    if (exists) throw new ApiError(409, `VIN ${vinNo} already exists (${exists.stockId})`);
-
-    const line = po.lines.find(
-      (l) =>
-        l.model === model &&
-        (!unit.variant || l.variant === unit.variant) &&
-        (!unit.colour || l.colour === unit.colour),
-    ) || po.lines.find((l) => l.model === model);
-    if (!line) throw new ApiError(400, `No PO line matches model ${model}`);
-    if (line.receivedQty >= line.qty) {
-      throw new ApiError(400, `PO line for ${model} already fully received`);
-    }
-
-    const stock = await VehicleStock.create({
-      stockId: await nextStockId(),
-      model,
-      variant: unit.variant || line.variant,
-      colour: unit.colour || line.colour,
-      vinNo,
-      motorNo: unit.motorNo ? String(unit.motorNo).toUpperCase() : undefined,
-      motorNo2: unit.motorNo2 ? String(unit.motorNo2).toUpperCase() : undefined,
-      status: 'IN_TRANSIT',
-      pdiStatus: 'YARD_PENDING',
-      purchaseOrderId: po._id,
-      location: unit.location || 'In transit',
-      createdBy: actorId(req.admin),
-      remarks: unit.remarks,
-    });
-    line.receivedQty += 1;
-    created.push(stock);
-  }
-
-  const yardPdi = req.body?.yardPdi;
-  const yardResult = yardPdi?.result ? String(yardPdi.result).toUpperCase() : '';
-  const pdiDocs = [];
-  if (yardResult && ['PASS', 'FAIL'].includes(yardResult)) {
-    for (const stock of created) {
-      const pdi = await StockPdi.create({
-        type: 'YARD',
-        result: yardResult,
-        vehicleStockId: stock._id,
-        checklist: Array.isArray(yardPdi.checklist) ? yardPdi.checklist : [],
-        notes: yardPdi.notes,
-        performedBy: actorId(req.admin),
-        performedAt: new Date(),
-      });
-      pdiDocs.push(pdi);
-      if (yardResult === 'PASS') {
-        stock.status = 'FRESH_STOCK';
-        stock.pdiStatus = 'YARD_PASSED';
-        stock.grnDate = stock.grnDate || new Date();
-        stock.location = yardPdi.location || stock.location || 'Yard';
-      } else {
-        stock.pdiStatus = 'YARD_PENDING';
-        stock.remarks = [stock.remarks, `Yard PDI FAIL: ${yardPdi.notes || ''}`]
-          .filter(Boolean)
-          .join(' | ');
-      }
-      await stock.save();
-    }
-  }
-
-  const allDone = po.lines.every((l) => l.receivedQty >= l.qty);
-  const anyReceived = po.lines.some((l) => l.receivedQty > 0);
-  po.status = allDone ? 'CLOSED' : anyReceived ? 'PARTIAL' : po.status;
-  if (allDone) po.closedAt = new Date();
-  await po.save();
-
-  const msg =
-    yardResult === 'PASS'
-      ? `Received ${created.length} unit(s) — Yard PDI PASS (free stock)`
-      : yardResult === 'FAIL'
-        ? `Received ${created.length} unit(s) — Yard PDI FAIL (held)`
-        : `Received ${created.length} unit(s) in transit`;
-
-  return successResponse(
-    res,
-    { purchaseOrder: po, stock: created, pdi: pdiDocs },
-    msg,
-  );
-});
-
-/* ─── Yard / Final PDI ────────────────────────────────────────────── */
+/* ─── Yard / Final PDI (legacy — use pipeline pre-stock PDI) ─────── */
 
 exports.yardPdi = asyncHandler(async (req, res) => {
   const stock = await VehicleStock.findById(req.params.id);
@@ -384,12 +236,17 @@ exports.backfillBookingOrders = asyncHandler(async (req, res) => {
 exports.availability = asyncHandler(async (req, res) => {
   const model = String(req.query.model || '').trim();
   if (!model) throw new ApiError(400, 'model is required');
-  const query = { model, status: 'FRESH_STOCK', isDemo: { $ne: true } };
+  const query = {
+    model,
+    vehicleStatus: 'AVAILABLE',
+    holdStatus: { $ne: true },
+    isDemo: { $ne: true },
+  };
   if (req.query.variant) query.variant = String(req.query.variant).trim();
   if (req.query.colour) query.colour = String(req.query.colour).trim();
   const units = await VehicleStock.find(query)
-    .select('stockId vinNo model variant colour motorNo motorNo2 location status pdiStatus')
-    .sort({ createdAt: 1 })
+    .select('stockId vinNo model variant colour motorNo motorNo2 location status vehicleStatus pdiStatus grnDate ageingBucket')
+    .sort({ grnDate: 1, createdAt: 1 })
     .limit(100)
     .lean();
   return successResponse(res, { count: units.length, units });
@@ -398,7 +255,7 @@ exports.availability = asyncHandler(async (req, res) => {
 exports.allocateOrder = asyncHandler(async (req, res) => {
   const order = await findOrderOrThrow(req.params.id);
   if (order.stockId) throw new ApiError(400, 'Order already has an allocated vehicle');
-  if (['DELIVERED', 'CANCELLED', 'RETAIL'].includes(order.stage)) {
+  if (['DELIVERED', 'CANCELLED', 'INVOICED', 'DELIVERY_READY'].includes(order.stage)) {
     throw new ApiError(400, `Cannot allocate in stage ${order.stage}`);
   }
 
@@ -408,12 +265,13 @@ exports.allocateOrder = asyncHandler(async (req, res) => {
   } else {
     const q = {
       model: order.preferredModel,
-      status: 'FRESH_STOCK',
+      vehicleStatus: 'AVAILABLE',
+      holdStatus: { $ne: true },
       isDemo: { $ne: true },
     };
     if (order.preferredVariant) q.variant = order.preferredVariant;
     if (order.preferredColour) q.colour = order.preferredColour;
-    stock = await VehicleStock.findOne(q).sort({ createdAt: 1 });
+    stock = await VehicleStock.findOne(q).sort({ grnDate: 1, createdAt: 1 });
   }
   if (!stock) {
     if (order.stage !== 'AWAITING_STOCK') {
@@ -422,19 +280,38 @@ exports.allocateOrder = asyncHandler(async (req, res) => {
     }
     throw new ApiError(404, 'No free stock available for this model — raise a PO');
   }
-  if (stock.status !== 'FRESH_STOCK' || stock.isDemo) {
-    throw new ApiError(400, 'Selected unit is not free stock');
-  }
+  assertAvailableForAllocation(stock);
 
-  stock.status = 'RESERVED';
+  const config = await getOrCreateConfig();
+  const expiryHours = config.reservationExpiryHours || 72;
+  const reservationExpiry = new Date(Date.now() + expiryHours * 3600000);
+
+  const from = stock.vehicleStatus;
+  stock.vehicleStatus = 'RESERVED';
+  stock.status = mapVehicleStatusToLegacy('RESERVED');
   stock.orderId = order._id;
   stock.leadId = order.leadId?._id || order.leadId;
+  stock.reservationExpiry = reservationExpiry;
   await stock.save();
+  await logStatusChange('VehicleStock', stock._id, from, 'RESERVED', req.admin, 'Allocated to order');
+
+  await VehicleAllocation.create({
+    vehicleStockId: stock._id,
+    orderId: order._id,
+    leadId: order.leadId?._id || order.leadId,
+    vin: stock.vinNo,
+    customerName: order.customerName,
+    bookingNo: order.bookingNo,
+    status: 'ACTIVE',
+    reservationExpiry,
+    allocatedBy: actorId(req.admin),
+  });
 
   order.stockId = stock._id;
   order.vinNo = stock.vinNo;
   order.motorNo = stock.motorNo;
   order.motorNo2 = stock.motorNo2;
+  order.reservationExpiry = reservationExpiry;
   order.stage = 'ALLOCATED';
   await order.save();
 
@@ -445,22 +322,32 @@ exports.allocateOrder = asyncHandler(async (req, res) => {
 exports.releaseOrder = asyncHandler(async (req, res) => {
   const order = await findOrderOrThrow(req.params.id);
   if (!order.stockId) throw new ApiError(400, 'No stock allocated');
-  if (['RETAIL', 'DELIVERED'].includes(order.stage)) {
-    throw new ApiError(400, 'Cannot release after retail/delivery');
+  if (['INVOICED', 'DELIVERY_READY', 'DELIVERED', 'RETAIL'].includes(order.stage)) {
+    throw new ApiError(400, 'Cannot release after invoicing/delivery');
   }
 
   const stock = await VehicleStock.findById(order.stockId._id || order.stockId);
-  if (stock && stock.status === 'RESERVED') {
-    stock.status = 'FRESH_STOCK';
+  if (stock && ['RESERVED', 'BOOKED'].includes(stock.vehicleStatus)) {
+    const from = stock.vehicleStatus;
+    stock.vehicleStatus = 'AVAILABLE';
+    stock.status = mapVehicleStatusToLegacy('AVAILABLE');
     stock.orderId = undefined;
     stock.leadId = undefined;
+    stock.reservationExpiry = undefined;
     await stock.save();
+    await logStatusChange('VehicleStock', stock._id, from, 'AVAILABLE', req.admin, 'Allocation released');
   }
+
+  await VehicleAllocation.updateMany(
+    { orderId: order._id, status: 'ACTIVE' },
+    { status: 'RELEASED', releasedAt: new Date() },
+  );
 
   order.stockId = undefined;
   order.vinNo = undefined;
   order.motorNo = undefined;
   order.motorNo2 = undefined;
+  order.reservationExpiry = undefined;
   order.stage = 'AWAITING_STOCK';
   order.finalPdiPassed = false;
   await order.save();
@@ -520,16 +407,23 @@ exports.retailSale = asyncHandler(async (req, res) => {
 
   const stock = await VehicleStock.findById(order.stockId._id || order.stockId);
   if (!stock) throw new ApiError(404, 'Allocated stock not found');
+  if (stock.holdStatus) throw new ApiError(400, 'VIN is on hold — cannot invoice (AC-05)');
 
-  stock.status = 'SOLD';
+  const from = stock.vehicleStatus;
+  stock.vehicleStatus = 'INVOICED';
+  stock.status = mapVehicleStatusToLegacy('INVOICED');
   stock.billingDate = stock.billingDate || new Date();
   await stock.save();
+  await logStatusChange('VehicleStock', stock._id, from, 'INVOICED', req.admin, 'Retail invoice');
 
-  order.stage = 'RETAIL';
+  order.stage = 'INVOICED';
   order.retailSaleAt = new Date();
+  order.invoicedAt = new Date();
   await order.save();
 
-  await syncLeadStage(order.leadId?._id || order.leadId, 'Delivered', req.admin, 'Retail sale recorded');
+  await VehicleAllocation.updateMany({ orderId: order._id, status: 'ACTIVE' }, { status: 'BOOKED' });
+
+  await syncLeadStage(order.leadId?._id || order.leadId, 'Booking', req.admin, 'Retail sale recorded');
   await notifyLeadCrmEvent(order.leadId?._id || order.leadId, req.admin, {
     type: 'booking',
     title: 'Retail / booking completed',
@@ -538,10 +432,29 @@ exports.retailSale = asyncHandler(async (req, res) => {
   return successResponse(res, await findOrderOrThrow(order._id), 'Retail sale recorded');
 });
 
+exports.markDeliveryReady = asyncHandler(async (req, res) => {
+  const order = await findOrderOrThrow(req.params.id);
+  if (order.stage !== 'INVOICED' && order.stage !== 'RETAIL') {
+    throw new ApiError(400, 'Order must be invoiced before delivery ready');
+  }
+  const stock = await VehicleStock.findById(order.stockId?._id || order.stockId);
+  if (stock) {
+    const from = stock.vehicleStatus;
+    stock.vehicleStatus = 'DELIVERY_READY';
+    stock.status = mapVehicleStatusToLegacy('DELIVERY_READY');
+    await stock.save();
+    await logStatusChange('VehicleStock', stock._id, from, 'DELIVERY_READY', req.admin, 'Delivery ready');
+  }
+  order.stage = 'DELIVERY_READY';
+  order.deliveryReadyAt = new Date();
+  await order.save();
+  return successResponse(res, await findOrderOrThrow(order._id), 'Marked delivery ready');
+});
+
 exports.deliverOrder = asyncHandler(async (req, res) => {
   const order = await findOrderOrThrow(req.params.id);
-  if (order.stage !== 'RETAIL' && order.stage !== 'DELIVERED') {
-    throw new ApiError(400, 'Complete retail sale before delivery handover');
+  if (!['DELIVERY_READY', 'INVOICED', 'RETAIL'].includes(order.stage)) {
+    throw new ApiError(400, 'Complete delivery ready / retail before handover');
   }
 
   order.stage = 'DELIVERED';
@@ -552,14 +465,27 @@ exports.deliverOrder = asyncHandler(async (req, res) => {
     (origin ? `${origin.replace(/\/$/, '')}/feedback/post-delivery` : '/feedback/post-delivery');
   await order.save();
 
+  const stock = await VehicleStock.findById(order.stockId?._id || order.stockId);
+  if (stock) {
+    const from = stock.vehicleStatus;
+    stock.vehicleStatus = 'DELIVERED';
+    stock.status = mapVehicleStatusToLegacy('DELIVERED');
+    await stock.save();
+    await recordMovement(stock, { fromStatus: from, toStatus: 'DELIVERED', admin: req.admin, remarks: 'Delivered' });
+    await logStatusChange('VehicleStock', stock._id, from, 'DELIVERED', req.admin, 'Handover complete');
+  }
+
   const leadId = order.leadId?._id || order.leadId;
   if (leadId) {
     const lead = await Lead.findById(leadId);
     if (lead) {
+      lead.status = 'Delivered';
       lead.creSheet = lead.creSheet || {};
       lead.creSheet.deliveryDate = order.deliveredAt;
+      lead.creSheet.retailDone = true;
       await lead.save();
     }
+    await syncLeadStage(leadId, 'Delivered', req.admin, 'Vehicle delivered');
   }
 
   await notifyLeadCrmEvent(leadId, req.admin, {
@@ -573,7 +499,7 @@ exports.deliverOrder = asyncHandler(async (req, res) => {
 
 exports.listDeliveries = asyncHandler(async (req, res) => {
   const { page, limit, skip } = buildPagination(req);
-  const query = { stage: { $in: ['RETAIL', 'DELIVERED'] } };
+  const query = { stage: { $in: ['INVOICED', 'DELIVERY_READY', 'RETAIL', 'DELIVERED'] } };
   const [docs, total] = await Promise.all([
     VehicleOrder.find(query)
       .populate('leadId', 'name mobile status source model leadId')

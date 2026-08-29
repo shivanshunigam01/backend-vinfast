@@ -55,6 +55,15 @@ import AdminVehicleStock from "./pages/admin/AdminVehicleStock";
 import AdminPurchaseOrders from "./pages/admin/AdminPurchaseOrders";
 import AdminVehicleOrders from "./pages/admin/AdminVehicleOrders";
 import AdminStockDeliveries from "./pages/admin/AdminStockDeliveries";
+import AdminStockDashboard from "./pages/admin/AdminStockDashboard";
+import AdminDispatches from "./pages/admin/AdminDispatches";
+import AdminGateEntry from "./pages/admin/AdminGateEntry";
+import AdminGrn from "./pages/admin/AdminGrn";
+import AdminReceiptVerification from "./pages/admin/AdminReceiptVerification";
+import AdminPreStockPdi from "./pages/admin/AdminPreStockPdi";
+import AdminRectifications from "./pages/admin/AdminRectifications";
+import AdminVehicle360 from "./pages/admin/AdminVehicle360";
+import AdminStockConfig from "./pages/admin/AdminStockConfig";
 import AdminTDReports from "./pages/admin/AdminTDReports";
 import AdminTDSlotConfig from "./pages/admin/AdminTDSlotConfig";
 import AdminTDUsers from "./pages/admin/AdminTDUsers";
@@ -184,7 +193,16 @@ const App = () => {
             <Route path="td/vehicles" element={<AdminTDDemoVehicles />} />
             <Route path="td/models" element={<AdminVehicleModels />} />
             <Route path="stock" element={<AdminVehicleStock />} />
+            <Route path="stock/dashboard" element={<AdminStockDashboard />} />
             <Route path="stock/purchase-orders" element={<AdminPurchaseOrders />} />
+            <Route path="stock/dispatches" element={<AdminDispatches />} />
+            <Route path="stock/gate-entry" element={<AdminGateEntry />} />
+            <Route path="stock/grn" element={<AdminGrn />} />
+            <Route path="stock/receipt" element={<AdminReceiptVerification />} />
+            <Route path="stock/pre-stock-pdi" element={<AdminPreStockPdi />} />
+            <Route path="stock/rectifications" element={<AdminRectifications />} />
+            <Route path="stock/vehicles/:id/360" element={<AdminVehicle360 />} />
+            <Route path="stock/config" element={<AdminStockConfig />} />
             <Route path="stock/orders" element={<AdminVehicleOrders />} />
             <Route path="stock/deliveries" element={<AdminStockDeliveries />} />
             <Route path="td/reports" element={<AdminTDReports />} />

@@ -29,6 +29,17 @@ export type AdminModuleKey =
   | "td_models"
   | "vehicle_stock"
   | "stock_delivery"
+  | "stock_po"
+  | "stock_dispatch"
+  | "stock_gate"
+  | "stock_grn"
+  | "stock_receipt"
+  | "stock_pdi"
+  | "stock_rectification"
+  | "stock_inventory"
+  | "stock_allocation"
+  | "stock_reports"
+  | "stock_config"
   | "td_reports"
   | "td_config"
   | "calendar"
@@ -124,13 +135,17 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_vehicles", label: "Demo Fleet", path: "/admin/td/vehicles", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "td_models", label: "Model Master", path: "/admin/td/models", group: "TD Management", actions: ["view", "create", "update", "delete"] },
   { key: "vehicle_stock", label: "Vehicle Stock", path: "/admin/stock", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "tag_demo"] },
-  {
-    key: "stock_delivery",
-    label: "Stock & Delivery",
-    path: "/admin/stock/orders",
-    group: "Stock / Vehicle Management",
-    actions: ["view", "create", "update", "delete", "receive", "allocate", "pdi", "deliver"],
-  },
+  { key: "stock_delivery", label: "Vehicle Orders", path: "/admin/stock/orders", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "receive", "allocate", "pdi", "deliver"] },
+  { key: "stock_po", label: "Purchase Orders", path: "/admin/stock/purchase-orders", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "approve"] },
+  { key: "stock_dispatch", label: "Dispatch & Transit", path: "/admin/stock/dispatches", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
+  { key: "stock_gate", label: "Gate Entry", path: "/admin/stock/gate-entry", group: "Stock / Vehicle Management", actions: ["view", "create"] },
+  { key: "stock_grn", label: "GRN", path: "/admin/stock/grn", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
+  { key: "stock_receipt", label: "Receipt Verification", path: "/admin/stock/receipt", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
+  { key: "stock_pdi", label: "Pre-Stock PDI", path: "/admin/stock/pre-stock-pdi", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "approve"] },
+  { key: "stock_rectification", label: "Rectifications", path: "/admin/stock/rectifications", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
+  { key: "stock_inventory", label: "Stock Dashboard", path: "/admin/stock/dashboard", group: "Stock / Vehicle Management", actions: ["view", "update", "export"] },
+  { key: "stock_allocation", label: "Deliveries", path: "/admin/stock/deliveries", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "allocate"] },
+  { key: "stock_config", label: "Stock Config", path: "/admin/stock/config", group: "Stock / Vehicle Management", actions: ["view", "update"] },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
@@ -142,9 +157,17 @@ export const MODULE_BY_PATH: Record<string, AdminModuleKey> = Object.fromEntries
 MODULE_BY_PATH["/admin/td/roles"] = "td_users";
 /** Delete audit trail shares TD Bookings ACL (td_bookings). */
 MODULE_BY_PATH["/admin/td/delete-history"] = "td_bookings";
-MODULE_BY_PATH["/admin/stock/purchase-orders"] = "stock_delivery";
+MODULE_BY_PATH["/admin/stock/purchase-orders"] = "stock_po";
 MODULE_BY_PATH["/admin/stock/orders"] = "stock_delivery";
-MODULE_BY_PATH["/admin/stock/deliveries"] = "stock_delivery";
+MODULE_BY_PATH["/admin/stock/deliveries"] = "stock_allocation";
+MODULE_BY_PATH["/admin/stock/dashboard"] = "stock_inventory";
+MODULE_BY_PATH["/admin/stock/dispatches"] = "stock_dispatch";
+MODULE_BY_PATH["/admin/stock/gate-entry"] = "stock_gate";
+MODULE_BY_PATH["/admin/stock/grn"] = "stock_grn";
+MODULE_BY_PATH["/admin/stock/receipt"] = "stock_receipt";
+MODULE_BY_PATH["/admin/stock/pre-stock-pdi"] = "stock_pdi";
+MODULE_BY_PATH["/admin/stock/rectifications"] = "stock_rectification";
+MODULE_BY_PATH["/admin/stock/config"] = "stock_config";
 
 export const MODULE_GROUPS = [
   "Core",

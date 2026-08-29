@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
   Tag, Bell, Home, Image, Layers, Briefcase,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
-  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList
+  MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList,
+  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
@@ -86,10 +87,18 @@ const userMasterNavItems = [
 ];
 
 const stockNavItems = [
-  { label: "Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
+  { label: "Dashboard", icon: BarChart3, path: "/admin/stock/dashboard", staff: false },
   { label: "Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
+  { label: "Dispatch & Transit", icon: Truck, path: "/admin/stock/dispatches", staff: false },
+  { label: "Gate Entry", icon: DoorOpen, path: "/admin/stock/gate-entry", staff: false },
+  { label: "GRN", icon: ClipboardCheck, path: "/admin/stock/grn", staff: false },
+  { label: "Receipt", icon: Key, path: "/admin/stock/receipt", staff: false },
+  { label: "Pre-Stock PDI", icon: Wrench, path: "/admin/stock/pre-stock-pdi", staff: false },
+  { label: "Rectifications", icon: AlertTriangle, path: "/admin/stock/rectifications", staff: false },
+  { label: "Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
   { label: "Vehicle Orders", icon: Car, path: "/admin/stock/orders", staff: false },
   { label: "Deliveries", icon: PackageCheck, path: "/admin/stock/deliveries", staff: false },
+  { label: "Stock Config", icon: Settings, path: "/admin/stock/config", staff: false },
 ];
 
 function isReportsPath(pathname: string) {

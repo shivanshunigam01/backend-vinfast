@@ -100,26 +100,11 @@ export async function createPurchaseOrder(body: {
 }
 
 export async function raisePurchaseOrder(id: string) {
-  return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/raise`, {});
+  return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/release`, {});
 }
 
-export async function receiveTransit(
-  id: string,
-  units: Array<{
-    model: string;
-    vinNo: string;
-    variant?: string;
-    colour?: string;
-    motorNo?: string;
-    motorNo2?: string;
-    location?: string;
-  }>,
-  yardPdi?: { result: "PASS" | "FAIL"; notes?: string; location?: string },
-) {
-  return adminPostJson<{ purchaseOrder: PurchaseOrder; stock: StockUnitBrief[] }>(
-    `${BASE}/purchase-orders/${id}/receive-transit`,
-    { units, yardPdi },
-  );
+export async function markDeliveryReady(id: string) {
+  return adminPostJson<VehicleOrder>(`${BASE}/orders/${id}/delivery-ready`, {});
 }
 
 export async function submitYardPdi(
