@@ -122,12 +122,14 @@ const STOCK_ROLE_TEMPLATES = [
     name: 'Sales Manager',
     description: 'VIN allocation and delivery',
     authRole: 'manager',
-    allowedModules: ['stock_allocation', 'stock_delivery', 'vehicle_stock', 'stock_inventory', 'crm_leads'],
+    allowedModules: ['stock_allocation', 'stock_delivery', 'vehicle_stock', 'stock_inventory', 'stock_final_pdi', 'stock_retail', 'crm_leads'],
     allowedActions: tokens(
       ['stock_allocation', 'stock_delivery', 'vehicle_stock', 'stock_inventory', 'crm_leads'],
       {
-        stock_allocation: ['view', 'allocate', 'update'],
+        stock_allocation: ['view', 'allocate', 'update', 'deliver'],
         stock_delivery: ['view', 'create', 'update', 'allocate', 'pdi', 'deliver'],
+        stock_final_pdi: ['view', 'pdi'],
+        stock_retail: ['view', 'deliver'],
         vehicle_stock: ['view'],
         stock_inventory: ['view'],
         crm_leads: ['view', 'update', 'assign'],

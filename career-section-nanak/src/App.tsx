@@ -54,7 +54,6 @@ import AdminVehicleModels from "./pages/admin/AdminVehicleModels";
 import AdminVehicleStock from "./pages/admin/AdminVehicleStock";
 import AdminPurchaseOrders from "./pages/admin/AdminPurchaseOrders";
 import AdminVehicleOrders from "./pages/admin/AdminVehicleOrders";
-import AdminStockDeliveries from "./pages/admin/AdminStockDeliveries";
 import AdminStockDashboard from "./pages/admin/AdminStockDashboard";
 import AdminDispatches from "./pages/admin/AdminDispatches";
 import AdminGateEntry from "./pages/admin/AdminGateEntry";
@@ -64,6 +63,9 @@ import AdminPreStockPdi from "./pages/admin/AdminPreStockPdi";
 import AdminRectifications from "./pages/admin/AdminRectifications";
 import AdminVehicle360 from "./pages/admin/AdminVehicle360";
 import AdminStockConfig from "./pages/admin/AdminStockConfig";
+import AdminStockFinalPdi from "./pages/admin/AdminStockFinalPdi";
+import AdminStockRetail from "./pages/admin/AdminStockRetail";
+import AdminStockDeliveryHandover from "./pages/admin/AdminStockDeliveryHandover";
 import AdminTDReports from "./pages/admin/AdminTDReports";
 import AdminTDSlotConfig from "./pages/admin/AdminTDSlotConfig";
 import AdminTDUsers from "./pages/admin/AdminTDUsers";
@@ -204,7 +206,10 @@ const App = () => {
             <Route path="stock/vehicles/:id/360" element={<AdminVehicle360 />} />
             <Route path="stock/config" element={<AdminStockConfig />} />
             <Route path="stock/orders" element={<AdminVehicleOrders />} />
-            <Route path="stock/deliveries" element={<AdminStockDeliveries />} />
+            <Route path="stock/final-pdi" element={<AdminStockFinalPdi />} />
+            <Route path="stock/retail" element={<AdminStockRetail />} />
+            <Route path="stock/delivery-handover" element={<AdminStockDeliveryHandover />} />
+            <Route path="stock/deliveries" element={<AdminStockDeliveryHandover />} />
             <Route path="td/reports" element={<AdminTDReports />} />
             <Route path="td/config" element={<AdminTDSlotConfig />} />
             <Route path="td/users" element={<AdminTDUsers />} />

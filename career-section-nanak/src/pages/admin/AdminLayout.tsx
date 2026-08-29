@@ -5,7 +5,7 @@ import {
   Tag, Bell, Home, Image, Layers, Briefcase,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList,
-  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle
+  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle, Receipt, CheckCircle2
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
@@ -86,19 +86,22 @@ const userMasterNavItems = [
   { label: "Roles", icon: Shield, path: "/admin/td/roles", staff: false },
 ];
 
+/** Full PO → Delivery pipeline — order matches operational flow */
 const stockNavItems = [
-  { label: "Dashboard", icon: BarChart3, path: "/admin/stock/dashboard", staff: false },
-  { label: "Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
-  { label: "Dispatch & Transit", icon: Truck, path: "/admin/stock/dispatches", staff: false },
-  { label: "Gate Entry", icon: DoorOpen, path: "/admin/stock/gate-entry", staff: false },
-  { label: "GRN", icon: ClipboardCheck, path: "/admin/stock/grn", staff: false },
-  { label: "Receipt", icon: Key, path: "/admin/stock/receipt", staff: false },
-  { label: "Pre-Stock PDI", icon: Wrench, path: "/admin/stock/pre-stock-pdi", staff: false },
+  { label: "Pipeline Dashboard", icon: BarChart3, path: "/admin/stock/dashboard", staff: false },
+  { label: "1 · Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
+  { label: "2 · Dispatch & Transit", icon: Truck, path: "/admin/stock/dispatches", staff: false },
+  { label: "3 · Gate Entry", icon: DoorOpen, path: "/admin/stock/gate-entry", staff: false },
+  { label: "4 · GRN", icon: ClipboardCheck, path: "/admin/stock/grn", staff: false },
+  { label: "5 · Receipt Verification", icon: Key, path: "/admin/stock/receipt", staff: false },
+  { label: "6 · Pre-Stock PDI", icon: Wrench, path: "/admin/stock/pre-stock-pdi", staff: false },
+  { label: "7 · Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
+  { label: "8 · Allocation & Orders", icon: Car, path: "/admin/stock/orders", staff: false },
+  { label: "9 · Final PDI", icon: CheckCircle2, path: "/admin/stock/final-pdi", staff: false },
+  { label: "10 · Retail & Invoice", icon: Receipt, path: "/admin/stock/retail", staff: false },
+  { label: "11 · Delivery & Handover", icon: PackageCheck, path: "/admin/stock/delivery-handover", staff: false },
   { label: "Rectifications", icon: AlertTriangle, path: "/admin/stock/rectifications", staff: false },
-  { label: "Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
-  { label: "Vehicle Orders", icon: Car, path: "/admin/stock/orders", staff: false },
-  { label: "Deliveries", icon: PackageCheck, path: "/admin/stock/deliveries", staff: false },
-  { label: "Stock Config", icon: Settings, path: "/admin/stock/config", staff: false },
+  { label: "Stock Configuration", icon: Settings, path: "/admin/stock/config", staff: false },
 ];
 
 function isReportsPath(pathname: string) {
@@ -288,8 +291,14 @@ const AdminLayout = () => {
   const visibleUserMasterItems = userMasterNavItems.filter(
     (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
   );
+  const hasStockPipelineAccess =
+    fullAdmin ||
+    !restrictedModules ||
+    restrictedModules.some((k) => k === "vehicle_stock" || k.startsWith("stock_"));
   const visibleStockItems = stockNavItems.filter(
-    (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
+    (item) =>
+      (item.staff || fullAdmin || Boolean(restrictedModules)) &&
+      (hasStockPipelineAccess || canSeePath(item.path)),
   );
   const visibleReportsItems = reportsNavItems.filter(
     (item) => (item.staff || fullAdmin || Boolean(restrictedModules)) && canSeePath(item.path),
@@ -595,7 +604,7 @@ const AdminLayout = () => {
                     aria-expanded={stockMenuOpen}
                   >
                     <Warehouse className="h-4 w-4 shrink-0 opacity-90" />
-                    <span className="truncate flex-1 text-left">Stock / Vehicle Management</span>
+                    <span className="truncate flex-1 text-left">Stock Pipeline (PO → Delivery)</span>
                     <ChevDown
                       className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${stockMenuOpen ? "rotate-180" : ""}`}
                     />
@@ -603,7 +612,9 @@ const AdminLayout = () => {
                   {stockMenuOpen ? (
                     <div className="mt-0.5 space-y-px border-l border-border/40 ml-3 pl-1">
                       {visibleStockItems.map((item) => {
-                        const isActive = location.pathname === item.path;
+                        const isActive =
+                          location.pathname === item.path ||
+                          (item.path !== "/admin/stock" && location.pathname.startsWith(`${item.path}/`));
                         return (
                           <Link
                             key={item.path}

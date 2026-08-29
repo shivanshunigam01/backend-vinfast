@@ -38,6 +38,8 @@ export type AdminModuleKey =
   | "stock_rectification"
   | "stock_inventory"
   | "stock_allocation"
+  | "stock_final_pdi"
+  | "stock_retail"
   | "stock_reports"
   | "stock_config"
   | "td_reports"
@@ -144,7 +146,9 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "stock_pdi", label: "Pre-Stock PDI", path: "/admin/stock/pre-stock-pdi", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "approve"] },
   { key: "stock_rectification", label: "Rectifications", path: "/admin/stock/rectifications", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
   { key: "stock_inventory", label: "Stock Dashboard", path: "/admin/stock/dashboard", group: "Stock / Vehicle Management", actions: ["view", "update", "export"] },
-  { key: "stock_allocation", label: "Deliveries", path: "/admin/stock/deliveries", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "allocate"] },
+  { key: "stock_allocation", label: "Delivery & Handover", path: "/admin/stock/delivery-handover", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "allocate", "deliver"] },
+  { key: "stock_final_pdi", label: "Final PDI", path: "/admin/stock/final-pdi", group: "Stock / Vehicle Management", actions: ["view", "pdi"] },
+  { key: "stock_retail", label: "Retail & Invoice", path: "/admin/stock/retail", group: "Stock / Vehicle Management", actions: ["view", "deliver"] },
   { key: "stock_config", label: "Stock Config", path: "/admin/stock/config", group: "Stock / Vehicle Management", actions: ["view", "update"] },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
@@ -159,7 +163,11 @@ MODULE_BY_PATH["/admin/td/roles"] = "td_users";
 MODULE_BY_PATH["/admin/td/delete-history"] = "td_bookings";
 MODULE_BY_PATH["/admin/stock/purchase-orders"] = "stock_po";
 MODULE_BY_PATH["/admin/stock/orders"] = "stock_delivery";
+MODULE_BY_PATH["/admin/stock/delivery-handover"] = "stock_allocation";
 MODULE_BY_PATH["/admin/stock/deliveries"] = "stock_allocation";
+MODULE_BY_PATH["/admin/stock/final-pdi"] = "stock_final_pdi";
+MODULE_BY_PATH["/admin/stock/retail"] = "stock_retail";
+MODULE_BY_PATH["/admin/stock/vehicles"] = "vehicle_stock";
 MODULE_BY_PATH["/admin/stock/dashboard"] = "stock_inventory";
 MODULE_BY_PATH["/admin/stock/dispatches"] = "stock_dispatch";
 MODULE_BY_PATH["/admin/stock/gate-entry"] = "stock_gate";

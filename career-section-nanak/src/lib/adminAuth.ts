@@ -131,15 +131,18 @@ export function canPerformManagerAction(
 export function isPathAllowed(user: AdminUser | null | undefined, pathname: string): boolean {
   const restricted = getRestrictedModules(user);
   if (!restricted) return true;
-  // Self-service account — available to every logged-in user
   if (pathname.startsWith("/admin/account")) return true;
   if (ADMIN_MODULES.some(
     (m) => restricted.includes(m.key) && (pathname === m.path || pathname.startsWith(`${m.path}/`)),
   )) {
     return true;
   }
-  // Roles page shares User Master permission
   if (pathname.startsWith("/admin/td/roles") && restricted.includes("td_users")) return true;
+  // Any stock-pipeline module grants navigation across the full /admin/stock section
+  const stockKeys = restricted.filter(
+    (k) => k === "vehicle_stock" || k.startsWith("stock_"),
+  );
+  if (stockKeys.length > 0 && pathname.startsWith("/admin/stock")) return true;
   return false;
 }
 

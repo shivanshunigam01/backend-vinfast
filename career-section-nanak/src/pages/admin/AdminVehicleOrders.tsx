@@ -40,6 +40,8 @@ const STAGES = [
   "INSURANCE",
   "REGISTRATION",
   "FINAL_PDI",
+  "INVOICED",
+  "DELIVERY_READY",
   "RETAIL",
   "DELIVERED",
 ];
