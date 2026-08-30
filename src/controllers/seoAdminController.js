@@ -9,14 +9,15 @@ const EDITABLE_FIELDS = [
   'metaDescription',
   'h1',
   'intro',
+  'answerBlock',
+  'methodology',
   'sections',
-  'keywords',
   'faqs',
   'active',
 ];
 
 /**
- * GET /admin/seo/district-pages — full list (152 rows) with filters:
+ * GET /admin/seo/district-pages — hubs + A- pages (and inactive leftovers) with filters:
  * ?district=patna & ?model=vf6 & ?search=text & ?active=true|false
  */
 exports.listDistrictPages = asyncHandler(async (req, res) => {

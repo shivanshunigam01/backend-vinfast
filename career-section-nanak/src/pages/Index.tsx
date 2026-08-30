@@ -13,11 +13,9 @@ import { usePageSeo } from "@/hooks/usePageSeo";
 
 const Index = () => {
   usePageSeo({
-    title: "Patliputra VinFast — Authorized VinFast Dealer in Bihar | VF 6 & VF 7 Electric SUVs",
+    title: "VinFast Cars in Bihar | VF 6, VF 7, MPV 7 & Limo Green | Patliputra VinFast",
     description:
-      "Explore VinFast electric vehicles with Patliputra VinFast. Book your test drive today.",
-    keywords:
-      "VinFast Bihar, VinFast Patna, VF 7 price Bihar, VF 6 price Patna, electric SUV Bihar, Patliputra VinFast, VinFast dealer Bihar, EV test drive Patna",
+      "Authorised VinFast dealer in Bihar. Explore VF 6, VF 7, MPV 7 and Limo Green — price, range, EMI and test drive assistance from Patliputra VinFast, Patna.",
     canonical: "/",
   });
 

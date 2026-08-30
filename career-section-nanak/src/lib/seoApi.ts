@@ -8,7 +8,7 @@ export type GlobalSeo = {
   schemas: unknown[];
 };
 
-export type SeoDistrict = { name: string; slug: string };
+export type SeoDistrict = { name: string; slug: string; headquarters?: string; aTier?: boolean };
 
 export type SeoModel = {
   key: string;
@@ -23,7 +23,20 @@ export type SeoModel = {
 export type DistrictPageFaq = { question: string; answer: string };
 export type DistrictPageSection = { heading?: string; body?: string };
 
+export type DistrictModelRow = {
+  key: string;
+  slug: string;
+  name: string;
+  shortName: string;
+  bodyType: string;
+  seats: number;
+  variants: string[];
+  price: string | null;
+  range: string | null;
+};
+
 export type DistrictLanding = {
+  pageType?: "hub" | "model-a";
   districtSlug: string;
   districtName: string;
   modelKey: string;
@@ -33,9 +46,13 @@ export type DistrictLanding = {
   metaDescription: string;
   h1: string;
   intro: string;
+  answerBlock?: string;
+  methodology?: string;
   sections: DistrictPageSection[];
-  keywords: string[];
+  keywords?: string[];
   faqs: DistrictPageFaq[];
+  modelsTable?: DistrictModelRow[];
+  lastUpdated?: string;
   canonicalUrl: string;
   schemas: unknown[];
 };
@@ -47,6 +64,7 @@ export type DistrictPageListItem = {
   modelKey: string;
   modelName: string;
   metaTitle: string;
+  pageType?: string;
 };
 
 export function fetchGlobalSeo() {
@@ -61,12 +79,19 @@ export function fetchSeoModels() {
   return publicGet<SeoModel[]>("/public/seo/models");
 }
 
-export function fetchDistrictPageList(params?: { district?: string; model?: string }) {
+export function fetchDistrictPageList(params?: { district?: string; model?: string; pageType?: string }) {
   const q = new URLSearchParams();
   if (params?.district) q.set("district", params.district);
   if (params?.model) q.set("model", params.model);
+  if (params?.pageType) q.set("pageType", params.pageType);
   const qs = q.toString();
   return publicGet<DistrictPageListItem[]>(`/public/seo/district-pages${qs ? `?${qs}` : ""}`);
+}
+
+export function fetchDistrictHub(districtSlug: string) {
+  return publicGet<DistrictLanding>(
+    `/public/seo/district-pages/${encodeURIComponent(districtSlug)}`,
+  );
 }
 
 export function fetchDistrictLanding(districtSlug: string, modelSlug: string) {

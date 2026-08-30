@@ -49,7 +49,6 @@ const ContactPage = () => {
     title: "Contact Patliputra VinFast | Patna Showroom | Bihar",
     description:
       "Contact Patliputra VinFast in Patna — phone, WhatsApp, map and enquiry form for VinFast EV sales and test drives.",
-    keywords: ["contact VinFast Patna", "Patliputra VinFast phone", "VinFast showroom Patna"],
     canonical: "/contact",
   });
   const address = dealer.address;

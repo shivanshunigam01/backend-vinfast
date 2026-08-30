@@ -1,10 +1,9 @@
 /**
  * SEO catalog for the model line-up sold by Patliputra VinFast.
  *
- * This is the single source of truth for the Month-1 URL architecture and
- * keyword mapping. District landing pages are generated as
- * `/{districtSlug}/{modelSlug}` (e.g. /patna/vinfast-vf6) for every
- * district × model combination (38 × 4 = 152 pages).
+ * Model master for Bihar SEO. District hubs live at `/{districtSlug}`.
+ * Selective VF 6 / VF 7 A- pages live at `/{districtSlug}/{modelSlug}`
+ * for 12 high-demand districts only.
  *
  * `priceKey` / `rangeKey` point at SiteConfig fields so generated copy always
  * uses the price currently configured in the admin panel.
@@ -181,18 +180,18 @@ const STATIC_ROUTES = [
   { path: '/ownership-experience', priority: 0.6, changefreq: 'monthly' },
   { path: '/customer-stories', priority: 0.6, changefreq: 'weekly' },
   { path: '/blogs', priority: 0.7, changefreq: 'daily' },
-  { path: '/blogs/why-electric-vehicles-are-the-future-of-bihar', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/how-to-choose-the-right-electric-suv', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/charging-infrastructure-in-bihar', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/cost-of-owning-an-ev', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/top-10-reasons-to-buy-the-vf6', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/is-the-vf6-worth-buying', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/vf6-running-cost-analysis', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/why-the-vf7-stands-out', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/adas-explained', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/best-electric-mpv-in-india', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/family-road-trips-with-mpv7', priority: 0.6, changefreq: 'monthly' },
-  { path: '/blogs/corporate-fleet-benefits-electric-mpv', priority: 0.6, changefreq: 'monthly' },
+  { path: '/blogs/vf6-vs-vf7-bihar', priority: 0.7, changefreq: 'monthly' },
+  { path: '/blogs/ev-running-cost-bihar', priority: 0.7, changefreq: 'monthly' },
+  { path: '/blogs/home-ev-charging-bihar', priority: 0.7, changefreq: 'monthly' },
+  { path: '/blogs/patna-to-gaya-ev-trip', priority: 0.7, changefreq: 'monthly' },
+  { path: '/blogs/patna-to-darbhanga-ev-trip', priority: 0.6, changefreq: 'monthly' },
+  { path: '/blogs/vf6-ownership-guide-bihar', priority: 0.6, changefreq: 'monthly' },
+  { path: '/blogs/vf7-highway-guide-bihar', priority: 0.6, changefreq: 'monthly' },
+  { path: '/blogs/electric-suv-buying-checklist-bihar', priority: 0.6, changefreq: 'monthly' },
+  { path: '/blogs/prepare-home-ev-charger-bihar', priority: 0.5, changefreq: 'monthly' },
+  { path: '/blogs/bihar-owner-stories', priority: 0.5, changefreq: 'monthly' },
+  { path: '/blogs/ev-monsoon-bihar', priority: 0.5, changefreq: 'monthly' },
+  { path: '/blogs/7-seater-ev-bihar', priority: 0.5, changefreq: 'monthly' },
   { path: '/faq', priority: 0.7, changefreq: 'weekly' },
   { path: '/bihar', priority: 0.8, changefreq: 'weekly' },
   { path: '/about', priority: 0.6, changefreq: 'monthly' },

@@ -78,7 +78,6 @@ const ModelMPV7 = () => {
     title: "VinFast VF MPV7 | 7-Seater Electric MPV in Bihar | Patliputra VinFast",
     description:
       "Discover VinFast VF MPV7 — spacious 7-seater electric MPV for families and fleets. Book with Patliputra VinFast, Patna.",
-    keywords: ["VinFast MPV7", "7 seater electric car Bihar", "VF MPV7 Patna"],
     canonical: "/models/mpv7",
   });
   const [prebookUnlocked, setPrebookUnlocked] = useState(

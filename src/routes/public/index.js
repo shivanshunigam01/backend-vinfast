@@ -35,6 +35,7 @@ router.get('/public/seo/global', seoController.getGlobalSeo);
 router.get('/public/seo/districts', seoController.getDistricts);
 router.get('/public/seo/models', seoController.getSeoModels);
 router.get('/public/seo/district-pages', seoController.listDistrictPages);
+router.get('/public/seo/district-pages/:districtSlug', seoController.getDistrictHub);
 router.get('/public/seo/district-pages/:districtSlug/:modelSlug', seoController.getDistrictPage);
 
 router.get('/public/td/branches', tdBranchesController.listPublicBranches);

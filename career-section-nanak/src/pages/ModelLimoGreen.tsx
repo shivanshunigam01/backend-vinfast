@@ -80,7 +80,6 @@ const ModelLimoGreen = () => {
     title: "VinFast Limo Green | Premium 7-Seater EV MPV | Patliputra VinFast",
     description:
       "Explore VinFast Limo Green electric MPV for executive and family travel. Book at Patliputra VinFast, Patna, Bihar.",
-    keywords: ["VinFast Limo Green", "Limo Green Bihar", "electric MPV fleet"],
     canonical: "/models/limo-green",
   });
   const [prebookUnlocked, setPrebookUnlocked] = useState(

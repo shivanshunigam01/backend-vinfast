@@ -1,8 +1,9 @@
 /**
- * schema.org JSON-LD builders. The frontend injects these objects into
- * <script type="application/ld+json"> tags so Google and AI answer engines
- * can understand the dealership, vehicles, FAQs and page hierarchy.
+ * schema.org JSON-LD builders for Organisation, the real Patna AutoDealer,
+ * Product/Offer, Article and breadcrumbs. Do not emit a fake district showroom.
  */
+
+const { PATNA_SHOWROOM, resolveDealerLocation, formatShowroomAddress } = require('../constants/seoLocation');
 
 const DEFAULT_SITE_URL = 'https://patliputravinfast.in';
 
@@ -28,75 +29,83 @@ function parsePriceToNumber(priceStr) {
 }
 
 function organizationSchema(dealer = {}) {
+  const loc = resolveDealerLocation(dealer);
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     '@id': `${siteUrl()}/#organization`,
-    name: dealer.dealerName || 'Patliputra VinFast',
+    name: loc.name,
     url: siteUrl(),
-    email: dealer.email || undefined,
-    telephone: dealer.phone || undefined,
-    brand: { '@type': 'Brand', name: dealer.brand || 'VinFast' },
+    email: loc.email || undefined,
+    telephone: loc.telephone || undefined,
+    logo: absoluteUrl('/favicon.png'),
+    brand: { '@type': 'Brand', name: loc.brand },
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: loc.streetAddress,
+      addressLocality: loc.addressLocality,
+      addressRegion: loc.addressRegion,
+      postalCode: loc.postalCode,
+      addressCountry: loc.addressCountry,
+    },
     areaServed: { '@type': 'State', name: 'Bihar, India' },
   };
 }
 
-function autoDealerSchema(dealer = {}, districtName = null) {
+/** Real Patna showroom only — never a cloned district branch. */
+function autoDealerSchema(dealer = {}) {
+  const loc = resolveDealerLocation(dealer);
   return {
     '@context': 'https://schema.org',
-    '@type': 'AutomotiveBusiness',
+    '@type': ['AutomotiveBusiness', 'AutoDealer'],
     '@id': `${siteUrl()}/#dealer`,
-    name: dealer.dealerName || 'Patliputra VinFast',
+    name: loc.name,
     url: siteUrl(),
-    telephone: dealer.phone || undefined,
-    email: dealer.email || undefined,
-    address: dealer.address
-      ? {
-          '@type': 'PostalAddress',
-          streetAddress: dealer.address,
-          addressRegion: 'Bihar',
-          addressCountry: 'IN',
-        }
-      : undefined,
-    openingHours: dealer.showroomHours || undefined,
-    brand: { '@type': 'Brand', name: dealer.brand || 'VinFast' },
-    areaServed: {
-      '@type': districtName ? 'City' : 'State',
-      name: districtName ? `${districtName}, Bihar` : 'Bihar, India',
+    telephone: loc.telephone || undefined,
+    email: loc.email || undefined,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: loc.streetAddress,
+      addressLocality: loc.addressLocality,
+      addressRegion: loc.addressRegion,
+      postalCode: loc.postalCode,
+      addressCountry: loc.addressCountry,
     },
+    openingHoursSpecification: {
+      '@type': 'OpeningHoursSpecification',
+      dayOfWeek: loc.openingDays,
+      opens: loc.opens,
+      closes: loc.closes,
+    },
+    brand: { '@type': 'Brand', name: loc.brand },
+    areaServed: { '@type': 'State', name: 'Bihar, India' },
   };
 }
 
 function websiteSchema(dealer = {}) {
+  const loc = resolveDealerLocation(dealer);
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     '@id': `${siteUrl()}/#website`,
-    name: dealer.dealerName || 'Patliputra VinFast',
+    name: loc.name,
     url: siteUrl(),
     publisher: { '@id': `${siteUrl()}/#organization` },
   };
 }
 
-/**
- * Vehicle schema for a model. `model` is a SEO_MODELS entry; `price` is the
- * display string from SiteConfig (e.g. "₹18.19L*").
- */
-function vehicleSchema(model, { price, range, image, url } = {}) {
+function productSchema(model, { price, range, image, url } = {}) {
   const priceNumber = parsePriceToNumber(price);
   return {
     '@context': 'https://schema.org',
-    '@type': 'Car',
+    '@type': 'Product',
     name: model.name,
     brand: { '@type': 'Brand', name: 'VinFast' },
-    model: model.shortName,
-    bodyType: model.bodyType,
-    seatingCapacity: model.seats,
-    fuelType: 'Electric',
-    vehicleEngine: { '@type': 'EngineSpecification', fuelType: 'Electric' },
+    category: model.bodyType,
+    description: `${model.name} — ${model.seats}-seater ${String(model.bodyType || '').toLowerCase()} sold in Bihar by Patliputra VinFast, Patna.`,
     image: image || undefined,
     url: url || undefined,
-    ...(range ? { mileageFromOdometer: { '@type': 'QuantitativeValue', name: `Certified range ${range}` } } : {}),
+    ...(range ? { additionalProperty: [{ '@type': 'PropertyValue', name: 'Certified range', value: range }] } : {}),
     ...(priceNumber
       ? {
           offers: {
@@ -111,16 +120,19 @@ function vehicleSchema(model, { price, range, image, url } = {}) {
   };
 }
 
-function faqSchema(faqs = []) {
-  if (!faqs.length) return null;
+function articleSchema({ headline, description, url, datePublished, dateModified, image, authorName }) {
   return {
     '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: faqs.map((f) => ({
-      '@type': 'Question',
-      name: f.question,
-      acceptedAnswer: { '@type': 'Answer', text: f.answer },
-    })),
+    '@type': 'Article',
+    headline,
+    description,
+    url: url ? absoluteUrl(url) : undefined,
+    datePublished: datePublished || undefined,
+    dateModified: dateModified || datePublished || undefined,
+    image: image || undefined,
+    author: { '@type': 'Organization', name: authorName || 'Patliputra VinFast' },
+    publisher: { '@id': `${siteUrl()}/#organization` },
+    mainEntityOfPage: url ? absoluteUrl(url) : undefined,
   };
 }
 
@@ -146,7 +158,10 @@ module.exports = {
   organizationSchema,
   autoDealerSchema,
   websiteSchema,
-  vehicleSchema,
-  faqSchema,
+  productSchema,
+  articleSchema,
   breadcrumbSchema,
+  PATNA_SHOWROOM,
+  formatShowroomAddress,
+  resolveDealerLocation,
 };

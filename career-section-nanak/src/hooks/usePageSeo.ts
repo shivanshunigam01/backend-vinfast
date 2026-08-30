@@ -16,7 +16,6 @@ export function usePageSeo(seo: SeoPayload | null | undefined) {
     seo?.ogImage,
     seo?.ogType,
     seo?.noIndex,
-    Array.isArray(seo?.keywords) ? seo.keywords.join("|") : seo?.keywords,
     seo?.schemas ? JSON.stringify(seo.schemas) : "",
   ]);
 }

@@ -13,7 +13,13 @@ import type { Lead } from "@/data/mockData";
 import { hasApi, isPublicFormPostDisabled, PUBLIC_FORM_POST_DISABLED_MESSAGE } from "@/lib/apiConfig";
 import { formatApiErrors } from "@/lib/api";
 import { submitPublicLead } from "@/lib/publicFormsApi";
-import { DEFAULT_VF7_TRIM, DEFAULT_MPV7_TRIM, DEFAULT_LIMO_GREEN_TRIM, leadModelLabel } from "@/data/vinfastModels";
+import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
+import {
+  formatAttributionRemarks,
+  mapSeoDistrictToForm,
+  mapSeoModelToForm,
+  readSeoAttribution,
+} from "@/lib/seoAttribution";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
 import { FormCaptcha } from "@/components/FormCaptcha";
@@ -45,12 +51,12 @@ const BookNowPage = () => {
   usePageSeo({
     title: "Book VinFast Online | Token Booking | Patliputra VinFast",
     description:
-      "Book your VinFast EV online with Patliputra VinFast. Start your VF6, VF7, MPV7 or Limo Green booking from Patna, Bihar.",
-    keywords: ["book VinFast online", "VinFast booking Bihar", "VF7 book now"],
+      "Book your VinFast EV online with Patliputra VinFast. Start your VF 6, VF 7, MPV 7 or Limo Green booking from Patna, Bihar.",
     canonical: "/book-now",
   });
   const paymentCardRef = useRef<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
+  const seoAttr = readSeoAttribution(searchParams);
   const [isSharingScreenshot, setIsSharingScreenshot] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -72,14 +78,15 @@ const BookNowPage = () => {
   const todayStr = getLocalISODate();
 
   useEffect(() => {
-    const raw = searchParams.get("model")?.trim() ?? "";
-    const norm = raw.toLowerCase().replace(/\s+/g, " ");
-    if (norm === "vf mpv 7" || norm === "mpv7" || raw === "VF MPV 7") {
-      setFormData((f) => ({ ...f, model: "VF MPV 7", variant: DEFAULT_MPV7_TRIM }));
-    } else if (norm === "limo green" || norm === "limo-green" || raw === "Limo Green") {
-      setFormData((f) => ({ ...f, model: "Limo Green", variant: DEFAULT_LIMO_GREEN_TRIM }));
-    }
-  }, [searchParams]);
+    const district = mapSeoDistrictToForm(seoAttr.district);
+    const model = mapSeoModelToForm(seoAttr.model);
+    if (!district && !model) return;
+    setFormData((f) => ({
+      ...f,
+      ...(district || {}),
+      ...(model || {}),
+    }));
+  }, [seoAttr.district, seoAttr.model]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -125,6 +132,8 @@ const BookNowPage = () => {
     const extras = [
       formData.financeNeeded ? "Finance assistance requested." : "",
       formData.exchangeNeeded ? "Exchange / trade-in interest." : "",
+      seoAttr.intent === "exchange" ? "SEO intent: exchange." : "",
+      formatAttributionRemarks(seoAttr),
     ]
       .filter(Boolean)
       .join(" ");
@@ -168,7 +177,9 @@ const BookNowPage = () => {
           interest: "Book Now",
           financeNeeded: formData.financeNeeded,
           exchangeNeeded: formData.exchangeNeeded,
-          pageSource: "Book Now Page",
+          pageSource: seoAttr.page
+            ? `Book Now Page | ${seoAttr.page} | ${seoAttr.intent || "book-now"}`
+            : "Book Now Page",
           recaptchaToken,
           whatsappVerificationToken: waToken ?? undefined,
         });

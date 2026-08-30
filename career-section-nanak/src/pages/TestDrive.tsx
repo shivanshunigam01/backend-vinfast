@@ -1,4 +1,5 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,12 @@ import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import { TestDriveSlotPicker } from "@/components/TestDriveSlotPicker";
 import { formatSlotLabel } from "@/lib/publicTdApi";
 import { telHref } from "@/lib/contactLinks";
+import {
+  formatAttributionRemarks,
+  mapSeoDistrictToForm,
+  mapSeoModelToForm,
+  readSeoAttribution,
+} from "@/lib/seoAttribution";
 import vf7Driving from "@/assets/slide-vf7-driving.png";
 import vf6Hero from "@/assets/vf6-earth-hero-family.png";
 import vf7Interior from "@/assets/slide-vf7-interior.png";
@@ -95,13 +102,14 @@ function FormSection({
 }
 
 const TestDrivePage = () => {
+  const [searchParams] = useSearchParams();
+  const seoAttr = readSeoAttribution(searchParams);
   const { getToken } = usePublicFormRecaptcha();
   const { siteConfig, dealer } = usePublicSite();
   usePageSeo({
     title: "Book a VinFast Test Drive in Bihar | Patliputra VinFast Patna",
     description:
-      "Schedule a VinFast VF6, VF7, MPV7 or Limo Green test drive with Patliputra VinFast — Bihar’s authorised EV dealer.",
-    keywords: ["VinFast test drive Patna", "EV test drive Bihar", "VF7 test drive"],
+      "Schedule a VinFast VF 6, VF 7, MPV 7 or Limo Green test drive with Patliputra VinFast — Bihar’s authorised EV dealer in Patna.",
     canonical: "/test-drive",
   });
   const vehicleCatalog = useVehicleCatalog();
@@ -133,6 +141,17 @@ const TestDrivePage = () => {
   const homeTestDriveAllowed = formData.city !== DISTRICT_OTHER;
   const useLiveSlots = hasApi();
   const otpRequired = hasApi() && Boolean(siteConfig.features?.whatsappOtp);
+
+  useEffect(() => {
+    const district = mapSeoDistrictToForm(seoAttr.district);
+    const model = mapSeoModelToForm(seoAttr.model);
+    if (!district && !model) return;
+    setFormData((f) => ({
+      ...f,
+      ...(district || {}),
+      ...(model || {}),
+    }));
+  }, [seoAttr.district, seoAttr.model]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -209,6 +228,7 @@ const TestDrivePage = () => {
 
     const modelLine = leadModelLabel(formData.model, formData.variant);
     const cityResolved = resolvedDistrictLabel(formData.city, formData.otherCity);
+    const seoNote = formatAttributionRemarks(seoAttr);
 
     if (hasApi()) {
       if (isPublicFormPostDisabled()) {
@@ -251,10 +271,15 @@ const TestDrivePage = () => {
           preferredDate: formData.date,
           preferredTime: formData.time,
           branch: "Patna Showroom",
-          remarks: formData.remarks?.trim()
-            ? formData.remarks.trim()
-            : `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`,
-          pageSource: "Test Drive Page",
+          remarks: [
+            formData.remarks?.trim()
+              ? formData.remarks.trim()
+              : `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`,
+            seoNote,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          pageSource: seoAttr.page ? `Test Drive Page | ${seoAttr.page} | ${seoAttr.intent || "test-drive"}` : "Test Drive Page",
           preferredTestDriveLocation: formData.preferredTestDriveLocation,
           ownsCar: formData.ownsCar,
           currentCarDetails:
@@ -317,6 +342,7 @@ const TestDrivePage = () => {
           formData.remarks?.trim(),
           tdMeta,
           `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`,
+          seoNote,
         ]
           .filter(Boolean)
           .join(" | "),

@@ -67,8 +67,7 @@ const ComparePage = () => {
   usePageSeo({
     title: "Compare VinFast Models | VF6 VF7 MPV7 | Patliputra VinFast",
     description:
-      "Compare VinFast electric models side by side — specs, variants and features. Patliputra VinFast, Bihar.",
-    keywords: ["compare VinFast", "VF6 vs VF7", "electric SUV compare"],
+      "Compare VinFast electric models side by side — specs, variants and features. Figures follow the current model master at Patliputra VinFast, Bihar.",
     canonical: "/compare",
   });
   const { loaded: offersLoaded, hasOffers } = usePublicOffers();
@@ -269,6 +268,9 @@ const ComparePage = () => {
             </h1>
             <p className="text-muted-foreground text-sm md:text-base">
               Pick up to three vehicles across VF 6, VF 7, MPV 7 and Limo Green — hide identical lines and scroll the full spec stack.
+            </p>
+            <p className="text-xs text-muted-foreground mt-3">
+              VinFast figures follow the current model master. Last updated {new Date().toLocaleDateString("en-IN")}.
             </p>
           </motion.div>
 

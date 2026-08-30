@@ -18,7 +18,6 @@ const AboutPage = () => {
     title: "About Patliputra VinFast | Authorised VinFast Dealer in Bihar",
     description:
       "Learn about Patliputra VinFast — Bihar’s authorised VinFast electric vehicle dealership in Patna.",
-    keywords: ["Patliputra VinFast", "VinFast dealer Bihar", "about VinFast Patna"],
     canonical: "/about",
   });
 

@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import StickyMobileCTA from "@/components/StickyMobileCTA";
 import { Button } from "@/components/ui/button";
 import { usePageSeo } from "@/hooks/usePageSeo";
+import { SITE_URL } from "@/lib/seo";
 import { SEO_ARTICLES, SEO_PAGE_BY_PATH } from "@/pages/seo/seoPageContent";
 import NotFound from "@/pages/NotFound";
 
@@ -15,13 +16,28 @@ export default function SeoMarketingPage({ path }: Props) {
   const articlePath = path || location.pathname;
   const article = SEO_PAGE_BY_PATH.get(articlePath);
 
+  const articleSchema = article
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        headline: article.title,
+        description: article.description,
+        url: `${SITE_URL}${article.path}`,
+        datePublished: article.datePublished,
+        dateModified: article.dateModified || article.datePublished,
+        author: { "@type": "Organization", name: article.author || "Patliputra VinFast" },
+        publisher: { "@id": `${SITE_URL}/#organization` },
+      }
+    : null;
+
   usePageSeo(
     article
       ? {
           title: article.title,
           description: article.description,
-          keywords: article.keywords,
           canonical: article.path,
+          ogType: article.path.startsWith("/blogs/") ? "article" : "website",
+          schemas: articleSchema ? [articleSchema] : undefined,
         }
       : null,
   );
@@ -29,9 +45,7 @@ export default function SeoMarketingPage({ path }: Props) {
   if (!article) return <NotFound />;
 
   const relatedBlogs =
-    article.path === "/blogs"
-      ? SEO_ARTICLES.filter((a) => a.path.startsWith("/blogs/"))
-      : [];
+    article.path === "/blogs" ? SEO_ARTICLES.filter((a) => a.path.startsWith("/blogs/")) : [];
 
   return (
     <div className="min-h-screen bg-background pb-36 lg:pb-0">
@@ -45,10 +59,12 @@ export default function SeoMarketingPage({ path }: Props) {
           >
             {article.h1}
           </motion.h1>
-          <p className="text-muted-foreground text-base md:text-lg leading-relaxed">{article.intro}</p>
+          <p className="text-foreground text-base md:text-lg leading-relaxed">
+            {article.answerBlock || article.intro}
+          </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild>
-              <Link to="/test-drive">Book test drive</Link>
+              <Link to={article.ctaHref || "/test-drive"}>{article.ctaLabel || "Book test drive"}</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to="/compare">Compare models</Link>
@@ -88,6 +104,15 @@ export default function SeoMarketingPage({ path }: Props) {
             </Link>
             .
           </p>
+        ) : null}
+
+        <p className="text-sm text-muted-foreground">
+          {article.author ? `Author: ${article.author}. ` : ""}
+          {article.reviewer ? `Reviewed by: ${article.reviewer}. ` : ""}
+          {article.dateModified ? `Last updated ${article.dateModified}.` : ""}
+        </p>
+        {article.sources ? (
+          <p className="text-sm text-muted-foreground">Sources: {article.sources}</p>
         ) : null}
       </div>
       <Footer />

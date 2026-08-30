@@ -448,10 +448,9 @@ const ModelVF7 = () => {
   const [variant, setVariant] = useState<VariantId>("earth");
 
   usePageSeo({
-    title: "VinFast VF7 Price, Specs & Test Drive in Bihar | Patliputra VinFast",
+    title: "VinFast VF 7 Price, Range & Test Drive in Bihar | Patliputra VinFast",
     description:
-      "Explore VinFast VF7 premium electric SUV — ADAS, range, variants and booking at Patliputra VinFast, Patna.",
-    keywords: ["VinFast VF7", "VF7 price Bihar", "VF7 ADAS", "electric SUV Patna"],
+      "Current VF 7 price, range and test drive assistance in Bihar from Patliputra VinFast, Patna. Compare variants and book a highway-ready EV demo.",
     canonical: "/models/vf7",
   });
 

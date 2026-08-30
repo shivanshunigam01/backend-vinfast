@@ -30,9 +30,10 @@ import NotFound from "./pages/NotFound";
 import SeoMarketingPage from "./pages/seo/SeoMarketingPage";
 import BiharDistrictsPage from "./pages/seo/BiharDistrictsPage";
 import DistrictLandingPage from "./pages/seo/DistrictLandingPage";
+import DistrictHubPage from "./pages/seo/DistrictHubPage";
 import GlobalSeoBootstrap from "./components/GlobalSeoBootstrap";
 import ScrollToTop from "./components/ScrollToTop";
-import { COMPARE_SEO_PAGES, SEO_ARTICLES } from "./pages/seo/seoPageContent";
+import { BLOG_REDIRECTS, COMPARE_SEO_PAGES, SEO_ARTICLES } from "./pages/seo/seoPageContent";
 import AdminLogin from "./pages/admin/AdminLogin";
 import StaffLogin from "./pages/staff/StaffLogin";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -143,6 +144,9 @@ const App = () => {
           {COMPARE_SEO_PAGES.map((article) => (
             <Route key={article.path} path={article.path} element={<SeoMarketingPage path={article.path} />} />
           ))}
+          {BLOG_REDIRECTS.map(({ from, to }) => (
+            <Route key={from} path={from} element={<Navigate to={to} replace />} />
+          ))}
           {/* URL-only pages (QR code) — intentionally not linked from any menu or footer */}
           <Route path="/post-delivery-feedback" element={<PostDeliveryFeedback />} />
           <Route path="/test-drive-feedback" element={<TestDriveFeedback />} />
@@ -218,8 +222,9 @@ const App = () => {
             <Route path="td/roles" element={<AdminTDRoles />} />
           </Route>
 
-          {/* Hyperlocal SEO: /{district}/{model} e.g. /patna/vinfast-vf6 */}
+          {/* Hyperlocal SEO: /{district} hubs, then selective A- model pages */}
           <Route path="/:districtSlug/:modelSlug" element={<DistrictLandingPage />} />
+          <Route path="/:districtSlug" element={<DistrictHubPage />} />
           <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>

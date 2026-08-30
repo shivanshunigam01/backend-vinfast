@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -7,6 +7,8 @@ import StickyMobileCTA from "@/components/StickyMobileCTA";
 import { Button } from "@/components/ui/button";
 import { usePageSeo } from "@/hooks/usePageSeo";
 import { fetchDistrictLanding, type DistrictLanding } from "@/lib/seoApi";
+import { buildCtaPath } from "@/lib/seoAttribution";
+import { getSeoDistrict, isATierCombo, PATNA_SHOWROOM_LINE } from "@/data/seoDistricts";
 import NotFound from "@/pages/NotFound";
 
 const modelKeyToRoute: Record<string, string> = {
@@ -16,7 +18,6 @@ const modelKeyToRoute: Record<string, string> = {
   "limo-green": "/models/limo-green",
 };
 
-/** First URL segment reserved for app routes — never treat as a district. */
 const RESERVED_DISTRICT_SEGMENTS = new Set([
   "admin",
   "staff",
@@ -31,10 +32,14 @@ const RESERVED_DISTRICT_SEGMENTS = new Set([
 export default function DistrictLandingPage() {
   const { districtSlug = "", modelSlug = "" } = useParams();
   const reserved = RESERVED_DISTRICT_SEGMENTS.has(districtSlug.toLowerCase());
-  const [page, setPage] = useState<DistrictLanding | null | undefined>(reserved ? null : undefined);
+  const known = Boolean(getSeoDistrict(districtSlug));
+  const indexable = isATierCombo(districtSlug, modelSlug);
+  const [page, setPage] = useState<DistrictLanding | null | undefined>(
+    reserved || !known || !indexable ? null : undefined,
+  );
 
   useEffect(() => {
-    if (reserved) return;
+    if (reserved || !known || !indexable) return;
     let cancelled = false;
     setPage(undefined);
     (async () => {
@@ -44,19 +49,22 @@ export default function DistrictLandingPage() {
     return () => {
       cancelled = true;
     };
-  }, [districtSlug, modelSlug, reserved]);
+  }, [districtSlug, modelSlug, reserved, known, indexable]);
 
   usePageSeo(
     page
       ? {
           title: page.metaTitle,
           description: page.metaDescription,
-          keywords: page.keywords,
           canonical: page.canonicalUrl || page.path,
           schemas: page.schemas,
         }
       : null,
   );
+
+  if (reserved) return <NotFound />;
+  if (known && !indexable) return <Navigate to={`/${districtSlug}`} replace />;
+  if (!known) return <NotFound />;
 
   if (page === undefined) {
     return (
@@ -66,9 +74,15 @@ export default function DistrictLandingPage() {
     );
   }
 
-  if (!page) return <NotFound />;
+  if (!page) return <Navigate to={`/${districtSlug}`} replace />;
 
   const modelPath = modelKeyToRoute[page.modelKey] || "/models/vf6";
+  const pagePath = page.path || `/${districtSlug}/${modelSlug}`;
+  const cta = (base: string, intent: string) =>
+    buildCtaPath(base, { district: districtSlug, model: modelSlug, intent, page: pagePath });
+  const updated = page.lastUpdated
+    ? new Date(page.lastUpdated).toLocaleDateString("en-IN")
+    : new Date().toLocaleDateString("en-IN");
 
   return (
     <div className="min-h-screen bg-background pb-36 lg:pb-0">
@@ -76,7 +90,7 @@ export default function DistrictLandingPage() {
       <section className="pt-24 lg:pt-32 pb-10 bg-gradient-to-b from-secondary/40 to-background">
         <div className="container mx-auto px-4 lg:px-8 max-w-4xl">
           <p className="text-sm uppercase tracking-[0.2em] text-primary font-semibold mb-3">
-            {page.districtName} · Bihar
+            {page.districtName} · {page.modelName}
           </p>
           <motion.h1
             initial={{ opacity: 0, y: 12 }}
@@ -85,16 +99,21 @@ export default function DistrictLandingPage() {
           >
             {page.h1}
           </motion.h1>
-          <p className="text-muted-foreground text-base md:text-lg leading-relaxed">{page.intro}</p>
+          <p className="text-foreground text-base md:text-lg leading-relaxed">
+            {page.answerBlock || page.intro}
+          </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild>
-              <Link to="/test-drive">Book test drive</Link>
+              <Link to={cta("/test-drive", "test-drive")}>Book test drive</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to={modelPath}>View {page.modelName}</Link>
             </Button>
             <Button asChild variant="secondary">
-              <Link to="/book-now">Book now</Link>
+              <Link to={cta("/book-now", "get-price")}>Get price</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={cta("/emi-calculator", "emi")}>EMI</Link>
             </Button>
           </div>
         </div>
@@ -112,6 +131,11 @@ export default function DistrictLandingPage() {
           </article>
         ))}
 
+        <section>
+          <h2 className="font-display font-semibold text-2xl mb-3">Nearest real showroom</h2>
+          <p className="text-foreground/80 leading-relaxed">{PATNA_SHOWROOM_LINE}</p>
+        </section>
+
         {(page.faqs || []).length > 0 ? (
           <section>
             <h2 className="font-display font-semibold text-2xl mb-6">
@@ -128,16 +152,17 @@ export default function DistrictLandingPage() {
           </section>
         ) : null}
 
+        <p className="text-sm text-muted-foreground">{page.methodology}</p>
+        <p className="text-sm text-muted-foreground">Last updated {updated}.</p>
         <p className="text-sm text-muted-foreground">
-          Serving customers from {page.districtName} at Patliputra VinFast, Patna.{" "}
-          <Link className="text-primary underline-offset-2 hover:underline" to="/contact">
-            Contact us
+          Serving {page.districtName} from Patliputra VinFast, Patna.{" "}
+          <Link className="text-primary underline-offset-2 hover:underline" to={`/${districtSlug}`}>
+            {page.districtName} hub
           </Link>{" "}
-          or explore{" "}
+          ·{" "}
           <Link className="text-primary underline-offset-2 hover:underline" to="/bihar">
-            all Bihar district pages
+            all districts
           </Link>
-          .
         </p>
       </div>
       <Footer />

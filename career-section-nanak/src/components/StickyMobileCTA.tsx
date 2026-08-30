@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Phone, MessageCircle, CalendarDays, ShoppingBag } from "lucide-react";
 import { usePublicSite } from "@/context/PublicSiteContext";
 import { telHref, waMeUrl } from "@/lib/contactLinks";
+import { attributionFromPathname, buildCtaPath } from "@/lib/seoAttribution";
 
 const MPV7_PREBOOK_SESSION_KEY = "vinfast_mpv7_prebook_unlocked";
 const MPV7_PREBOOK_UNLOCK_EVENT = "vinfast-mpv7-prebook-unlock";
@@ -19,6 +20,7 @@ const StickyMobileCTA = () => {
   const wa = waMeUrl(siteConfig.whatsappNumber || dealer.whatsapp);
   const onMpv7Page = location.pathname === "/models/mpv7";
   const onLimoGreenPage = location.pathname === "/models/limo-green";
+  const pathAttr = attributionFromPathname(location.pathname);
   const [mpv7PrebookUnlocked, setMpv7PrebookUnlocked] = useState(false);
   const [limoGreenPrebookUnlocked, setLimoGreenPrebookUnlocked] = useState(false);
   const [showBar, setShowBar] = useState(false);
@@ -74,13 +76,13 @@ const StickyMobileCTA = () => {
             to={
               onMpv7Page
                 ? mpv7PrebookUnlocked
-                  ? "/book-now?model=VF%20MPV%207"
+                  ? buildCtaPath("/book-now", { ...pathAttr, model: "vinfast-mpv7", intent: "book-now" })
                   : "/models/mpv7#mpv7-prebook"
                 : onLimoGreenPage
                   ? limoGreenPrebookUnlocked
-                    ? "/book-now?model=Limo%20Green"
+                    ? buildCtaPath("/book-now", { ...pathAttr, model: "vinfast-limo-green", intent: "book-now" })
                     : "/models/limo-green#limo-green-prebook"
-                  : "/book-now"
+                  : buildCtaPath("/book-now", { ...pathAttr, intent: "book-now" })
             }
             className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-primary text-primary-foreground text-xs font-medium"
           >
@@ -88,7 +90,7 @@ const StickyMobileCTA = () => {
             Book Now
           </Link>
           <Link
-            to="/test-drive"
+            to={buildCtaPath("/test-drive", { ...pathAttr, intent: "test-drive" })}
             className="flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-foreground/10 text-foreground text-xs font-medium border border-border/60"
           >
             <CalendarDays className="w-3.5 h-3.5" />

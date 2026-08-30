@@ -11,10 +11,9 @@ const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, 
 
 const EMICalculator = () => {
   usePageSeo({
-    title: "EV EMI Calculator | VinFast Finance Estimates | Patliputra VinFast",
+    title: "VinFast EMI Calculator | Estimate EV Finance in Bihar",
     description:
-      "Estimate monthly EMI for VinFast VF6, VF7 and MPV models. Plan your EV purchase with Patliputra VinFast, Bihar.",
-    keywords: ["VinFast EMI calculator", "EV finance Bihar", "VF6 EMI", "VF7 EMI"],
+      "Estimate monthly EMI for VinFast VF 6, VF 7 and MPV models in Bihar. Figures are illustrations — lender-approved EMI may differ.",
     canonical: "/emi-calculator",
   });
 
@@ -200,6 +199,11 @@ const EMICalculator = () => {
                   <Button variant="outline" size="lg" className="w-full">Book Test Drive</Button>
                 </Link>
               </div>
+              <p className="mt-6 text-xs text-muted-foreground leading-relaxed">
+                About this information: this EMI is an estimate from the price, down payment, tenure and
+                interest rate you entered. It is not a loan offer. Banks and NBFCs set the approved EMI,
+                processing fees and eligibility separately. Last updated {new Date().toLocaleDateString("en-IN")}.
+              </p>
             </motion.div>
           </div>
         </div>

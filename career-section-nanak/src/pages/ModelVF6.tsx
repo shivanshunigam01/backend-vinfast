@@ -349,10 +349,9 @@ const ModelVF6 = () => {
   const [variant, setVariant] = useState<VariantId>("earth");
 
   usePageSeo({
-    title: "VinFast VF6 Price, Specs & Test Drive in Bihar | Patliputra VinFast",
+    title: "VinFast VF 6 Price, Range & Test Drive in Bihar | Patliputra VinFast",
     description:
-      "Explore VinFast VF6 electric SUV — variants, features, range and booking at Patliputra VinFast, Patna. Serve customers across Bihar.",
-    keywords: ["VinFast VF6", "VF6 price Bihar", "VF6 test drive Patna", "electric SUV Bihar"],
+      "Current VF 6 price, certified range and test drive assistance in Bihar from Patliputra VinFast, Patna. Book a slot or request EMI guidance.",
     canonical: "/models/vf6",
   });
 

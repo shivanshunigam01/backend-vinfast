@@ -19,7 +19,7 @@ function urlEntry({ path, lastmod, changefreq, priority }) {
   return `  <url>\n${parts.join('\n')}\n  </url>`;
 }
 
-/** Builds the full sitemap XML: static routes + all active district pages. */
+/** Builds the full sitemap XML: static routes + active hubs and A- pages only. */
 async function buildSitemapXml() {
   const districtPages = await DistrictPage.find({ active: true })
     .select('path updatedAt')

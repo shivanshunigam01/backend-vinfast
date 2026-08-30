@@ -9,10 +9,9 @@ import { usePageSeo } from "@/hooks/usePageSeo";
 
 export default function RunningCostCalculator() {
   usePageSeo({
-    title: "EV Running Cost Calculator | Patliputra VinFast Bihar",
+    title: "EV Running Cost in Bihar | 100 km Cost Calculator | Patliputra VinFast",
     description:
-      "Compare estimated monthly running cost of a VinFast EV versus a petrol SUV for Bihar driving patterns.",
-    keywords: ["EV running cost calculator", "electric vs petrol cost Bihar"],
+      "Estimate what 100 km costs in a VinFast EV versus petrol in Bihar. Uses your tariff, consumption and fuel price — see methodology.",
     canonical: "/running-cost-calculator",
   });
 
@@ -69,6 +68,11 @@ export default function RunningCostCalculator() {
           <Button asChild><Link to="/test-drive">Book test drive</Link></Button>
           <Button asChild variant="outline"><Link to="/charging-calculator">Charging calculator</Link></Button>
         </div>
+        <p className="mt-6 text-xs text-muted-foreground leading-relaxed">
+          About this information: EV cost uses km × (kWh/100 km) × tariff. Petrol cost uses km ÷ km/l ×
+          fuel price. These are planning figures, not a promise of savings. Last updated{" "}
+          {new Date().toLocaleDateString("en-IN")}.
+        </p>
       </div>
       <Footer />
       <StickyMobileCTA />

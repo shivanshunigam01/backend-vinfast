@@ -9,10 +9,9 @@ import { usePageSeo } from "@/hooks/usePageSeo";
 
 export default function ChargingCalculator() {
   usePageSeo({
-    title: "EV Charging Cost Calculator | Patliputra VinFast Bihar",
+    title: "EV Charging Cost Calculator | Home Charging Estimate | Patliputra VinFast",
     description:
-      "Estimate home charging cost for VinFast EVs in Bihar. Plan electricity spend for VF6, VF7, MPV7 and Limo Green.",
-    keywords: ["EV charging calculator", "charging cost Bihar", "VinFast charger cost"],
+      "Estimate home charging cost for VinFast EVs in Bihar using your tariff and battery size. Inputs are assumptions — see the methodology note.",
     canonical: "/charging-calculator",
   });
 
@@ -57,6 +56,11 @@ export default function ChargingCalculator() {
           <Button asChild><Link to="/test-drive">Book test drive</Link></Button>
           <Button asChild variant="outline"><Link to="/emi-calculator">EMI calculator</Link></Button>
         </div>
+        <p className="mt-6 text-xs text-muted-foreground leading-relaxed">
+          About this information: cost = usable kWh × your ₹/kWh tariff × the charge window you set.
+          Real bills vary with meter type, charger losses and Bihar DISCOM slabs. Last updated{" "}
+          {new Date().toLocaleDateString("en-IN")}.
+        </p>
       </div>
       <Footer />
       <StickyMobileCTA />
