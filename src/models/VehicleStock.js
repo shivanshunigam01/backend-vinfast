@@ -45,6 +45,8 @@ const vehicleStockSchema = new mongoose.Schema(
     lastPdiResult: { type: String, trim: true },
     pdiStatus: { type: String, enum: PDI_STATUSES, default: 'NONE', index: true },
     isDemo: { type: Boolean, default: false, index: true },
+    /** Loaner / courtesy vehicle flag (no TD fleet record). */
+    isLoaner: { type: Boolean, default: false, index: true },
     demoVehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDVehicle' },
     purchaseOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseOrder', index: true },
     dispatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Dispatch', index: true },

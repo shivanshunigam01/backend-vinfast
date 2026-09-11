@@ -49,6 +49,7 @@ type StockItem = {
   pdiNumber?: string | null;
   pdiPerformedAt?: string | null;
   isDemo: boolean;
+  isLoaner?: boolean;
   demoVehicleId: { _id: string; vehicleId: string; status: string } | string | null;
   branchId: { _id: string; name: string; code?: string } | string | null;
   remarks: string | null;
@@ -109,6 +110,7 @@ export default function AdminVehicleStock() {
   const canUpdate = canPerformManagerAction(adminUser, "vehicle_stock", "update");
   const canDelete = canPerformManagerAction(adminUser, "vehicle_stock", "delete");
   const canTagDemo = canPerformManagerAction(adminUser, "vehicle_stock", "tag_demo");
+  const canTagLoaner = canUpdate;
   const canYardPdi = canPerformAction(adminUser, "stock_delivery", "pdi");
   const [yardBusyId, setYardBusyId] = useState<string | null>(null);
   const { models: catalogModels, trimsFor } = useVehicleCatalog();
@@ -128,6 +130,7 @@ export default function AdminVehicleStock() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StockItem | null>(null);
   const [demoBusyId, setDemoBusyId] = useState<string | null>(null);
+  const [loanerBusyId, setLoanerBusyId] = useState<string | null>(null);
 
   const exteriorOptions = useMemo(() => {
     const base = exteriorColoursFor(form.model, form.variant);
@@ -289,6 +292,19 @@ export default function AdminVehicleStock() {
     }
   };
 
+  const handleTagLoaner = async (item: StockItem, loaner: boolean) => {
+    setLoanerBusyId(item._id);
+    try {
+      await adminPostJson(`/admin/stock/vehicles/${item._id}/tag-loaner`, { loaner });
+      toast.success(loaner ? `${item.stockId} tagged as loaner` : `${item.stockId} untagged as loaner`);
+      void fetchStock();
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setLoanerBusyId(null);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setSaving(true);
@@ -430,6 +446,11 @@ export default function AdminVehicleStock() {
                       <Gauge className="w-3 h-3 mr-1" /> DEMO
                     </Badge>
                   ) : null}
+                  {item.isLoaner ? (
+                    <Badge className="text-[10px] border bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30">
+                      LOANER
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
 
@@ -492,7 +513,7 @@ export default function AdminVehicleStock() {
                 </div>
               </div>
 
-              {canTagDemo || canUpdate || canDelete || canYardPdi ? (
+              {canTagDemo || canTagLoaner || canUpdate || canDelete || canYardPdi ? (
                 <div className="flex flex-wrap items-center gap-2 border-t border-border/30 pt-3">
                   {canYardPdi && item.status === "IN_TRANSIT" ? (
                     <Button
@@ -544,6 +565,31 @@ export default function AdminVehicleStock() {
                       >
                         {demoBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Gauge className="w-3.5 h-3.5 mr-1" />}
                         Tag as demo
+                      </Button>
+                    )
+                  ) : null}
+                  {canTagLoaner ? (
+                    item.isLoaner ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 min-w-[7rem] text-xs h-8"
+                        disabled={loanerBusyId === item._id}
+                        onClick={() => void handleTagLoaner(item, false)}
+                      >
+                        {loanerBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                        Untag loaner
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 min-w-[7rem] text-xs h-8"
+                        disabled={loanerBusyId === item._id || item.status === "SOLD"}
+                        onClick={() => void handleTagLoaner(item, true)}
+                      >
+                        {loanerBusyId === item._id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                        Tag as loaner
                       </Button>
                     )
                   ) : null}

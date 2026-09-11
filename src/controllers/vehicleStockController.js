@@ -89,6 +89,7 @@ function formatStock(doc, holdMeta) {
     pdiNumber: meta.pdiNumber || null,
     pdiPerformedAt: meta.pdiPerformedAt || null,
     isDemo: Boolean(plain.isDemo),
+    isLoaner: Boolean(plain.isLoaner),
     demoVehicleId: demoVehicle
       ? { _id: demoVehicle._id, vehicleId: demoVehicle.vehicleId, status: demoVehicle.status }
       : plain.demoVehicleId || null,
@@ -114,6 +115,8 @@ exports.listStock = asyncHandler(async (req, res) => {
   if (req.query.model && req.query.model !== 'all') query.model = String(req.query.model).trim();
   if (req.query.demo === 'true') query.isDemo = true;
   if (req.query.demo === 'false') query.isDemo = false;
+  if (req.query.loaner === 'true') query.isLoaner = true;
+  if (req.query.loaner === 'false') query.isLoaner = false;
   if (req.query.hold === 'true') query.holdStatus = true;
   if (req.query.vehicleStatus && req.query.vehicleStatus !== 'all') {
     query.vehicleStatus = String(req.query.vehicleStatus).trim().toUpperCase();
@@ -365,6 +368,38 @@ exports.tagDemo = asyncHandler(async (req, res) => {
   await doc.save();
   await doc.populate(STOCK_POPULATE);
   return successResponse(res, formatStock(doc), 'Demo tag removed — vehicle returned to fresh stock');
+});
+
+/**
+ * Tag/untag a stock unit as a loaner vehicle. Unlike demo tagging, this does
+ * NOT create a TDVehicle fleet record — only flips isLoaner (+ optional LOANER status).
+ */
+exports.tagLoaner = asyncHandler(async (req, res) => {
+  assertStockEditRights(req.admin);
+  const doc = await VehicleStock.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Stock item not found');
+
+  const makeLoaner = !(req.body?.loaner === false || req.body?.isLoaner === false);
+
+  if (makeLoaner) {
+    if (doc.status === 'SOLD' || doc.vehicleStatus === 'DELIVERED') {
+      throw new ApiError(400, 'A sold/delivered vehicle cannot be tagged as loaner');
+    }
+    doc.isLoaner = true;
+    if (req.body?.setStatus !== false) {
+      doc.vehicleStatus = 'LOANER';
+    }
+    await doc.save();
+    await doc.populate(STOCK_POPULATE);
+    return successResponse(res, formatStock(doc), 'Tagged as loaner vehicle');
+  }
+
+  if (!doc.isLoaner) throw new ApiError(400, 'This vehicle is not tagged as a loaner');
+  doc.isLoaner = false;
+  if (doc.vehicleStatus === 'LOANER') doc.vehicleStatus = 'AVAILABLE';
+  await doc.save();
+  await doc.populate(STOCK_POPULATE);
+  return successResponse(res, formatStock(doc), 'Loaner tag removed');
 });
 
 exports.deleteStock = asyncHandler(async (req, res) => {

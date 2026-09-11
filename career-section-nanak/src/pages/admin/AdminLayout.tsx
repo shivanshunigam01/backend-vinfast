@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X,
+  LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X, ArrowLeft,
   Tag, Bell, Home, Image, Layers, Briefcase,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList,
-  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle, Receipt, CheckCircle2
+  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle, Receipt, CheckCircle2, ArrowLeftRight
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
@@ -89,6 +89,7 @@ const userMasterNavItems = [
 /** Full PO → Delivery pipeline — order matches operational flow */
 const stockNavItems = [
   { label: "Pipeline Dashboard", icon: BarChart3, path: "/admin/stock/dashboard", staff: false },
+  { label: "Requisition Planning", icon: ClipboardList, path: "/admin/stock/requisitions", staff: false },
   { label: "1 · Purchase Orders", icon: ClipboardList, path: "/admin/stock/purchase-orders", staff: false },
   { label: "2 · Dispatch & Transit", icon: Truck, path: "/admin/stock/dispatches", staff: false },
   { label: "3 · Gate Entry", icon: DoorOpen, path: "/admin/stock/gate-entry", staff: false },
@@ -96,6 +97,7 @@ const stockNavItems = [
   { label: "5 · Receipt Verification", icon: Key, path: "/admin/stock/receipt", staff: false },
   { label: "6 · Pre-Stock PDI", icon: Wrench, path: "/admin/stock/pre-stock-pdi", staff: false },
   { label: "7 · Vehicle Stock", icon: Warehouse, path: "/admin/stock", staff: false },
+  { label: "Stock Transfer", icon: ArrowLeftRight, path: "/admin/stock/transfer", staff: false },
   { label: "8 · Allocation & Orders", icon: Car, path: "/admin/stock/orders", staff: false },
   { label: "9 · Final PDI", icon: CheckCircle2, path: "/admin/stock/final-pdi", staff: false },
   { label: "10 · Retail & Invoice", icon: Receipt, path: "/admin/stock/retail", staff: false },
@@ -655,6 +657,20 @@ const AdminLayout = () => {
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col lg:ml-64 xl:ml-72">
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border bg-card/95 px-3 py-2 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80 sm:min-h-16 sm:gap-4 sm:px-4 sm:py-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate(fieldStaff ? "/admin/my-dashboard" : "/admin/dashboard");
+              }
+            }}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden touch-manipulation"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-6 w-6" />
+          </button>
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}

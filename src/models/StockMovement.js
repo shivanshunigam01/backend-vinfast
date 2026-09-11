@@ -16,6 +16,8 @@ const stockMovementSchema = new mongoose.Schema(
     toZone: { type: String, trim: true },
     fromBay: { type: String, trim: true },
     toBay: { type: String, trim: true },
+    transferType: { type: String, enum: ['LOCATION', 'BRANCH', 'DEALER'], default: 'LOCATION', index: true },
+    toDealerName: { type: String, trim: true },
     remarks: { type: String, trim: true },
     movedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
   },

@@ -20,7 +20,7 @@ import {
   ChevronLeft, ChevronRight, CarFront, PackageCheck, Inbox
 } from "lucide-react";
 import { toast } from "sonner";
-import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
+import { getAdminUser, canPerformManagerAction, isFieldStaffUser } from "@/lib/adminAuth";
 import type { AdminModuleKey } from "@/lib/adminModules";
 
 type FeedbackRow = {
@@ -152,7 +152,9 @@ export default function AdminFeedbackSubmissions({ kind }: { kind: "testDrive" |
   const config = CONFIGS[kind];
   const moduleKey: AdminModuleKey =
     kind === "testDrive" ? "feedback_test_drive" : "feedback_post_delivery";
-  const canDelete = canPerformManagerAction(getAdminUser(), moduleKey, "delete");
+  const adminUser = getAdminUser();
+  const canDelete = canPerformManagerAction(adminUser, moduleKey, "delete");
+  const isExecutive = isFieldStaffUser(adminUser);
 
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [meta, setMeta] = useState<FeedbackMeta | null>(null);
@@ -218,6 +220,11 @@ export default function AdminFeedbackSubmissions({ kind }: { kind: "testDrive" |
           <p className="text-muted-foreground text-sm">
             {config.description} (<span className="font-mono">{config.formPath}</span>)
           </p>
+          {isExecutive ? (
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+              Showing feedback for your customers only
+            </p>
+          ) : null}
         </div>
         <Button onClick={() => void fetchRows()} variant="outline" size="sm">
           <RefreshCw className="w-4 h-4" />

@@ -41,6 +41,8 @@ import {
   downloadPvCrmLeadImportTemplate,
   downloadCrmImportErrors,
   fetchOpportunityDuplicates,
+  reopenPvCrmLead,
+  fetchCustomerFollowUps,
   CRM_IMPORT_MODEL_OPTIONS,
   type AssignableStaffUser,
   type PvCrmLead,
@@ -50,6 +52,7 @@ import {
   type CrmLeadImportFailure,
   type CrmLeadImportRow,
   type CrmLeadImportRowStatus,
+  type CustomerFollowUpRow,
 } from "@/lib/pvLeadCrmApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
@@ -129,6 +132,7 @@ export default function AdminCrmLeads() {
   // Default CRE list to unassigned so the calling queue is obvious; backend also scopes CRE.
   const [filterExecutive, setFilterExecutive] = useState(isCre ? "unassigned" : "all");
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+  const [customerFollowUpsOnly, setCustomerFollowUpsOnly] = useState(false);
   const [favouriteOnly, setFavouriteOnly] = useState(false);
   const [filterBuyerType, setFilterBuyerType] = useState("all");
   const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
@@ -164,6 +168,10 @@ export default function AdminCrmLeads() {
   const [customerHistory, setCustomerHistory] = useState<CustomerHistory | null>(null);
   const [showCustomerHistory, setShowCustomerHistory] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [customerFollowUps, setCustomerFollowUps] = useState<CustomerFollowUpRow[]>([]);
+  const [showCustomerFollowUps, setShowCustomerFollowUps] = useState(false);
+  const [customerFollowUpsLoading, setCustomerFollowUpsLoading] = useState(false);
+  const [reopenBusy, setReopenBusy] = useState(false);
 
   const [convertStage, setConvertStage] = useState<"Booking" | "Delivered">("Booking");
   const [convertBuyerDiffers, setConvertBuyerDiffers] = useState(false);
@@ -242,6 +250,7 @@ export default function AdminCrmLeads() {
         status: filterStatus,
         source: filterSource,
         followUpDue: followUpDueOnly,
+        customerFollowUps: customerFollowUpsOnly,
         favourite: favouriteOnly,
         buyerType: filterBuyerType !== "all" ? filterBuyerType : undefined,
         from: filterDateFrom || undefined,
@@ -265,7 +274,7 @@ export default function AdminCrmLeads() {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, filterSource, followUpDueOnly, favouriteOnly, filterBuyerType, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
+  }, [search, filterStatus, filterSource, followUpDueOnly, customerFollowUpsOnly, favouriteOnly, filterBuyerType, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
 
   const hasDateFilter = Boolean(filterDateFrom || filterDateTo);
 
@@ -514,6 +523,49 @@ export default function AdminCrmLeads() {
       toast.error(formatApiErrors(e));
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  const loadCustomerFollowUps = async (customerId: string) => {
+    setCustomerFollowUpsLoading(true);
+    try {
+      const rows = await fetchCustomerFollowUps(customerId);
+      setCustomerFollowUps(rows);
+      setShowCustomerFollowUps(true);
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setCustomerFollowUpsLoading(false);
+    }
+  };
+
+  const handleReopenLead = async (mode: "same" | "new") => {
+    if (!selected || !canUpdate) return;
+    const label = mode === "same" ? "Reopen this lead on the same opportunity?" : "Reopen as a new lead / opportunity?";
+    if (!window.confirm(label)) return;
+    let executiveId: string | undefined;
+    if (mode === "new" && canAssignLeads) {
+      const pick = assignExecutiveId || selected.assignedTo?._id || "";
+      if (pick) executiveId = pick;
+    }
+    setReopenBusy(true);
+    try {
+      const updated = await reopenPvCrmLead(selected._id, {
+        mode,
+        executiveId,
+      });
+      toast.success(mode === "same" ? "Lead reopened" : "New lead created from lost opportunity");
+      await loadLeads();
+      if (updated?._id) {
+        setSelected(updated);
+        await refreshDetail(updated._id);
+      } else {
+        await refreshDetail(selected._id);
+      }
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    } finally {
+      setReopenBusy(false);
     }
   };
 
@@ -1070,6 +1122,18 @@ export default function AdminCrmLeads() {
           <CalendarClock className="w-4 h-4 mr-2" />
           Follow-ups due
         </Button>
+        <Button
+          variant={customerFollowUpsOnly ? "default" : "outline"}
+          size="sm"
+          className="h-10"
+          onClick={() => {
+            setPage(1);
+            setCustomerFollowUpsOnly((v) => !v);
+          }}
+        >
+          <Clock className="w-4 h-4 mr-2" />
+          Customer follow-ups
+        </Button>
       </div>
 
       <Card className="bg-card border-border/50 p-4">
@@ -1326,6 +1390,23 @@ export default function AdminCrmLeads() {
                     {historyLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <History className="w-3.5 h-3.5 mr-1.5" />}
                     History
                   </Button>
+                  {detail.lead.customerId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7"
+                      disabled={customerFollowUpsLoading}
+                      onClick={() => void loadCustomerFollowUps(String(detail.lead.customerId))}
+                    >
+                      {customerFollowUpsLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      All follow-ups
+                    </Button>
+                  ) : null}
                   {/* Book Test Drive: hidden for executives once the drive is done — repeats need admin approval. */}
                   {canUpdate && (canAssignLeads || normalizeCrmStage(detail.lead.status) !== "Test Drive Completed") ? (
                     <Button
@@ -1352,6 +1433,32 @@ export default function AdminCrmLeads() {
                   ) : null}
                 </div>
               </div>
+
+              {canUpdate && ["Lost", "Not Interested"].includes(normalizeCrmStage(detail.lead.status)) ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-wrap gap-2 items-center">
+                  <p className="text-xs text-muted-foreground mr-auto">This lead is closed — reopen to continue working it.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-8"
+                    disabled={reopenBusy}
+                    onClick={() => void handleReopenLead("same")}
+                  >
+                    {reopenBusy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                    Reopen lead
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="text-xs h-8"
+                    disabled={reopenBusy}
+                    onClick={() => void handleReopenLead("new")}
+                  >
+                    Reopen as new lead
+                  </Button>
+                </div>
+              ) : null}
 
               <div className="grid sm:grid-cols-2 gap-3 rounded-lg border border-border/50 bg-secondary/20 p-4 text-xs">
                 <p><span className="text-muted-foreground">Customer name</span><br />{displayCrmLeadName(detail.lead)}</p>
@@ -1832,6 +1939,40 @@ export default function AdminCrmLeads() {
         onOpenChange={setShowCustomerHistory}
         history={customerHistory}
       />
+
+      <Dialog open={showCustomerFollowUps} onOpenChange={setShowCustomerFollowUps}>
+        <DialogContent className="bg-card border-border max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" /> All follow-ups for this customer
+            </DialogTitle>
+          </DialogHeader>
+          {customerFollowUpsLoading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : customerFollowUps.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">No follow-ups found for this customer.</p>
+          ) : (
+            <div className="space-y-2">
+              {customerFollowUps.map((fu) => (
+                <Card key={fu._id} className="p-3 space-y-1 bg-secondary/20 border-border/50">
+                  <div className="flex flex-wrap gap-2 items-center text-xs">
+                    <Badge variant="outline">{fu.status}</Badge>
+                    {fu.lead?.leadId ? <span className="font-mono text-muted-foreground">{fu.lead.leadId}</span> : null}
+                    {fu.lead?.model ? <span className="text-muted-foreground">{fu.lead.model}</span> : null}
+                  </div>
+                  <p className="text-sm">{fu.note}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {fu.scheduledAt ? `Scheduled ${formatDateTime(fu.scheduledAt)}` : formatDateTime(fu.createdAt)}
+                    {fu.outcome ? ` · ${fu.outcome}` : ""}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showOppReport} onOpenChange={setShowOppReport}>
         <DialogContent className="bg-card border-border max-w-xl max-h-[85vh] overflow-y-auto">

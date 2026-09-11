@@ -65,6 +65,10 @@ function mapVehicleStatusToLegacy(vehicleStatus) {
       return 'SOLD';
     case 'DEMO':
       return 'DEMO';
+    case 'LOANER':
+    case 'DISPLAY':
+    case 'TEST_DRIVE':
+      return 'FRESH_STOCK';
     default:
       return 'FRESH_STOCK';
   }

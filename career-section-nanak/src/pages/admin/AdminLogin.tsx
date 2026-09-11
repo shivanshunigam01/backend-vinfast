@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,14 @@ import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
 import { hasApi } from "@/lib/apiConfig";
 import { adminLogin, ApiRequestError, formatApiErrors } from "@/lib/api";
-import { markAdminSessionStart, setAdminSession, getAdminLoginRedirect, type AdminUser } from "@/lib/adminAuth";
+import {
+  markAdminSessionStart,
+  setAdminSession,
+  getAdminLoginRedirect,
+  getAdminToken,
+  getAdminUser,
+  type AdminUser,
+} from "@/lib/adminAuth";
 
 /**
  * Admin portal login — Admin accounts only.
@@ -25,6 +32,14 @@ const AdminLogin = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionExpired = searchParams.get("reason") === "session-expired";
+
+  useEffect(() => {
+    const token = getAdminToken();
+    const user = getAdminUser();
+    if (token && user) {
+      navigate(getAdminLoginRedirect(user), { replace: true });
+    }
+  }, [navigate]);
 
   const continueIdentity = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +68,7 @@ const AdminLogin = () => {
           userType: "admin",
         };
         setAdminSession(token, user);
-        navigate(getAdminLoginRedirect(user));
+        navigate(getAdminLoginRedirect(user), { replace: true });
       } catch (err) {
         setError(err instanceof ApiRequestError ? formatApiErrors(err) : "Invalid email or password");
       } finally {
@@ -64,7 +79,7 @@ const AdminLogin = () => {
 
     localStorage.setItem("admin_logged_in", "true");
     markAdminSessionStart();
-    navigate("/admin/dashboard");
+    navigate("/admin/dashboard", { replace: true });
   };
 
   return (

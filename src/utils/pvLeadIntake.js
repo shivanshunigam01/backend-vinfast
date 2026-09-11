@@ -149,6 +149,8 @@ async function intakePvLead(input = {}) {
     area,
     address,
     buyerType,
+    /** When true, always create a new lead+opportunity (skip open-lead reuse). */
+    forceNew = false,
   } = input;
 
   const parent = await ensureParentCustomer({ name, mobile, email, city, otherCity });
@@ -207,9 +209,10 @@ async function intakePvLead(input = {}) {
   // Duplicate guard: same mobile re-enquiring (website form, walk-in, another
   // test drive) updates the customer's open lead instead of creating a second
   // lead/opportunity. A new lead is only created after the previous one closed
-  // (Lost/Delivered). Test drive bookings stay unlimited — TDBooking records
-  // are separate; the lead simply links to the latest booking.
-  if (!lead) {
+  // (Lost/Delivered), or when forceNew intentionally opens another opportunity.
+  // Test drive bookings stay unlimited — TDBooking records are separate; the
+  // lead simply links to the latest booking.
+  if (!lead && !forceNew) {
     lead = await findOpenLeadForCustomer({ parentId: parent._id, mobile: parent.mobile });
   }
 

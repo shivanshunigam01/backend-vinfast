@@ -18,6 +18,11 @@ router.get('/reports/cre', reportCtrl.getCreReport);
 router.get('/duplicates/opportunities', authorize('superadmin', 'manager'), ctrl.checkOpportunityDuplicates);
 
 router.get('/export', requireModuleAction('crm_leads', 'export'), ctrl.exportCrmLeads);
+router.get(
+  '/follow-ups/by-customer',
+  requireModuleAction('crm_leads', 'view'),
+  ctrl.getCustomerFollowUps,
+);
 router.post(
   '/import',
   requireModuleAction('crm_leads', 'create'),
@@ -49,6 +54,7 @@ router.get('/:id', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeadDeta
 router.get('/:id/test-drives', requireModuleAction('crm_leads', 'view'), ctrl.getLeadTestDrives);
 router.post('/:id/test-drive', requireModuleAction('crm_leads', 'update'), ctrl.bookTestDriveForLead);
 router.post('/:id/convert', requireModuleAction('crm_leads', 'update'), ctrl.convertLeadToSale);
+router.post('/:id/reopen', requireModuleAction('crm_leads', 'update'), ctrl.reopenLostLead);
 router.patch(
   '/:id/assign',
   requireModuleActionOrRoles('crm_leads', 'assign', 'superadmin', 'manager'),

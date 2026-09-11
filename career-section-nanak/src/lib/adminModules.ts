@@ -43,6 +43,7 @@ export type AdminModuleKey =
   | "stock_reports"
   | "stock_config"
   | "stock_vendors"
+  | "stock_requisition"
   | "td_reports"
   | "td_config"
   | "calendar"
@@ -141,8 +142,8 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "stock_delivery", label: "Vehicle Orders", path: "/admin/stock/orders", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "receive", "allocate", "pdi", "deliver"] },
   { key: "stock_po", label: "Purchase Orders", path: "/admin/stock/purchase-orders", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "approve"] },
   { key: "stock_dispatch", label: "Dispatch & Transit", path: "/admin/stock/dispatches", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
-  { key: "stock_gate", label: "Gate Entry", path: "/admin/stock/gate-entry", group: "Stock / Vehicle Management", actions: ["view", "create"] },
-  { key: "stock_grn", label: "GRN", path: "/admin/stock/grn", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
+  { key: "stock_gate", label: "Gate Entry", path: "/admin/stock/gate-entry", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete"] },
+  { key: "stock_grn", label: "GRN", path: "/admin/stock/grn", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete"] },
   { key: "stock_receipt", label: "Receipt Verification", path: "/admin/stock/receipt", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
   { key: "stock_pdi", label: "Pre-Stock PDI", path: "/admin/stock/pre-stock-pdi", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "approve"] },
   { key: "stock_rectification", label: "Rectifications", path: "/admin/stock/rectifications", group: "Stock / Vehicle Management", actions: ["view", "create", "update"] },
@@ -152,6 +153,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "stock_retail", label: "Retail & Invoice", path: "/admin/stock/retail", group: "Stock / Vehicle Management", actions: ["view", "deliver"] },
   { key: "stock_config", label: "Stock Config", path: "/admin/stock/config", group: "Stock / Vehicle Management", actions: ["view", "update"] },
   { key: "stock_vendors", label: "Vendor Master", path: "/admin/stock/vendors", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete"] },
+  { key: "stock_requisition", label: "Stock Requisitions", path: "/admin/stock/requisitions", group: "Stock / Vehicle Management", actions: ["view", "create", "update", "delete", "approve"] },
   { key: "td_config", label: "Slot Config", path: "/admin/td/config", group: "TD Management", actions: ["view", "update"] },
 ];
 
@@ -179,6 +181,9 @@ MODULE_BY_PATH["/admin/stock/pre-stock-pdi"] = "stock_pdi";
 MODULE_BY_PATH["/admin/stock/rectifications"] = "stock_rectification";
 MODULE_BY_PATH["/admin/stock/config"] = "stock_config";
 MODULE_BY_PATH["/admin/stock/vendors"] = "stock_vendors";
+MODULE_BY_PATH["/admin/stock/requisitions"] = "stock_requisition";
+MODULE_BY_PATH["/admin/stock/pipeline/requisitions"] = "stock_requisition";
+MODULE_BY_PATH["/admin/stock/transfer"] = "stock_inventory";
 
 export const MODULE_GROUPS = [
   "Core",

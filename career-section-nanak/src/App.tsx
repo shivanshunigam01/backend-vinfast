@@ -65,6 +65,8 @@ import AdminRectifications from "./pages/admin/AdminRectifications";
 import AdminVehicle360 from "./pages/admin/AdminVehicle360";
 import AdminStockConfig from "./pages/admin/AdminStockConfig";
 import AdminVendorMaster from "./pages/admin/AdminVendorMaster";
+import AdminStockRequisitions from "./pages/admin/AdminStockRequisitions";
+import AdminStockTransfer from "./pages/admin/AdminStockTransfer";
 import AdminStockFinalPdi from "./pages/admin/AdminStockFinalPdi";
 import AdminStockRetail from "./pages/admin/AdminStockRetail";
 import AdminStockDeliveryHandover from "./pages/admin/AdminStockDeliveryHandover";
@@ -211,6 +213,8 @@ const App = () => {
             <Route path="stock/vehicles/:id/360" element={<AdminVehicle360 />} />
             <Route path="stock/config" element={<AdminStockConfig />} />
             <Route path="stock/vendors" element={<AdminVendorMaster />} />
+            <Route path="stock/requisitions" element={<AdminStockRequisitions />} />
+            <Route path="stock/transfer" element={<AdminStockTransfer />} />
             <Route path="stock/orders" element={<AdminVehicleOrders />} />
             <Route path="stock/final-pdi" element={<AdminStockFinalPdi />} />
             <Route path="stock/retail" element={<AdminStockRetail />} />

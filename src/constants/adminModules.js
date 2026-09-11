@@ -53,6 +53,7 @@ const ADMIN_MODULE_KEYS = [
   'stock_retail',
   'stock_reports',
   'stock_config',
+  'stock_requisition',
 ];
 
 /** Actions available on each module. `view` is always first (required to open the module). */
@@ -94,6 +95,7 @@ const ADMIN_MODULE_ACTIONS = {
   stock_reports: ['view', 'export'],
   stock_config: ['view', 'update'],
   stock_vendors: ['view', 'create', 'update', 'delete'],
+  stock_requisition: ['view', 'create', 'update', 'delete', 'approve'],
   td_reports: ['view', 'export'],
   td_config: ['view', 'update'],
   calendar: ['view', 'update'],

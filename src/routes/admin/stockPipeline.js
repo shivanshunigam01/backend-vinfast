@@ -51,11 +51,25 @@ router.delete('/dispatches/:id', mongoIdParam, validate, modDelete('dispatch'), 
 /** Gate Entry */
 router.get('/gate-entries', mod('view'), ctrl.listGateEntries);
 router.post('/gate-entries', requireAnyModuleAction([['stock_gate', 'create'], ['stock_delivery', 'receive']]), uploadStockPhotos, ctrl.createGateEntry);
+router.put(
+  '/gate-entries/:id',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_gate', 'update'], ['stock_delivery', 'update']]),
+  ctrl.updateGateEntry,
+);
 router.delete('/gate-entries/:id', mongoIdParam, validate, modDelete('gate'), ctrl.deleteGateEntry);
 
 /** GRN */
 router.get('/grns', mod('view'), ctrl.listGrns);
 router.post('/grns', requireAnyModuleAction([['stock_grn', 'create'], ['stock_delivery', 'receive']]), uploadStockPhotos, ctrl.createGrn);
+router.put(
+  '/grns/:id',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_grn', 'update'], ['stock_delivery', 'update']]),
+  ctrl.updateGrn,
+);
 router.delete('/grns/:id', mongoIdParam, validate, modDelete('grn'), ctrl.deleteGrn);
 
 /** Receipt */
@@ -76,10 +90,52 @@ router.patch('/rectifications/:id', mongoIdParam, validate, requireAnyModuleActi
 router.delete('/rectifications/:id', mongoIdParam, validate, modDelete('rectification'), ctrl.deleteRectification);
 
 /** Stock ops */
+router.get('/transfers', mod('view'), ctrl.listTransfers);
 router.post('/vehicles/:id/hold', mongoIdParam, validate, requireAnyModuleAction([['stock_inventory', 'update'], ['stock_delivery', 'update']]), ctrl.placeHold);
 router.post('/vehicles/:id/release-hold', mongoIdParam, validate, requireAnyModuleAction([['stock_inventory', 'update'], ['stock_delivery', 'update']]), ctrl.releaseHold);
 router.post('/vehicles/:id/move', mongoIdParam, validate, requireAnyModuleAction([['stock_inventory', 'update'], ['vehicle_stock', 'update']]), ctrl.moveStock);
 router.post('/vehicles/:id/charging', mongoIdParam, validate, requireAnyModuleAction([['stock_inventory', 'update'], ['vehicle_stock', 'update']]), ctrl.logCharging);
 router.get('/vehicles/:id/360', mongoIdParam, validate, mod('view'), ctrl.getVehicle360);
+
+/** Requisition planning */
+const reqCtrl = require('../../controllers/stockRequisitionController');
+router.get(
+  '/requisitions',
+  requireAnyModuleAction([['stock_requisition', 'view'], ['stock_delivery', 'view'], ['vehicle_stock', 'view']]),
+  reqCtrl.listRequisitions,
+);
+router.post(
+  '/requisitions',
+  requireAnyModuleAction([['stock_requisition', 'create'], ['stock_delivery', 'create']]),
+  reqCtrl.createRequisition,
+);
+router.put(
+  '/requisitions/:id',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'update'], ['stock_delivery', 'update']]),
+  reqCtrl.updateRequisition,
+);
+router.post(
+  '/requisitions/:id/submit',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'update'], ['stock_delivery', 'update']]),
+  reqCtrl.submitRequisition,
+);
+router.post(
+  '/requisitions/:id/approve',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'approve'], ['stock_delivery', 'update']]),
+  reqCtrl.approveRequisition,
+);
+router.delete(
+  '/requisitions/:id',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'delete'], ['stock_delivery', 'delete']]),
+  reqCtrl.deleteRequisition,
+);
 
 module.exports = router;

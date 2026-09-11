@@ -20,7 +20,18 @@ function fmtDate(iso?: string | null) {
 }
 
 function downloadCsv(report: DeliveryReport) {
-  const header = ["Lead ID", "Name", "Mobile", "Model", "Source", "Executive", "Delivery Date"];
+  const header = [
+    "Lead ID",
+    "Name",
+    "Mobile",
+    "Model",
+    "Car Model",
+    "Car Variant",
+    "Colour",
+    "Source",
+    "Executive",
+    "Delivery Date",
+  ];
   const lines = [header.join(",")];
   for (const row of report.rows) {
     const cells = [
@@ -28,6 +39,9 @@ function downloadCsv(report: DeliveryReport) {
       row.name,
       row.mobile,
       row.model,
+      row.carModel ?? "",
+      row.carVariant ?? "",
+      row.colour ?? "",
       row.source,
       row.executiveName,
       row.deliveryDate ? row.deliveryDate.slice(0, 10) : "",
@@ -248,7 +262,7 @@ export default function AdminDeliveryReports() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 bg-muted/30">
-                {["Name", "Mobile", "Model", "Source", "Executive", "Delivery date"].map((h) => (
+                {["Name", "Mobile", "Car Model", "Car Variant", "Colour", "Source", "Executive", "Delivery date"].map((h) => (
                   <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
                 ))}
               </tr>
@@ -259,7 +273,9 @@ export default function AdminDeliveryReports() {
                   <tr key={row._id} className="border-b border-border/30 hover:bg-muted/20">
                     <td className="p-3 font-medium">{row.name}</td>
                     <td className="p-3 font-mono">{row.mobile}</td>
-                    <td className="p-3">{row.model}</td>
+                    <td className="p-3">{row.carModel || row.model}</td>
+                    <td className="p-3">{row.carVariant || "—"}</td>
+                    <td className="p-3">{row.colour || "—"}</td>
                     <td className="p-3">{row.source}</td>
                     <td className="p-3">{row.executiveName}</td>
                     <td className="p-3 text-muted-foreground">{fmtDate(row.deliveryDate)}</td>
@@ -267,7 +283,7 @@ export default function AdminDeliveryReports() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
                     No delivered leads in this period
                   </td>
                 </tr>

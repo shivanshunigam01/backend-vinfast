@@ -25,6 +25,8 @@ const vendorSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     email: { type: String, trim: true },
     paymentTermsDefault: { type: String, trim: true },
+    /** Free-text details when vendor relates to another OEM / campaign notes. */
+    otherOemDetails: { type: String, trim: true },
     active: { type: Boolean, default: true, index: true },
     systemProtected: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },

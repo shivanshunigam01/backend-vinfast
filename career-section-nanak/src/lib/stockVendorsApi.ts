@@ -22,6 +22,7 @@ export type Vendor = {
   phone?: string;
   email?: string;
   paymentTermsDefault?: string;
+  otherOemDetails?: string;
   active?: boolean;
   systemProtected?: boolean;
   sortOrder?: number;

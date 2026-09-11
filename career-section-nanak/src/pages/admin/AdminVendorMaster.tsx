@@ -29,6 +29,7 @@ const emptyForm = () => ({
   phone: "",
   email: "",
   paymentTermsDefault: "Advance",
+  otherOemDetails: "",
   active: true,
 });
 
@@ -77,6 +78,7 @@ export default function AdminVendorMaster() {
       phone: row.phone ?? "",
       email: row.email ?? "",
       paymentTermsDefault: row.paymentTermsDefault ?? "Advance",
+      otherOemDetails: row.otherOemDetails ?? "",
       active: row.active !== false,
     });
     setOpen(true);
@@ -184,6 +186,16 @@ export default function AdminVendorMaster() {
                 </SelectContent>
               </Select>
             </div>
+            {form.type === "OTHER" || form.type === "OEM" ? (
+              <div>
+                <Label>Other OEM / details</Label>
+                <Input
+                  value={form.otherOemDetails}
+                  onChange={(e) => setForm({ ...form, otherOemDetails: e.target.value })}
+                  placeholder="e.g. non-VinFast OEM campaign notes"
+                />
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <div><Label>GSTIN</Label><Input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} /></div>
               <div><Label>PAN</Label><Input value={form.pan} onChange={(e) => setForm({ ...form, pan: e.target.value })} /></div>

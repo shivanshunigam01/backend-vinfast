@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,14 @@ import {
   ApiRequestError,
   formatApiErrors,
 } from "@/lib/api";
-import { markAdminSessionStart, setAdminSession, getAdminLoginRedirect, type AdminUser } from "@/lib/adminAuth";
+import {
+  markAdminSessionStart,
+  setAdminSession,
+  getAdminLoginRedirect,
+  getAdminToken,
+  getAdminUser,
+  type AdminUser,
+} from "@/lib/adminAuth";
 
 type LoginStep = "identity" | "password";
 type ForgotStep = "mobile" | "otp" | "newPassword" | "done";
@@ -48,6 +55,14 @@ const StaffLogin = () => {
   const [searchParams] = useSearchParams();
   const sessionExpired = searchParams.get("reason") === "session-expired";
 
+  useEffect(() => {
+    const token = getAdminToken();
+    const user = getAdminUser();
+    if (token && user) {
+      navigate(getAdminLoginRedirect(user), { replace: true });
+    }
+  }, [navigate]);
+
   const continueIdentity = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !email.includes("@")) {
@@ -75,7 +90,7 @@ const StaffLogin = () => {
           userType: "tdstaff",
         };
         setAdminSession(token, user);
-        navigate(getAdminLoginRedirect(user));
+        navigate(getAdminLoginRedirect(user), { replace: true });
       } catch (err) {
         setError(err instanceof ApiRequestError ? formatApiErrors(err) : "Invalid email or password");
       } finally {
@@ -86,7 +101,7 @@ const StaffLogin = () => {
 
     localStorage.setItem("admin_logged_in", "true");
     markAdminSessionStart();
-    navigate("/admin/my-dashboard");
+    navigate("/admin/my-dashboard", { replace: true });
   };
 
   const openForgot = () => {

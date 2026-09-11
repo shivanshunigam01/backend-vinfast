@@ -19,6 +19,7 @@ import {
   fetchPdiQueue,
   fetchPdis,
   submitPreStockPdi,
+  TECHNICAL_HOLD_CATEGORIES,
   type StockPdiRecord,
   type StockUnit,
 } from "@/lib/stockPipelineApi";
@@ -49,6 +50,8 @@ export default function AdminPreStockPdi() {
   const [holdDialog, setHoldDialog] = useState<HoldDialogState | null>(null);
   const [holdFeedback, setHoldFeedback] = useState("");
   const [holdReason, setHoldReason] = useState("TECHNICAL");
+  const [otherOemDetails, setOtherOemDetails] = useState("");
+  const [technicalHoldCategory, setTechnicalHoldCategory] = useState<string>("ELECTRICAL");
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -90,6 +93,8 @@ export default function AdminPreStockPdi() {
   const openHoldDialog = (unit: StockUnit, result: HoldDialogState["result"]) => {
     setHoldDialog({ unit, result });
     setHoldFeedback("");
+    setOtherOemDetails("");
+    setTechnicalHoldCategory("ELECTRICAL");
     setHoldReason(
       result === "OEM_HOLD" ? "OEM_CAMPAIGN" : result === "FAIL" ? "TECHNICAL" : "TECHNICAL",
     );
@@ -114,6 +119,14 @@ export default function AdminPreStockPdi() {
         checklist: [],
         notes: holdFeedback.trim(),
         holdFeedback: holdFeedback.trim(),
+        otherOemDetails:
+          holdReason === "OEM_CAMPAIGN" || holdReason === "OTHER"
+            ? otherOemDetails.trim() || undefined
+            : undefined,
+        technicalHoldCategory:
+          holdDialog.result === "TECHNICAL_HOLD" || holdReason === "TECHNICAL"
+            ? technicalHoldCategory
+            : undefined,
       });
       toast.success(
         `${holdDialog.result.replace(/_/g, " ")} — ${holdDialog.unit.vinNo}. Visible in Vehicle Stock as hold.`,
@@ -271,6 +284,29 @@ export default function AdminPreStockPdi() {
                 </SelectContent>
               </Select>
             </div>
+            {(holdDialog?.result === "TECHNICAL_HOLD" || holdReason === "TECHNICAL") ? (
+              <div className="space-y-1.5">
+                <Label>Technical hold category</Label>
+                <Select value={technicalHoldCategory} onValueChange={setTechnicalHoldCategory}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TECHNICAL_HOLD_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c.replace(/_/g, " ")}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            {holdReason === "OEM_CAMPAIGN" || holdReason === "OTHER" ? (
+              <div className="space-y-1.5">
+                <Label>Other OEM / details</Label>
+                <Input
+                  value={otherOemDetails}
+                  onChange={(e) => setOtherOemDetails(e.target.value)}
+                  placeholder="OEM campaign ID, third-party OEM, or other details"
+                />
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label>Issue feedback *</Label>
               <Textarea

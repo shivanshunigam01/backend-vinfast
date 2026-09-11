@@ -30,16 +30,37 @@ const {
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { getOrCreateConfig } = require('./stockConfigController');
 const { resolveVendorFromBody, ensureDefaultVendors } = require('./vendorController');
+const { TECHNICAL_HOLD_CATEGORIES } = require('../constants/stockPipeline');
 
 function actorId(admin) {
   return admin?._id;
+}
+
+function normalizeTechnicalHoldCategory(raw) {
+  if (raw == null || raw === '') return undefined;
+  const cat = String(raw).trim().toUpperCase();
+  if (!TECHNICAL_HOLD_CATEGORIES.includes(cat)) {
+    throw new ApiError(400, `technicalHoldCategory must be one of ${TECHNICAL_HOLD_CATEGORIES.join(', ')}`);
+  }
+  return cat;
 }
 
 function actorName(admin) {
   return admin?.name || admin?.email || 'System';
 }
 
-async function recordMovement(stock, { fromStatus, toStatus, fromLocation, toLocation, admin, remarks }) {
+async function recordMovement(stock, {
+  fromStatus,
+  toStatus,
+  fromLocation,
+  toLocation,
+  admin,
+  remarks,
+  transferType,
+  toDealerName,
+  fromBranchId,
+  toBranchId,
+}) {
   return StockMovement.create({
     vehicleStockId: stock._id,
     vin: stock.vinNo,
@@ -49,6 +70,10 @@ async function recordMovement(stock, { fromStatus, toStatus, fromLocation, toLoc
     toLocation: toLocation || stock.location,
     fromYard: stock.yardName,
     toYard: stock.yardName,
+    fromBranchId: fromBranchId || undefined,
+    toBranchId: toBranchId || stock.branchId || undefined,
+    transferType: transferType || 'LOCATION',
+    toDealerName: toDealerName || undefined,
     remarks,
     movedBy: actorId(admin),
   });
@@ -548,6 +573,28 @@ exports.createGateEntry = asyncHandler(async (req, res) => {
   return successResponse(res, gate, 'Gate entry recorded', 201);
 });
 
+exports.updateGateEntry = asyncHandler(async (req, res) => {
+  const gate = await GateEntry.findById(req.params.id);
+  if (!gate) throw new ApiError(404, 'Gate entry not found');
+
+  const fields = [
+    'truckNumber',
+    'sealNumber',
+    'sealCondition',
+    'sealRemark',
+    'remarks',
+    'arrivalPhotoUrl',
+  ];
+  for (const f of fields) {
+    if (req.body[f] !== undefined) gate[f] = req.body[f];
+  }
+  if (req.body.arrivalDatetime !== undefined) {
+    gate.arrivalDatetime = req.body.arrivalDatetime ? new Date(req.body.arrivalDatetime) : gate.arrivalDatetime;
+  }
+  await gate.save();
+  return successResponse(res, gate, 'Gate entry updated');
+});
+
 exports.deleteGateEntry = asyncHandler(async (req, res) => {
   const gate = await GateEntry.findById(req.params.id);
   if (!gate) throw new ApiError(404, 'Gate entry not found');
@@ -583,6 +630,32 @@ exports.listGrns = asyncHandler(async (req, res) => {
     .populate('purchaseOrderId', 'poNumber supplier supplierId')
     .lean();
   return successResponse(res, docs);
+});
+
+exports.updateGrn = asyncHandler(async (req, res) => {
+  const grn = await Grn.findById(req.params.id);
+  if (!grn) throw new ApiError(404, 'GRN not found');
+
+  if (req.body.remarks !== undefined) grn.remarks = req.body.remarks;
+  if (req.body.invoiceNumber !== undefined) {
+    const inv = String(req.body.invoiceNumber || '').trim();
+    if (!inv) throw new ApiError(400, 'invoiceNumber cannot be empty');
+    grn.invoiceNumber = inv;
+  }
+  if (req.body.grnDatetime !== undefined && req.body.grnDatetime) {
+    grn.grnDatetime = new Date(req.body.grnDatetime);
+  }
+  if (req.body.status !== undefined) {
+    const next = String(req.body.status).trim().toUpperCase();
+    const allowed = ['RECEIVED', 'EXCEPTION', 'CLOSED'];
+    if (!allowed.includes(next)) {
+      throw new ApiError(400, `status must be one of ${allowed.join(', ')}`);
+    }
+    // Keep edits simple — allow soft status tweaks without cascading stock.
+    grn.status = next;
+  }
+  await grn.save();
+  return successResponse(res, grn, 'GRN updated');
 });
 
 exports.createGrn = asyncHandler(async (req, res) => {
@@ -924,10 +997,21 @@ exports.createPreStockPdi = asyncHandler(async (req, res) => {
     stock.holdFeedback = req.body.notes || req.body.holdFeedback || `Pre-stock PDI: ${result}`;
     stock.holdSource = 'PRE_STOCK_PDI';
     stock.lastPdiResult = result;
+    const otherOemDetails =
+      ['OEM_CAMPAIGN', 'OTHER'].includes(stock.holdReason) && req.body.otherOemDetails
+        ? String(req.body.otherOemDetails).trim()
+        : undefined;
+    if (otherOemDetails) {
+      stock.holdFeedback = [stock.holdFeedback, `OEM details: ${otherOemDetails}`].filter(Boolean).join(' · ');
+    }
+    const technicalHoldCategory =
+      stock.holdReason === 'TECHNICAL' ? normalizeTechnicalHoldCategory(req.body.technicalHoldCategory) : undefined;
     await VehicleHold.create({
       vehicleStockId: stock._id,
       vin: stock.vinNo,
       holdReason: stock.holdReason,
+      technicalHoldCategory: technicalHoldCategory || undefined,
+      otherOemDetails: otherOemDetails || undefined,
       remarks: stock.holdFeedback,
       placedBy: actorId(req.admin),
     });
@@ -936,7 +1020,7 @@ exports.createPreStockPdi = asyncHandler(async (req, res) => {
       vehicleStockId: stock._id,
       vin: stock.vinNo,
       source: 'PDI',
-      issueCategory: 'Electrical',
+      issueCategory: technicalHoldCategory || 'Electrical',
       severity: result === 'FAIL' ? 'MAJOR' : 'CRITICAL',
       issueDescription: req.body.notes || `PDI result: ${result}`,
       status: 'OPEN',
@@ -1034,6 +1118,17 @@ exports.placeHold = asyncHandler(async (req, res) => {
   if (!stock) throw new ApiError(404, 'Vehicle not found');
   stock.holdStatus = true;
   stock.holdReason = req.body.holdReason || 'MANAGEMENT';
+  const otherOemDetails =
+    ['OEM_CAMPAIGN', 'OTHER'].includes(stock.holdReason) && req.body.otherOemDetails
+      ? String(req.body.otherOemDetails).trim()
+      : undefined;
+  const technicalHoldCategory =
+    stock.holdReason === 'TECHNICAL' ? normalizeTechnicalHoldCategory(req.body.technicalHoldCategory) : undefined;
+  if (otherOemDetails) {
+    stock.holdFeedback = [req.body.remarks, `OEM details: ${otherOemDetails}`].filter(Boolean).join(' · ');
+  } else if (req.body.remarks) {
+    stock.holdFeedback = req.body.remarks;
+  }
   const from = stock.vehicleStatus;
   stock.vehicleStatus = 'HOLD';
   stock.status = mapVehicleStatusToLegacy('HOLD');
@@ -1042,6 +1137,8 @@ exports.placeHold = asyncHandler(async (req, res) => {
     vehicleStockId: stock._id,
     vin: stock.vinNo,
     holdReason: stock.holdReason,
+    technicalHoldCategory: technicalHoldCategory || undefined,
+    otherOemDetails: otherOemDetails || undefined,
     remarks: req.body.remarks,
     placedBy: actorId(req.admin),
   });
@@ -1072,19 +1169,57 @@ exports.moveStock = asyncHandler(async (req, res) => {
   const stock = await VehicleStock.findById(req.params.id);
   if (!stock) throw new ApiError(404, 'Vehicle not found');
   const fromLocation = [stock.yardName, stock.zoneName, stock.bayName].filter(Boolean).join(' / ');
+  const fromBranchId = stock.branchId;
   if (req.body.yardName) stock.yardName = req.body.yardName;
   if (req.body.zoneName) stock.zoneName = req.body.zoneName;
   if (req.body.bayName) stock.bayName = req.body.bayName;
-  if (req.body.branchId) stock.branchId = req.body.branchId;
+  if (req.body.fromBranchId !== undefined && req.body.toBranchId == null && !req.body.branchId) {
+    // allow explicit fromBranchId on movement only
+  }
+  if (req.body.branchId || req.body.toBranchId) {
+    stock.branchId = req.body.toBranchId || req.body.branchId;
+  }
   stock.location = [stock.yardName, stock.zoneName, stock.bayName].filter(Boolean).join(' / ') || stock.location;
   await stock.save();
   const toLocation = stock.location;
-  await recordMovement(stock, { fromLocation, toLocation, admin: req.admin, remarks: req.body.remarks });
+  const transferType = String(req.body.transferType || 'LOCATION').toUpperCase();
+  const allowedTransfer = ['LOCATION', 'BRANCH', 'DEALER'];
+  if (!allowedTransfer.includes(transferType)) {
+    throw new ApiError(400, `transferType must be one of ${allowedTransfer.join(', ')}`);
+  }
+  await recordMovement(stock, {
+    fromLocation,
+    toLocation,
+    admin: req.admin,
+    remarks: req.body.remarks,
+    transferType,
+    toDealerName: req.body.toDealerName,
+    fromBranchId: req.body.fromBranchId || fromBranchId,
+    toBranchId: req.body.toBranchId || stock.branchId,
+  });
   await logAudit({
     entityType: 'VehicleStock', entityId: stock._id, action: 'LOCATION_CHANGE',
     oldValue: fromLocation, newValue: toLocation, userId: actorId(req.admin), userName: actorName(req.admin),
   });
   return successResponse(res, stock, 'Stock location updated (AC-08)');
+});
+
+exports.listTransfers = asyncHandler(async (req, res) => {
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const q = {};
+  if (req.query.transferType) q.transferType = String(req.query.transferType).trim().toUpperCase();
+  if (req.query.vin) q.vin = String(req.query.vin).trim().toUpperCase();
+  if (req.query.vehicleStockId) q.vehicleStockId = req.query.vehicleStockId;
+
+  const docs = await StockMovement.find(q)
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate('vehicleStockId', 'stockId vinNo model variant colour vehicleStatus branchId')
+    .populate('fromBranchId', 'name code')
+    .populate('toBranchId', 'name code')
+    .populate('movedBy', 'name email')
+    .lean();
+  return successResponse(res, docs);
 });
 
 exports.logCharging = asyncHandler(async (req, res) => {

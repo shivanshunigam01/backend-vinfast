@@ -42,7 +42,7 @@ async function buildDeliveryReport({ period, from, to, year, source } = {}) {
   const candidates = await Lead.find(leadMatch)
     .populate('assignedTo', 'name email designation')
     .select(
-      'name mobile model source status assignedTo convertedAt creSheet.deliveryDate updatedAt createdAt leadId',
+      'name mobile model source status assignedTo convertedAt creSheet.deliveryDate creSheet.finalModel creSheet.finalVariant creSheet.finalColour updatedAt createdAt leadId',
     )
     .lean();
 
@@ -67,7 +67,8 @@ async function buildDeliveryReport({ period, from, to, year, source } = {}) {
     const execName = lead.assignedTo?.name || 'Unassigned';
     bump(byExecutiveMap, execId);
     if (!executiveMeta[execId]) executiveMeta[execId] = { executiveId: execId === 'unassigned' ? null : execId, name: execName };
-    bump(byModelMap, lead.model || 'Unknown');
+    const carModel = lead.creSheet?.finalModel || lead.model || 'Unknown';
+    bump(byModelMap, carModel);
     bump(bySourceMap, lead.source || 'Unknown');
     bump(byPeriodMap, periodBucketKey(deliveryDate, range.period));
   }
@@ -86,6 +87,9 @@ async function buildDeliveryReport({ period, from, to, year, source } = {}) {
       name: lead.name,
       mobile: lead.mobile,
       model: lead.model || '—',
+      carModel: lead.creSheet?.finalModel || lead.model || '—',
+      carVariant: lead.creSheet?.finalVariant || '',
+      colour: lead.creSheet?.finalColour || '',
       source: lead.source || '—',
       executiveName: lead.assignedTo?.name || 'Unassigned',
       executiveId: lead.assignedTo?._id ? String(lead.assignedTo._id) : null,

@@ -3,8 +3,13 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
+const { applyExecutiveFeedbackScope } = require('../utils/feedbackScope');
 
 const MSG_FEEDBACK_OK = 'Thank you! Your feedback has been submitted to Patliputra VinFast.';
+
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 exports.createPostDeliveryFeedback = asyncHandler(async (req, res) => {
   const body = req.body || {};
@@ -38,17 +43,21 @@ exports.listPostDeliveryFeedback = asyncHandler(async (req, res) => {
   const query = {};
   const search = String(req.query.search || '').trim();
   if (search) {
-    const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const rx = new RegExp(escapeRegex(search), 'i');
     query.$or = [{ name: rx }, { mobile: rx }, { reference: rx }, { model: rx }];
   }
   if (req.query.model && req.query.model !== 'all') {
     query.model = String(req.query.model).trim();
   }
 
+  // Post-delivery forms have no salesConsultant — scope by assigned-lead mobiles only.
+  await applyExecutiveFeedbackScope(req.admin, query, { matchConsultant: false });
+
   const [docs, total, stats] = await Promise.all([
     PostDeliveryFeedback.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     PostDeliveryFeedback.countDocuments(query),
     PostDeliveryFeedback.aggregate([
+      { $match: query },
       {
         $group: {
           _id: null,

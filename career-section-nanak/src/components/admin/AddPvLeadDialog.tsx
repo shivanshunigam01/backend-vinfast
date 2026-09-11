@@ -11,7 +11,7 @@ import { BiharDistrictField } from "@/components/BiharDistrictField";
 import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { BIHAR_DEFAULT_DISTRICT } from "@/data/biharDistricts";
 import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
-import { formatApiErrors } from "@/lib/api";
+import { formatApiErrors, ApiRequestError } from "@/lib/api";
 import { DEFAULT_LEAD_SOURCE } from "@/data/leadSources";
 import {
   createPvCrmLead,
@@ -23,6 +23,7 @@ import {
 import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = {
   open: boolean;
@@ -68,6 +69,7 @@ export function AddPvLeadDialog({
   // Returning-customer popup: full history shown when a known mobile is entered.
   const [existingHistory, setExistingHistory] = useState<CustomerHistory | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [forceNewOpportunity, setForceNewOpportunity] = useState(false);
   const lookedUpMobileRef = useRef("");
 
   useEffect(() => {
@@ -78,6 +80,7 @@ export function AddPvLeadDialog({
     });
     setExistingHistory(null);
     setShowHistory(false);
+    setForceNewOpportunity(false);
     lookedUpMobileRef.current = "";
     void fetchBuyerTypes().then(setBuyerTypes).catch(() => setBuyerTypes([]));
   }, [open, isExecutive]);
@@ -137,6 +140,9 @@ export function AddPvLeadDialog({
     if (canAssignToExecutive && form.executiveId) {
       payload.executiveId = form.executiveId;
     }
+    if (forceNewOpportunity) {
+      payload.forceNewOpportunity = true;
+    }
 
     setSaving(true);
     try {
@@ -145,7 +151,13 @@ export function AddPvLeadDialog({
       onCreated?.(lead);
       onOpenChange(false);
     } catch (e) {
-      toast.error(formatApiErrors(e));
+      if (e instanceof ApiRequestError && e.status === 409) {
+        toast.error(
+          `${formatApiErrors(e)} Enable “Create as new opportunity” to open a different vehicle / test drive.`,
+        );
+      } else {
+        toast.error(formatApiErrors(e));
+      }
     } finally {
       setSaving(false);
     }
@@ -184,6 +196,26 @@ export function AddPvLeadDialog({
                 </button>
               ) : null}
             </div>
+            {existingHistory ? (
+              <div className="sm:col-span-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                <Checkbox
+                  id="force-new-opp"
+                  checked={forceNewOpportunity}
+                  onCheckedChange={(v) => setForceNewOpportunity(v === true)}
+                  className="mt-0.5"
+                />
+                <label htmlFor="force-new-opp" className="text-xs leading-snug cursor-pointer">
+                  <span className="font-medium text-foreground">Create as new opportunity</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    (different vehicle / test drive)
+                    {existingHistory.summary.openLeads > 0
+                      ? ` — ${existingHistory.summary.openLeads} open opportunity(ies) already`
+                      : ""}
+                  </span>
+                </label>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label className="text-xs">Email (optional)</Label>
               <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="bg-secondary/50" />

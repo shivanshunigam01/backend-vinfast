@@ -188,6 +188,10 @@ export async function fetchGateEntries(limit = 50) {
   return data ?? [];
 }
 
+export async function updateGateEntry(id: string, body: Record<string, unknown>) {
+  return adminPutJson(`${BASE}/gate-entries/${id}`, body);
+}
+
 export async function deleteGateEntry(id: string) {
   return adminDeleteJson(`${BASE}/gate-entries/${id}`);
 }
@@ -197,8 +201,79 @@ export async function fetchGrns(limit = 50) {
   return data ?? [];
 }
 
+export async function updateGrn(id: string, body: Record<string, unknown>) {
+  return adminPutJson(`${BASE}/grns/${id}`, body);
+}
+
 export async function deleteGrn(id: string) {
   return adminDeleteJson(`${BASE}/grns/${id}`);
+}
+
+export type StockRequisition = {
+  _id: string;
+  requisitionNo: string;
+  model: string;
+  variant?: string;
+  colour?: string;
+  qty: number;
+  priority: string;
+  neededBy?: string;
+  status: string;
+  remarks?: string;
+  requestedBy?: { _id?: string; name?: string; email?: string } | string;
+  approvedBy?: { _id?: string; name?: string; email?: string } | string;
+  linkedPoId?: { _id?: string; poNumber?: string; status?: string } | string;
+  submittedAt?: string;
+  approvedAt?: string;
+  createdAt?: string;
+};
+
+export async function fetchRequisitions(params?: { status?: string; limit?: number; search?: string }) {
+  const q = new URLSearchParams({ limit: String(params?.limit ?? 50) });
+  if (params?.status && params.status !== "all") q.set("status", params.status);
+  if (params?.search) q.set("search", params.search);
+  const { data } = await adminGet<StockRequisition[]>(`${BASE}/requisitions?${q}`);
+  return data ?? [];
+}
+
+export async function createRequisition(body: Record<string, unknown>) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions`, body);
+}
+
+export async function updateRequisition(id: string, body: Record<string, unknown>) {
+  return adminPutJson<StockRequisition>(`${BASE}/requisitions/${id}`, body);
+}
+
+export async function submitRequisition(id: string) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/submit`, {});
+}
+
+export async function approveRequisition(id: string, body?: { remarks?: string; linkedPoId?: string }) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/approve`, body ?? {});
+}
+
+export async function deleteRequisition(id: string) {
+  return adminDeleteJson(`${BASE}/requisitions/${id}`);
+}
+
+export type StockTransfer = {
+  _id: string;
+  vin?: string;
+  transferType?: string;
+  fromLocation?: string;
+  toLocation?: string;
+  toDealerName?: string;
+  remarks?: string;
+  createdAt?: string;
+  vehicleStockId?: StockUnit | string;
+  movedBy?: { name?: string; email?: string } | string;
+  fromBranchId?: { name?: string; code?: string } | string;
+  toBranchId?: { name?: string; code?: string } | string;
+};
+
+export async function fetchTransfers(limit = 50) {
+  const { data } = await adminGet<StockTransfer[]>(`${BASE}/transfers?limit=${limit}`);
+  return data ?? [];
 }
 
 export async function fetchReceiptQueue() {
@@ -285,7 +360,25 @@ export async function updateStockConfig(body: Record<string, unknown>) {
   return adminPutJson(`${BASE}/config`, body);
 }
 
-export async function placeHold(stockId: string, body: { holdReason: string; remarks?: string }) {
+export const TECHNICAL_HOLD_CATEGORIES = [
+  "ELECTRICAL",
+  "MECHANICAL",
+  "SOFTWARE",
+  "BATTERY_HV",
+  "BODY",
+  "DIAGNOSTIC",
+  "OTHER",
+] as const;
+
+export async function placeHold(
+  stockId: string,
+  body: {
+    holdReason: string;
+    remarks?: string;
+    otherOemDetails?: string;
+    technicalHoldCategory?: string;
+  },
+) {
   return adminPostJson(`${BASE}/vehicles/${stockId}/hold`, body);
 }
 

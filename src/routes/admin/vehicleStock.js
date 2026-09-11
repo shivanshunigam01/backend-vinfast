@@ -35,6 +35,13 @@ router.patch(
   requireModuleActionOrRoles('vehicle_stock', 'tag_demo', 'superadmin', 'manager'),
   ctrl.tagDemo,
 );
+router.post(
+  '/:id/tag-loaner',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('vehicle_stock', 'update', 'superadmin', 'manager'),
+  ctrl.tagLoaner,
+);
 router.delete(
   '/:id',
   mongoIdParam,

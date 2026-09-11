@@ -93,6 +93,7 @@ exports.createVendor = asyncHandler(async (req, res) => {
     phone: req.body.phone,
     email: req.body.email,
     paymentTermsDefault: req.body.paymentTermsDefault,
+    otherOemDetails: req.body.otherOemDetails,
     active: req.body.active !== false,
     sortOrder: Number.isFinite(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : (maxOrder?.sortOrder ?? 0) + 1,
     logoUrl: req.body.logoUrl,
@@ -105,7 +106,7 @@ exports.updateVendor = asyncHandler(async (req, res) => {
   if (!doc) throw new ApiError(404, 'Vendor not found');
   const fields = [
     'name', 'legalName', 'type', 'gstin', 'pan', 'address', 'contactPerson',
-    'phone', 'email', 'paymentTermsDefault', 'active', 'sortOrder', 'logoUrl',
+    'phone', 'email', 'paymentTermsDefault', 'otherOemDetails', 'active', 'sortOrder', 'logoUrl',
   ];
   for (const f of fields) {
     if (req.body[f] !== undefined) doc[f] = req.body[f];

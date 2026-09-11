@@ -24,6 +24,9 @@ export type DeliveryReportLeadRow = {
   name: string;
   mobile: string;
   model: string;
+  carModel?: string;
+  carVariant?: string;
+  colour?: string;
   source: string;
   executiveName: string;
   executiveId: string | null;

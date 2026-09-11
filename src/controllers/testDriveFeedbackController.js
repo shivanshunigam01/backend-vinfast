@@ -3,8 +3,13 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
+const { applyExecutiveFeedbackScope } = require('../utils/feedbackScope');
 
 const MSG_FEEDBACK_OK = 'Thank you! Your test-drive feedback has been submitted to Patliputra VinFast.';
+
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 exports.createTestDriveFeedback = asyncHandler(async (req, res) => {
   const body = req.body || {};
@@ -46,7 +51,7 @@ exports.listTestDriveFeedback = asyncHandler(async (req, res) => {
   const query = {};
   const search = String(req.query.search || '').trim();
   if (search) {
-    const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const rx = new RegExp(escapeRegex(search), 'i');
     query.$or = [{ name: rx }, { mobile: rx }, { reference: rx }, { model: rx }, { salesConsultant: rx }];
   }
   if (req.query.model && req.query.model !== 'all') {
@@ -56,10 +61,13 @@ exports.listTestDriveFeedback = asyncHandler(async (req, res) => {
     query.purchaseIntent = String(req.query.purchaseIntent).trim();
   }
 
+  await applyExecutiveFeedbackScope(req.admin, query, { matchConsultant: true });
+
   const [docs, total, stats] = await Promise.all([
     TestDriveFeedback.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     TestDriveFeedback.countDocuments(query),
     TestDriveFeedback.aggregate([
+      { $match: query },
       {
         $group: {
           _id: null,

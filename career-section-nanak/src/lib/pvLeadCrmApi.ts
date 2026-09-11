@@ -116,6 +116,9 @@ export type CreatePvCrmLeadPayload = {
   subCustomerMobile?: string;
   vehicleRegistration?: string;
   buyerType?: string;
+  /** Create a separate opportunity when customer already has an open lead. */
+  forceNewOpportunity?: boolean;
+  allowMultiOpportunity?: boolean;
 };
 
 export async function createPvCrmLead(payload: CreatePvCrmLeadPayload): Promise<PvCrmLead> {
@@ -146,6 +149,9 @@ export async function fetchPvCrmLeads(params?: {
   to?: string;
   dateField?: PvCrmLeadDateField;
   buyerType?: string;
+  customerId?: string;
+  customerFollowUps?: boolean;
+  pvCustomerId?: string;
   page?: number;
   limit?: number;
 }): Promise<{ leads: PvCrmLead[]; total: number; page: number; limit: number; stages: CrmLeadStage[] }> {
@@ -165,6 +171,9 @@ export async function fetchPvCrmLeads(params?: {
   if (params?.to) q.set("to", params.to);
   if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
   if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
+  if (params?.customerId) q.set("customerId", params.customerId);
+  if (params?.customerFollowUps) q.set("customerFollowUps", "true");
+  if (params?.pvCustomerId) q.set("pvCustomerId", params.pvCustomerId);
 
   const res = await adminGet<PvCrmLead[]>(`${CRM_BASE}?${q}`);
   const list = asArray<PvCrmLead>(res.data);
@@ -177,6 +186,38 @@ export async function fetchPvCrmLeads(params?: {
       ? asArray<CrmLeadStage>((res.meta as { stages?: CrmLeadStage[] } | undefined)?.stages)
       : [...CRM_LEAD_STAGES],
   };
+}
+
+export type ReopenPvCrmLeadPayload = {
+  mode: "same" | "new";
+  executiveId?: string;
+  status?: string;
+};
+
+export async function reopenPvCrmLead(id: string, payload: ReopenPvCrmLeadPayload): Promise<PvCrmLead> {
+  const data = await adminPostJson<{ lead?: PvCrmLead } & PvCrmLead>(`${CRM_BASE}/${id}/reopen`, payload);
+  if (data && typeof data === "object" && "lead" in data && data.lead?._id) {
+    return data.lead;
+  }
+  return data as PvCrmLead;
+}
+
+export type CustomerFollowUpRow = LeadFollowUpItem & {
+  lead?: {
+    _id?: string;
+    leadId?: string;
+    opportunityId?: string;
+    name?: string;
+    mobile?: string;
+    status?: string;
+    model?: string;
+  };
+};
+
+export async function fetchCustomerFollowUps(customerId: string): Promise<CustomerFollowUpRow[]> {
+  const q = new URLSearchParams({ customerId });
+  const { data } = await adminGet<CustomerFollowUpRow[]>(`${CRM_BASE}/follow-ups/by-customer?${q}`);
+  return asArray<CustomerFollowUpRow>(data);
 }
 
 export async function fetchPvCrmLeadDetail(id: string): Promise<PvCrmLeadDetail> {

@@ -206,6 +206,8 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     referredByMobile,
     followUps,
     buyerType,
+    forceNewOpportunity,
+    allowMultiOpportunity,
   } = body;
 
   if (!name || String(name).trim().length < 2) {
@@ -246,8 +248,16 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
   }
 
   const existingCustomer = await findCustomerByMobile(mobileNorm);
+  const modelNorm = normalizeImportModel(model);
+  const forceNew = Boolean(forceNewOpportunity);
+  const allowMulti = Boolean(allowMultiOpportunity) || forceNew;
   const duplicateLead = await findOpenLeadForCustomer({ mobile: mobileNorm });
-  if (duplicateLead) {
+  const differentModel =
+    Boolean(duplicateLead) &&
+    normalizeLeadModelForStorage(duplicateLead.model || '') !== modelNorm;
+  const shouldForceNewOpp = forceNew || (allowMulti && differentModel);
+
+  if (duplicateLead && !shouldForceNewOpp) {
     const ref = duplicateLead.leadId || duplicateLead.opportunityId || duplicateLead._id;
     throw new ApiError(
       409,
@@ -257,7 +267,6 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     );
   }
 
-  const modelNorm = normalizeImportModel(model);
   const stage = mapLeadTypeToStatus(leadType, status);
   const leadTypeValue = leadType ? String(leadType).trim() : undefined;
   const areaValue = String(area || city || '').trim() || undefined;
@@ -307,7 +316,8 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     changedBy: admin._id,
     historyReason: `Lead created by ${admin.name}${assignedTo ? ` and assigned to ${assignLabel}` : ''}${
       referrer ? ` · referred by ${referrer.name} (${referrer.customerId})` : ''
-    }`,
+    }${shouldForceNewOpp ? ' · new opportunity under same customer' : ''}`,
+    forceNew: shouldForceNewOpp,
   });
 
   if (Array.isArray(followUps) && followUps.length) {
@@ -488,6 +498,28 @@ async function buildLeadQuery(admin, queryParams = {}) {
     end.setHours(23, 59, 59, 999);
     query.nextFollowUp = { $gte: start, $lte: end };
     query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
+  }
+  // Customer-wise follow-ups: any lead with a scheduled nextFollowUp (not only overdue).
+  if (queryParams.customerFollowUps === 'true') {
+    query.nextFollowUp = { $exists: true, $ne: null };
+    query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
+  }
+  // Filter leads for a parent PV customer (CUS… code or ObjectId).
+  if (queryParams.customerId) {
+    const customerCode = String(queryParams.customerId).trim();
+    const customer = await PVCustomer.findOne({ customerId: customerCode }).select('_id').lean();
+    if (!customer) {
+      query._id = null;
+    } else {
+      query.pvCustomerId = customer._id;
+    }
+  } else if (queryParams.pvCustomerId) {
+    const oid = toObjectId(queryParams.pvCustomerId);
+    if (!oid) {
+      query._id = null;
+    } else {
+      query.pvCustomerId = oid;
+    }
   }
   if (queryParams.favourite === 'true' || queryParams.hot === 'true') {
     const favIds = await favouriteLeadIdsForUser(admin);
@@ -1494,6 +1526,198 @@ exports.checkOpportunityDuplicates = asyncHandler(async (req, res) => {
     })),
     leadsMissingOpportunityId: missingOpportunityIds,
     healthy: duplicateOpportunityIds.length === 0 && missingOpportunityIds === 0,
+  });
+});
+
+const REOPENABLE_STATUSES = ['Lost', 'Not Interested'];
+
+/**
+ * Reopen a Lost / Not Interested lead.
+ * mode=same — revive the existing opportunity; mode=new — open a fresh lead+opp
+ * and leave the old one Lost.
+ */
+exports.reopenLostLead = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const mode = String(req.body?.mode || '').trim().toLowerCase();
+  if (!['same', 'new'].includes(mode)) {
+    throw new ApiError(400, "mode must be 'same' or 'new'");
+  }
+
+  const lead = await Lead.findById(req.params.id);
+  await assertLeadReadable(lead, req.admin);
+
+  const normalizedStatus = normalizeStageLabel(lead.status);
+  if (!REOPENABLE_STATUSES.includes(normalizedStatus) && !REOPENABLE_STATUSES.includes(lead.status)) {
+    throw new ApiError(400, 'Only Lost or Not Interested leads can be reopened');
+  }
+
+  let reopenStatus = 'Enquiry';
+  if (req.body?.status) {
+    try {
+      reopenStatus = await assertValidCrmStage(req.body.status);
+    } catch (e) {
+      throw new ApiError(e.statusCode || 400, e.message);
+    }
+  }
+
+  if (mode === 'same') {
+    const prevStage = lead.status;
+    lead.status = reopenStatus;
+    // Clear lost-style CRE markers so the lead re-enters the calling queue cleanly.
+    if (lead.leadType && /lost|not interest/i.test(String(lead.leadType))) {
+      lead.leadType = undefined;
+    }
+    const sameDse =
+      lead.assignedTo &&
+      String(lead.assignedTo) === String(req.admin._id);
+    if (req.body?.executiveId) {
+      const assignee = await resolveSalesConsultant(req.body.executiveId, null, req.admin);
+      if (assignee) applyLeadAssignment(lead, assignee);
+    } else if (sameDse || !lead.assignedTo) {
+      // Keep current assignee when the requesting DSE already owns it, or leave unassigned.
+    }
+    touchLeadActivity(lead);
+    await lead.save();
+    await LeadStageHistory.create({
+      leadId: lead._id,
+      fromStage: prevStage,
+      toStage: reopenStatus,
+      changedBy: req.admin._id,
+      reason: 'Reopened lost lead',
+    });
+    await lead.populate(LEAD_POPULATE);
+    return successResponse(res, { lead: formatCrmLead(lead), mode: 'same' }, 'Lead reopened');
+  }
+
+  // mode === 'new'
+  let assignedTo;
+  let assignedToEmail;
+  let assignLabel = '';
+  if (req.body?.executiveId) {
+    const assignee = await resolveSalesConsultant(req.body.executiveId, null, req.admin);
+    if (assignee) {
+      assignedTo = assignee._id;
+      assignedToEmail = assignee.email;
+      assignLabel = assignee.name;
+    }
+  } else if (req.admin.role === 'executive' && !isCreUser(req.admin)) {
+    assignedTo = toObjectId(req.admin._id) || req.admin._id;
+    assignedToEmail = req.admin.email;
+    assignLabel = req.admin.name;
+  } else if (lead.assignedTo) {
+    assignedTo = lead.assignedTo;
+    assignedToEmail = lead.assignedToEmail;
+  }
+
+  const { lead: newLead } = await intakePvLead({
+    name: lead.name,
+    mobile: lead.mobile,
+    email: lead.email,
+    city: lead.city,
+    otherCity: lead.otherCity,
+    model: lead.model,
+    interest: lead.interest,
+    source: lead.source,
+    status: reopenStatus,
+    remarks: lead.remarks,
+    financeNeeded: lead.financeNeeded,
+    exchangeNeeded: lead.exchangeNeeded,
+    assignedTo: assignedTo || undefined,
+    assignedToEmail: assignedToEmail || undefined,
+    createdBy: req.admin._id,
+    leadType: lead.leadType && !/lost|not interest/i.test(String(lead.leadType)) ? lead.leadType : undefined,
+    buyerType: lead.buyerType,
+    area: lead.area,
+    address: lead.address,
+    vehicleRegistration: lead.vehicleRegistration,
+    referredByCustomerId: lead.referredByCustomerId,
+    referredByMobile: lead.referredByMobile,
+    changedBy: req.admin._id,
+    historyReason: `Reopened as new opportunity from lost lead ${lead.leadId || lead._id}${
+      assignLabel ? ` · assigned to ${assignLabel}` : ''
+    }`,
+    forceNew: true,
+  });
+
+  await lead.populate(LEAD_POPULATE);
+  await newLead.populate(LEAD_POPULATE);
+  return successResponse(
+    res,
+    {
+      mode: 'new',
+      oldLead: formatCrmLead(lead),
+      lead: formatCrmLead(newLead),
+    },
+    'New opportunity created from lost lead',
+    201,
+  );
+});
+
+/**
+ * All follow-ups across every lead for a customer (by CUS… code or pvCustomerId).
+ */
+exports.getCustomerFollowUps = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const customerCode = String(req.query.customerId || '').trim();
+  const pvIdRaw = String(req.query.pvCustomerId || '').trim();
+  if (!customerCode && !pvIdRaw) {
+    throw new ApiError(400, 'customerId or pvCustomerId is required');
+  }
+
+  let customer = null;
+  if (customerCode) {
+    customer = await PVCustomer.findOne({ customerId: customerCode }).lean();
+  } else {
+    const oid = toObjectId(pvIdRaw);
+    if (!oid) throw new ApiError(400, 'Invalid pvCustomerId');
+    customer = await PVCustomer.findById(oid).lean();
+  }
+  if (!customer) throw new ApiError(404, 'Customer not found');
+
+  const leadFilter = {
+    $or: [{ pvCustomerId: customer._id }, { mobile: customer.mobile }],
+  };
+  // Respect team/executive scoping on the underlying leads.
+  const scoped = await buildLeadQuery(req.admin, {});
+  const leads = await Lead.find({ $and: [leadFilter, scoped] })
+    .select('_id leadId opportunityId name mobile status model nextFollowUp pvCustomerId assignedTo')
+    .lean();
+  const leadIds = leads.map((l) => l._id);
+  const leadById = new Map(leads.map((l) => [String(l._id), l]));
+
+  const followUps = leadIds.length
+    ? await LeadFollowUp.find({ leadId: { $in: leadIds } })
+        .populate('createdBy', 'name email role designation')
+        .sort({ scheduledAt: 1, createdAt: -1 })
+        .lean()
+    : [];
+
+  const rows = followUps.map((fu) => {
+    const lead = leadById.get(String(fu.leadId)) || {};
+    return {
+      ...fu,
+      lead: {
+        _id: lead._id,
+        leadId: lead.leadId,
+        opportunityId: lead.opportunityId,
+        name: lead.name,
+        mobile: lead.mobile,
+        status: lead.status,
+        model: lead.model,
+        nextFollowUp: lead.nextFollowUp,
+      },
+    };
+  });
+
+  return successResponse(res, rows, undefined, 200, {
+    customer: {
+      _id: customer._id,
+      customerId: customer.customerId,
+      name: customer.name,
+      mobile: customer.mobile,
+    },
+    leadCount: leads.length,
+    followUpCount: rows.length,
   });
 });
 
