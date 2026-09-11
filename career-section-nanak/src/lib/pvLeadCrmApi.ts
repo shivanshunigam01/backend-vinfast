@@ -29,6 +29,8 @@ export type PvCrmLead = {
   buyerType?: string;
   interestLevel?: string;
   model: string;
+  /** Public multi-interest product list (VF 6, VF 7, …). */
+  interestedModels?: string[];
   source?: string;
   status: string;
   remarks?: string;

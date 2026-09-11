@@ -7,8 +7,9 @@ import type { Lead } from "@/data/mockData";
 import { hasApi, isPublicFormPostDisabled, PUBLIC_FORM_POST_DISABLED_MESSAGE } from "@/lib/apiConfig";
 import { formatApiErrors } from "@/lib/api";
 import { submitPublicLead } from "@/lib/publicFormsApi";
-import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
-import { ModelTrimSelect } from "@/components/ModelTrimSelect";
+import { leadModelLabel } from "@/data/vinfastModels";
+import { ModelMultiSelect, primaryModelFromSelection } from "@/components/ModelMultiSelect";
+import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
 import { FormCaptcha } from "@/components/FormCaptcha";
 import { BIHAR_DEFAULT_DISTRICT, DISTRICT_OTHER } from "@/data/biharDistricts";
@@ -34,13 +35,13 @@ type LeadCaptureStripProps = {
 const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripProps) => {
   const { siteConfig } = usePublicSite();
   const { getToken } = usePublicFormRecaptcha();
+  const vehicleCatalog = useVehicleCatalog();
   const [formData, setFormData] = useState({
     name: "",
     mobile: "",
     city: BIHAR_DEFAULT_DISTRICT,
     otherCity: "",
-    model: "VF 7",
-    variant: DEFAULT_VF7_TRIM,
+    models: ["VF 7"] as string[],
     interest: "Test Drive",
   });
   const [mobileError, setMobileError] = useState("");
@@ -83,6 +84,10 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
       toast.error("Please enter your city or district (outside Bihar).");
       return;
     }
+    if (!formData.models.length) {
+      toast.error("Please select at least one vehicle model.");
+      return;
+    }
     if (!captchaVerified) {
       toast.error("Please complete captcha verification.");
       return;
@@ -99,8 +104,7 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
           mobile: "",
           city: BIHAR_DEFAULT_DISTRICT,
           otherCity: "",
-          model: "VF 7",
-          variant: DEFAULT_VF7_TRIM,
+          models: ["VF 7"],
           interest: "Test Drive",
         });
         setMobileError("");
@@ -108,6 +112,8 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
         return;
       }
       const cityVal = formData.city === DISTRICT_OTHER ? DISTRICT_OTHER : formData.city;
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       let recaptchaToken: string | undefined;
       try {
         recaptchaToken = await getToken("homepage_lead_strip");
@@ -121,7 +127,8 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
           mobile: formData.mobile,
           city: cityVal,
           otherCity: formData.city === DISTRICT_OTHER ? formData.otherCity : "",
-          modelDisplay: leadModelLabel(formData.model, formData.variant),
+          modelDisplay: leadModelLabel(primary, primaryVariant),
+          interestedModels: formData.models,
           source: "Website",
           interest: formData.interest,
           remarks: `Interest: ${formData.interest}`,
@@ -134,7 +141,7 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
         toast.error(formatApiErrors(err));
         return;
       }
-      setFormData({ name: "", mobile: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "", model: "VF 7", variant: DEFAULT_VF7_TRIM, interest: "Test Drive" });
+      setFormData({ name: "", mobile: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "", models: ["VF 7"], interest: "Test Drive" });
       setMobileError("");
       setCaptchaResetSignal((n) => n + 1);
       return;
@@ -143,19 +150,26 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
     try {
       const todayStr = getLocalISODate();
       const city = formData.city === DISTRICT_OTHER ? (formData.otherCity || DISTRICT_OTHER) : formData.city;
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       const lead: Lead = {
         id: `WL_${Date.now()}`,
         name: formData.name.trim(),
         mobile: formData.mobile,
         email: "",
         city,
-        model: leadModelLabel(formData.model, formData.variant),
+        model: leadModelLabel(primary, primaryVariant),
         source: "Website",
         status: "New Lead",
         assignedTo: "",
         createdAt: todayStr,
         nextFollowUp: "",
-        remarks: `Interest: ${formData.interest}`,
+        remarks: [
+          `Interest: ${formData.interest}`,
+          formData.models.length > 1 ? `Interested models: ${formData.models.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
         financeNeeded: false,
         exchangeNeeded: false,
       };
@@ -166,7 +180,7 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
     }
 
     toast.success("Our EV advisor will get in touch with you shortly.");
-    setFormData({ name: "", mobile: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "", model: "VF 7", variant: DEFAULT_VF7_TRIM, interest: "Test Drive" });
+    setFormData({ name: "", mobile: "", city: BIHAR_DEFAULT_DISTRICT, otherCity: "", models: ["VF 7"], interest: "Test Drive" });
     setMobileError("");
     setCaptchaResetSignal((n) => n + 1);
   };
@@ -228,12 +242,13 @@ const LeadCaptureStrip = ({ includeMpv7InModelSelect = true }: LeadCaptureStripP
               onDistrictChange={(city) => setFormData({ ...formData, city, otherCity: "" })}
               onOtherChange={(otherCity) => setFormData({ ...formData, otherCity })}
             />
-            <ModelTrimSelect
-              model={formData.model}
-              variant={formData.variant}
-              onChange={(m, v) => setFormData({ ...formData, model: m, variant: v })}
-              className="h-12 min-w-0 w-full px-4 rounded-xl bg-background/50 border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            <ModelMultiSelect
+              value={formData.models}
+              onChange={(models) => setFormData({ ...formData, models })}
               includeMpv7={includeMpv7InModelSelect}
+              className="min-w-0 w-full"
+              label="Interested models *"
+              hint="Select one or more"
             />
           </div>
           <div className="mt-4">

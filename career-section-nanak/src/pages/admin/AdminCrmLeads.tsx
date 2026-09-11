@@ -1373,6 +1373,11 @@ export default function AdminCrmLeads() {
                   {normalizeCrmStage(detail.lead.status)}
                 </Badge>
                 <span className="text-xs text-muted-foreground">{detail.lead.model}</span>
+                {detail.lead.interestedModels && detail.lead.interestedModels.length > 1 ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Also interested: {detail.lead.interestedModels.filter((m) => m !== detail.lead.model).join(", ")}
+                  </span>
+                ) : null}
                 {detail.lead.convertedAt ? (
                   <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px]">
                     <Trophy className="w-3 h-3 mr-1" /> Converted to sale

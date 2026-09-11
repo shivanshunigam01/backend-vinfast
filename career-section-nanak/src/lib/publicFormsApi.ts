@@ -13,6 +13,8 @@ export async function submitPublicLead(payload: {
   city: string;
   otherCity?: string;
   modelDisplay: string;
+  /** All selected products (catalog base names). Primary remains `modelDisplay`. */
+  interestedModels?: string[];
   source: string;
   remarks?: string;
   interest?: string;
@@ -29,8 +31,24 @@ export async function submitPublicLead(payload: {
   const city = payload.city === "Other" ? "Other" : payload.city.trim();
   const otherCity = payload.city === "Other" ? (payload.otherCity || "").trim() : "";
   const model = normalizeLeadModel(payload.modelDisplay);
+  const interestedModels = Array.from(
+    new Set(
+      (payload.interestedModels || [])
+        .map((m) => normalizeLeadModel(String(m)))
+        .filter((m) => m && m !== "Both"),
+    ),
+  );
+  if (model && model !== "Both" && !interestedModels.includes(model)) {
+    interestedModels.unshift(model);
+  }
   const trimNote = payload.modelDisplay.trim();
-  const remarks = [payload.remarks, trimNote && model !== trimNote ? `Trim: ${trimNote}` : ""]
+  const multiNote =
+    interestedModels.length > 1 ? `Interested models: ${interestedModels.join(", ")}` : "";
+  const remarks = [
+    payload.remarks,
+    trimNote && model !== trimNote ? `Trim: ${trimNote}` : "",
+    multiNote,
+  ]
     .filter(Boolean)
     .join(" | ");
 
@@ -42,6 +60,7 @@ export async function submitPublicLead(payload: {
     city,
     otherCity,
     model,
+    interestedModels: interestedModels.length ? interestedModels : undefined,
     interest: payload.interest?.trim() || undefined,
     source: payload.source?.trim() || "Website",
     remarks: remarks || undefined,
@@ -62,6 +81,8 @@ export async function submitPublicTestDrive(payload: {
   city?: string;
   model: string;
   variant: string;
+  /** All models the customer wants to experience (one TD booking is created per model by the caller). */
+  interestedModels?: string[];
   preferredDate: string;
   preferredTime?: string;
   branch?: string;
@@ -76,12 +97,25 @@ export async function submitPublicTestDrive(payload: {
 }): Promise<PublicPostResult> {
   if (isPublicFormPostDisabled()) return skipWhenPublicFormPostDisabled();
   const display = leadModelLabel(payload.model, payload.variant);
+  const model = normalizeTestDriveModel(display);
+  const interestedModels = Array.from(
+    new Set(
+      (payload.interestedModels || [])
+        .map((m) => normalizeTestDriveModel(String(m)))
+        .filter(Boolean),
+    ),
+  );
+  if (model && !interestedModels.includes(model)) interestedModels.unshift(model);
+  const multiNote =
+    interestedModels.length > 1 ? `Interested models: ${interestedModels.join(", ")}` : "";
   const recaptchaToken = payload.recaptchaToken?.trim();
   return publicPost("/test-drives", {
     customerName: payload.customerName.trim(),
     mobile: payload.mobile.trim(),
     email: payload.email?.trim() || undefined,
-    model: normalizeTestDriveModel(display),
+    model,
+    models: interestedModels.length ? interestedModels : [model],
+    interestedModels: interestedModels.length ? interestedModels : undefined,
     city: payload.city?.trim() || undefined,
     preferredDate: payload.preferredDate,
     preferredTime: payload.preferredTime?.trim() || undefined,
@@ -91,7 +125,9 @@ export async function submitPublicTestDrive(payload: {
     currentCarDetails:
       payload.ownsCar === "Yes" ? payload.currentCarDetails?.trim() || undefined : undefined,
     purchaseTimeline: payload.purchaseTimeline,
-    remarks: [payload.remarks?.trim(), `Trim: ${display}`].filter(Boolean).join(" | ") || undefined,
+    remarks:
+      [payload.remarks?.trim(), `Trim: ${display}`, multiNote].filter(Boolean).join(" | ") ||
+      undefined,
     pageSource: payload.pageSource,
     ...(recaptchaToken ? { recaptchaToken } : {}),
     ...(payload.whatsappVerificationToken
@@ -107,6 +143,7 @@ export async function submitPublicEnquiry(payload: {
   city?: string;
   model?: string;
   variant?: string;
+  interestedModels?: string[];
   interest: string;
   message?: string;
   source?: string;
@@ -115,6 +152,11 @@ export async function submitPublicEnquiry(payload: {
 }): Promise<PublicPostResult> {
   if (isPublicFormPostDisabled()) return skipWhenPublicFormPostDisabled();
   const display = payload.model && payload.variant !== undefined ? leadModelLabel(payload.model, payload.variant) : "";
+  const interestedModels = Array.from(
+    new Set((payload.interestedModels || []).map((m) => String(m).trim()).filter(Boolean)),
+  );
+  const multiNote =
+    interestedModels.length > 1 ? `Interested models: ${interestedModels.join(", ")}` : "";
   const recaptchaToken = payload.recaptchaToken?.trim();
   return publicPost("/enquiries", {
     name: payload.name.trim(),
@@ -122,8 +164,9 @@ export async function submitPublicEnquiry(payload: {
     email: payload.email?.trim() || undefined,
     city: payload.city?.trim() || undefined,
     model: display ? normalizeTestDriveModel(display) : undefined,
+    interestedModels: interestedModels.length ? interestedModels : undefined,
     interest: payload.interest,
-    message: payload.message?.trim() || undefined,
+    message: [payload.message?.trim(), multiNote].filter(Boolean).join(" | ") || undefined,
     source: payload.source ?? "Contact Form",
     ...(recaptchaToken ? { recaptchaToken } : {}),
     ...(payload.whatsappVerificationToken

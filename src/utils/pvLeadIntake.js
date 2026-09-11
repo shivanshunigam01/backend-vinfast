@@ -151,6 +151,7 @@ async function intakePvLead(input = {}) {
     buyerType,
     /** When true, always create a new lead+opportunity (skip open-lead reuse). */
     forceNew = false,
+    interestedModels,
   } = input;
 
   const parent = await ensureParentCustomer({ name, mobile, email, city, otherCity });
@@ -161,6 +162,18 @@ async function intakePvLead(input = {}) {
       : null;
 
   const modelNorm = normalizeLeadModelForStorage(model || 'VF 7');
+  const interestedNorm = Array.isArray(interestedModels)
+    ? [
+        ...new Set(
+          interestedModels
+            .map((m) => normalizeLeadModelForStorage(m))
+            .filter((m) => m && m !== 'Both'),
+        ),
+      ]
+    : [];
+  if (modelNorm && modelNorm !== 'Both' && !interestedNorm.includes(modelNorm)) {
+    interestedNorm.unshift(modelNorm);
+  }
   const leadPatch = {
     pvCustomerId: parent._id,
     subCustomerId: sub?._id,
@@ -196,6 +209,9 @@ async function intakePvLead(input = {}) {
     referredByMobile: referredByMobile || undefined,
     lastActivityAt: new Date(),
   };
+  if (interestedNorm.length) {
+    leadPatch.interestedModels = interestedNorm;
+  }
 
   let lead = null;
   let isNew = false;
@@ -227,8 +243,18 @@ async function intakePvLead(input = {}) {
     const keepCurrentStatus = prevStage !== 'Lost' && incomingIdx !== -1 && currentIdx > incomingIdx;
 
     const prevStatus = lead.status;
+    const prevInterested = Array.isArray(lead.interestedModels) ? [...lead.interestedModels] : [];
     Object.assign(lead, leadPatch);
     if (keepCurrentStatus) lead.status = prevStatus;
+    if (interestedNorm.length || prevInterested.length) {
+      lead.interestedModels = [
+        ...new Set(
+          [...prevInterested, ...interestedNorm, lead.model]
+            .map((m) => String(m || '').trim())
+            .filter((m) => m && m !== 'Both'),
+        ),
+      ];
+    }
     touchLeadActivity(lead);
     if (!lead.leadId || !lead.opportunityId) await assignPvIds(lead);
     await lead.save();

@@ -13,14 +13,9 @@ import type { Lead } from "@/data/mockData";
 import { hasApi, isPublicFormPostDisabled, PUBLIC_FORM_POST_DISABLED_MESSAGE } from "@/lib/apiConfig";
 import { formatApiErrors } from "@/lib/api";
 import { submitPublicLead } from "@/lib/publicFormsApi";
-import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
-import {
-  formatAttributionRemarks,
-  mapSeoDistrictToForm,
-  mapSeoModelToForm,
-  readSeoAttribution,
-} from "@/lib/seoAttribution";
-import { ModelTrimSelect } from "@/components/ModelTrimSelect";
+import { leadModelLabel } from "@/data/vinfastModels";
+import { ModelMultiSelect, primaryModelFromSelection } from "@/components/ModelMultiSelect";
+import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
 import { FormCaptcha } from "@/components/FormCaptcha";
 import { BIHAR_DEFAULT_DISTRICT, DISTRICT_OTHER } from "@/data/biharDistricts";
@@ -51,21 +46,21 @@ const BookNowPage = () => {
   usePageSeo({
     title: "Book VinFast Online | Token Booking | Patliputra VinFast",
     description:
-      "Book your VinFast EV online with Patliputra VinFast. Start your VF 6, VF 7, MPV 7 or Limo Green booking from Patna, Bihar.",
+      "Book your VinFast EV online with Patliputra VinFast. Start your VF6, VF7, MPV7 or Limo Green booking from Patna, Bihar.",
+    keywords: ["book VinFast online", "VinFast booking Bihar", "VF7 book now"],
     canonical: "/book-now",
   });
   const paymentCardRef = useRef<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
-  const seoAttr = readSeoAttribution(searchParams);
   const [isSharingScreenshot, setIsSharingScreenshot] = useState(false);
+  const vehicleCatalog = useVehicleCatalog();
   const [formData, setFormData] = useState({
     name: "",
     mobile: "",
     email: "",
     city: BIHAR_DEFAULT_DISTRICT,
     otherCity: "",
-    model: "VF 7",
-    variant: DEFAULT_VF7_TRIM,
+    models: ["VF 7"] as string[],
     remarks: "",
     financeNeeded: false,
     exchangeNeeded: false,
@@ -78,15 +73,18 @@ const BookNowPage = () => {
   const todayStr = getLocalISODate();
 
   useEffect(() => {
-    const district = mapSeoDistrictToForm(seoAttr.district);
-    const model = mapSeoModelToForm(seoAttr.model);
-    if (!district && !model) return;
-    setFormData((f) => ({
-      ...f,
-      ...(district || {}),
-      ...(model || {}),
-    }));
-  }, [seoAttr.district, seoAttr.model]);
+    const raw = searchParams.get("model")?.trim() ?? "";
+    const norm = raw.toLowerCase().replace(/\s+/g, " ");
+    if (norm === "vf mpv 7" || norm === "mpv7" || raw === "VF MPV 7") {
+      setFormData((f) => ({ ...f, models: ["VF MPV 7"] }));
+    } else if (norm === "limo green" || norm === "limo-green" || raw === "Limo Green") {
+      setFormData((f) => ({ ...f, models: ["Limo Green"] }));
+    } else if (norm === "vf 6" || norm === "vf6" || raw === "VF 6") {
+      setFormData((f) => ({ ...f, models: ["VF 6"] }));
+    } else if (norm === "vf 7" || norm === "vf7" || raw === "VF 7") {
+      setFormData((f) => ({ ...f, models: ["VF 7"] }));
+    }
+  }, [searchParams]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -120,6 +118,10 @@ const BookNowPage = () => {
       toast.error("Please enter your city or district (outside Bihar).");
       return;
     }
+    if (!formData.models.length) {
+      toast.error("Please select at least one vehicle model.");
+      return;
+    }
     if (!captchaVerified) {
       toast.error("Please complete captcha verification.");
       return;
@@ -132,8 +134,6 @@ const BookNowPage = () => {
     const extras = [
       formData.financeNeeded ? "Finance assistance requested." : "",
       formData.exchangeNeeded ? "Exchange / trade-in interest." : "",
-      seoAttr.intent === "exchange" ? "SEO intent: exchange." : "",
-      formatAttributionRemarks(seoAttr),
     ]
       .filter(Boolean)
       .join(" ");
@@ -147,8 +147,7 @@ const BookNowPage = () => {
           email: "",
           city: BIHAR_DEFAULT_DISTRICT,
           otherCity: "",
-          model: "VF 7",
-          variant: DEFAULT_VF7_TRIM,
+          models: ["VF 7"],
           remarks: "",
           financeNeeded: false,
           exchangeNeeded: false,
@@ -164,22 +163,23 @@ const BookNowPage = () => {
         toast.error(err instanceof Error ? err.message : "Security verification failed.");
         return;
       }
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       try {
         const res = await submitPublicLead({
           name: formData.name.trim(),
           mobile: formData.mobile,
           city: formData.city === DISTRICT_OTHER ? DISTRICT_OTHER : formData.city,
           otherCity: formData.city === DISTRICT_OTHER ? formData.otherCity : "",
-          modelDisplay: leadModelLabel(formData.model, formData.variant),
+          modelDisplay: leadModelLabel(primary, primaryVariant),
+          interestedModels: formData.models,
           source: "Website",
           email: formData.email.trim(),
           remarks: [extras, formData.remarks?.trim()].filter(Boolean).join(" ") || "Book Now enquiry",
           interest: "Book Now",
           financeNeeded: formData.financeNeeded,
           exchangeNeeded: formData.exchangeNeeded,
-          pageSource: seoAttr.page
-            ? `Book Now Page | ${seoAttr.page} | ${seoAttr.intent || "book-now"}`
-            : "Book Now Page",
+          pageSource: "Book Now Page",
           recaptchaToken,
           whatsappVerificationToken: waToken ?? undefined,
         });
@@ -196,8 +196,7 @@ const BookNowPage = () => {
         email: "",
         city: BIHAR_DEFAULT_DISTRICT,
         otherCity: "",
-        model: "VF 7",
-        variant: DEFAULT_VF7_TRIM,
+        models: ["VF 7"],
         remarks: "",
         financeNeeded: false,
         exchangeNeeded: false,
@@ -208,6 +207,8 @@ const BookNowPage = () => {
     }
 
     try {
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       const lead: Lead = {
         id: `WL_${Date.now()}`,
         name: formData.name.trim(),
@@ -217,13 +218,20 @@ const BookNowPage = () => {
           formData.city === DISTRICT_OTHER
             ? formData.otherCity.trim() || DISTRICT_OTHER
             : formData.city,
-        model: leadModelLabel(formData.model, formData.variant),
+        model: leadModelLabel(primary, primaryVariant),
         source: "Website",
         status: "Interested",
         assignedTo: "",
         createdAt: todayStr,
         nextFollowUp: "",
-        remarks: [extras, formData.remarks?.trim()].filter(Boolean).join(" ") || "Book Now enquiry",
+        remarks:
+          [
+            extras,
+            formData.remarks?.trim(),
+            formData.models.length > 1 ? `Interested models: ${formData.models.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" ") || "Book Now enquiry",
         financeNeeded: formData.financeNeeded,
         exchangeNeeded: formData.exchangeNeeded,
       };
@@ -240,8 +248,7 @@ const BookNowPage = () => {
       email: "",
       city: BIHAR_DEFAULT_DISTRICT,
       otherCity: "",
-      model: "VF 7",
-      variant: DEFAULT_VF7_TRIM,
+      models: ["VF 7"],
       remarks: "",
       financeNeeded: false,
       exchangeNeeded: false,
@@ -458,17 +465,13 @@ const BookNowPage = () => {
                   />
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                  <div className="space-y-1.5 min-w-0">
-                    <label htmlFor="booknow-model-trim" className="text-xs font-medium text-muted-foreground">
-                      Model &amp; trim
-                    </label>
-                    <ModelTrimSelect
-                      id="booknow-model-trim"
-                      model={formData.model}
-                      variant={formData.variant}
-                      onChange={(m, v) => setFormData({ ...formData, model: m, variant: v })}
-                      className={inputClass}
-                      includeMpv7
+                  <div className="space-y-1.5 min-w-0 sm:col-span-2">
+                    <ModelMultiSelect
+                      id="booknow-models"
+                      value={formData.models}
+                      onChange={(models) => setFormData({ ...formData, models })}
+                      label="Interested models *"
+                      hint="Select all vehicles you want to enquire about"
                     />
                   </div>
                   <BiharDistrictField

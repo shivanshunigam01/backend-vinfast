@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useCallback, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,8 @@ import type { Lead, TestDriveBooking } from "@/data/mockData";
 import { hasApi, isPublicFormPostDisabled, PUBLIC_FORM_POST_DISABLED_MESSAGE } from "@/lib/apiConfig";
 import { formatApiErrors } from "@/lib/api";
 import { submitPublicTestDrive } from "@/lib/publicFormsApi";
-import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
+import { leadModelLabel } from "@/data/vinfastModels";
+import { ModelMultiSelect, primaryModelFromSelection } from "@/components/ModelMultiSelect";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { FormCaptcha } from "@/components/FormCaptcha";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
@@ -39,12 +39,6 @@ import { WhatsAppOtpVerify } from "@/components/WhatsAppOtpVerify";
 import { TestDriveSlotPicker } from "@/components/TestDriveSlotPicker";
 import { formatSlotLabel } from "@/lib/publicTdApi";
 import { telHref } from "@/lib/contactLinks";
-import {
-  formatAttributionRemarks,
-  mapSeoDistrictToForm,
-  mapSeoModelToForm,
-  readSeoAttribution,
-} from "@/lib/seoAttribution";
 import vf7Driving from "@/assets/slide-vf7-driving.png";
 import vf6Hero from "@/assets/vf6-earth-hero-family.png";
 import vf7Interior from "@/assets/slide-vf7-interior.png";
@@ -102,14 +96,13 @@ function FormSection({
 }
 
 const TestDrivePage = () => {
-  const [searchParams] = useSearchParams();
-  const seoAttr = readSeoAttribution(searchParams);
   const { getToken } = usePublicFormRecaptcha();
   const { siteConfig, dealer } = usePublicSite();
   usePageSeo({
     title: "Book a VinFast Test Drive in Bihar | Patliputra VinFast Patna",
     description:
-      "Schedule a VinFast VF 6, VF 7, MPV 7 or Limo Green test drive with Patliputra VinFast — Bihar’s authorised EV dealer in Patna.",
+      "Schedule a VinFast VF6, VF7, MPV7 or Limo Green test drive with Patliputra VinFast — Bihar’s authorised EV dealer.",
+    keywords: ["VinFast test drive Patna", "EV test drive Bihar", "VF7 test drive"],
     canonical: "/test-drive",
   });
   const vehicleCatalog = useVehicleCatalog();
@@ -119,8 +112,7 @@ const TestDrivePage = () => {
     email: "",
     city: BIHAR_DEFAULT_DISTRICT,
     otherCity: "",
-    model: "VF 7",
-    variant: DEFAULT_VF7_TRIM,
+    models: ["VF 7"] as string[],
     preferredTestDriveLocation: "",
     ownsCar: "",
     currentCarDetails: "",
@@ -135,23 +127,17 @@ const TestDrivePage = () => {
   const [waToken, setWaToken] = useState<string | null>(null);
   const onWaTokenChange = useCallback((t: string | null) => setWaToken(t), []);
   const todayStr = getLocalISODate();
+  const primaryModel = primaryModelFromSelection(
+    formData.models,
+    vehicleCatalog.models[0] || "VF 7",
+  );
+  const primaryVariant = vehicleCatalog.defaultVariantFor(primaryModel);
   const selectedCalendarDate = formData.date
     ? new Date(`${formData.date}T12:00:00`)
     : undefined;
   const homeTestDriveAllowed = formData.city !== DISTRICT_OTHER;
   const useLiveSlots = hasApi();
   const otpRequired = hasApi() && Boolean(siteConfig.features?.whatsappOtp);
-
-  useEffect(() => {
-    const district = mapSeoDistrictToForm(seoAttr.district);
-    const model = mapSeoModelToForm(seoAttr.model);
-    if (!district && !model) return;
-    setFormData((f) => ({
-      ...f,
-      ...(district || {}),
-      ...(model || {}),
-    }));
-  }, [seoAttr.district, seoAttr.model]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -225,30 +211,34 @@ const TestDrivePage = () => {
       toast.error("Please verify your mobile number with the WhatsApp code before booking.");
       return;
     }
+    if (!formData.models.length) {
+      toast.error("Please select at least one vehicle model for your test drive.");
+      return;
+    }
 
-    const modelLine = leadModelLabel(formData.model, formData.variant);
+    const selectedModels = formData.models;
+    const modelLine = leadModelLabel(primaryModel, primaryVariant);
     const cityResolved = resolvedDistrictLabel(formData.city, formData.otherCity);
-    const seoNote = formatAttributionRemarks(seoAttr);
+    const emptyForm = {
+      name: "",
+      mobile: "",
+      email: "",
+      city: BIHAR_DEFAULT_DISTRICT,
+      otherCity: "",
+      models: ["VF 7"] as string[],
+      preferredTestDriveLocation: "",
+      ownsCar: "",
+      currentCarDetails: "",
+      purchaseTimeline: "",
+      date: "",
+      time: "",
+      remarks: "",
+    };
 
     if (hasApi()) {
       if (isPublicFormPostDisabled()) {
         toast.info(PUBLIC_FORM_POST_DISABLED_MESSAGE);
-        setFormData({
-          name: "",
-          mobile: "",
-          email: "",
-          city: BIHAR_DEFAULT_DISTRICT,
-          otherCity: "",
-          model: "VF 7",
-          variant: DEFAULT_VF7_TRIM,
-          preferredTestDriveLocation: "",
-          ownsCar: "",
-          currentCarDetails: "",
-          purchaseTimeline: "",
-          date: "",
-          time: "",
-          remarks: "",
-        });
+        setFormData(emptyForm);
         setMobileError("");
         setCaptchaResetSignal((n) => n + 1);
         return;
@@ -261,25 +251,22 @@ const TestDrivePage = () => {
         return;
       }
       try {
+        const slotNote = formData.remarks?.trim()
+          ? formData.remarks.trim()
+          : `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`;
         const res = await submitPublicTestDrive({
           customerName: formData.name.trim(),
           mobile: formData.mobile,
           email: formData.email.trim(),
           city: cityResolved,
-          model: formData.model,
-          variant: formData.variant,
+          model: primaryModel,
+          variant: primaryVariant,
+          interestedModels: selectedModels,
           preferredDate: formData.date,
           preferredTime: formData.time,
           branch: "Patna Showroom",
-          remarks: [
-            formData.remarks?.trim()
-              ? formData.remarks.trim()
-              : `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`,
-            seoNote,
-          ]
-            .filter(Boolean)
-            .join(" | "),
-          pageSource: seoAttr.page ? `Test Drive Page | ${seoAttr.page} | ${seoAttr.intent || "test-drive"}` : "Test Drive Page",
+          remarks: slotNote,
+          pageSource: "Test Drive Page",
           preferredTestDriveLocation: formData.preferredTestDriveLocation,
           ownsCar: formData.ownsCar,
           currentCarDetails:
@@ -289,28 +276,16 @@ const TestDrivePage = () => {
           whatsappVerificationToken: waToken ?? undefined,
         });
         toast.success(
-          res.message ?? "Test drive booked! We'll confirm your slot shortly via SMS.",
+          res.message ??
+            (selectedModels.length > 1
+              ? `Test drives requested for ${selectedModels.join(", ")}. We'll confirm shortly.`
+              : "Test drive booked! We'll confirm your slot shortly via SMS."),
         );
       } catch (err) {
         toast.error(formatApiErrors(err));
         return;
       }
-      setFormData({
-        name: "",
-        mobile: "",
-        email: "",
-        city: BIHAR_DEFAULT_DISTRICT,
-        otherCity: "",
-        model: "VF 7",
-        variant: DEFAULT_VF7_TRIM,
-        preferredTestDriveLocation: "",
-        ownsCar: "",
-        currentCarDetails: "",
-        purchaseTimeline: "",
-        date: "",
-        time: "",
-        remarks: "",
-      });
+      setFormData(emptyForm);
       setMobileError("");
       setCaptchaResetSignal((n) => n + 1);
       return;
@@ -324,7 +299,10 @@ const TestDrivePage = () => {
           ? `Owns car: Yes — ${formData.currentCarDetails.trim()}`
           : "Owns car: No",
         `Purchase plan: ${formData.purchaseTimeline}`,
-      ].join(" | ");
+        selectedModels.length > 1 ? `Interested models: ${selectedModels.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
       const lead: Lead = {
         id: leadId,
         name: formData.name.trim(),
@@ -342,7 +320,6 @@ const TestDrivePage = () => {
           formData.remarks?.trim(),
           tdMeta,
           `Preferred: ${formData.date} ${formatSlotLabel({ time: formData.time, available: true, bookings: 0, maxBookings: 1 })}`,
-          seoNote,
         ]
           .filter(Boolean)
           .join(" | "),
@@ -378,22 +355,7 @@ const TestDrivePage = () => {
     }
 
     toast.success("Test drive booked! We'll confirm your slot shortly via SMS.");
-    setFormData({
-      name: "",
-      mobile: "",
-      email: "",
-      city: BIHAR_DEFAULT_DISTRICT,
-      otherCity: "",
-      model: "VF 7",
-      variant: DEFAULT_VF7_TRIM,
-      preferredTestDriveLocation: "",
-      ownsCar: "",
-      currentCarDetails: "",
-      purchaseTimeline: "",
-      date: "",
-      time: "",
-      remarks: "",
-    });
+    setFormData(emptyForm);
     setMobileError("");
     setCaptchaResetSignal((n) => n + 1);
   };
@@ -620,59 +582,30 @@ const TestDrivePage = () => {
                 </FormSection>
 
                 <FormSection title="Vehicle & slot">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-                    <div className={fieldBlockClass}>
-                      <label htmlFor="td-model" className={labelClass}>
-                        Model *
-                      </label>
-                      <select
-                        id="td-model"
-                        value={vehicleCatalog.models.includes(formData.model) ? formData.model : vehicleCatalog.models[0] ?? ""}
-                        onChange={(e) => {
-                          const m = e.target.value;
-                          setFormData({
-                            ...formData,
-                            model: m,
-                            variant: vehicleCatalog.defaultVariantFor(m),
-                            time: "",
-                          });
-                        }}
-                        className={inputClass}
-                      >
-                        {vehicleCatalog.models.map((m) => (
-                          <option key={m} value={m}>
-                            VinFast {m}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className={fieldBlockClass}>
-                      <label htmlFor="td-variant" className={labelClass}>
-                        Variant *
-                      </label>
-                      {vehicleCatalog.trimsFor(formData.model).length === 0 ? (
-                        <input value="Single lineup — no variants" disabled className={inputClass} />
-                      ) : (
-                        <select
-                          id="td-variant"
-                          value={formData.variant}
-                          onChange={(e) => setFormData({ ...formData, variant: e.target.value, time: "" })}
-                          className={inputClass}
-                        >
-                          {vehicleCatalog.variantOptionsFor(formData.model).map((label) => (
-                            <option key={label} value={label}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
+                  <ModelMultiSelect
+                    id="td-models"
+                    value={formData.models}
+                    onChange={(models) =>
+                      setFormData({
+                        ...formData,
+                        models,
+                        time: "",
+                      })
+                    }
+                    label="Models for test drive *"
+                    hint="Select one or more vehicles"
+                  />
+                  {formData.models.length > 1 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Slot availability is shown for <span className="font-medium text-foreground">{primaryModel}</span>.
+                      We&apos;ll book the same preferred slot for each selected model.
+                    </p>
+                  ) : null}
 
                   {useLiveSlots ? (
                     <TestDriveSlotPicker
-                      model={formData.model}
-                      variant={formData.variant}
+                      model={primaryModel}
+                      variant={primaryVariant}
                       date={formData.date}
                       time={formData.time}
                       onDateChange={handleDateChange}

@@ -61,6 +61,21 @@ const leadSchema = new mongoose.Schema(
         message: 'Invalid model',
       },
     },
+    /**
+     * Public multi-interest: all products the customer selected (VF 6, VF 7, …).
+     * `model` stays the primary/concrete pipeline model for CRM stages & orders.
+     */
+    interestedModels: {
+      type: [String],
+      default: undefined,
+      validate: {
+        validator(arr) {
+          if (arr == null || arr.length === 0) return true;
+          return arr.every((v) => isAcceptableStoredLeadModel(v));
+        },
+        message: 'Invalid interestedModels entry',
+      },
+    },
     interest: { type: String, trim: true },
     source: { type: String, trim: true, default: 'Website' },
     status: { type: String, trim: true, default: 'Enquiry' },

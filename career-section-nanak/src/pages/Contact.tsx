@@ -15,8 +15,9 @@ import {
 } from "@/lib/apiConfig";
 import { formatApiErrors } from "@/lib/api";
 import { submitPublicEnquiry, submitPublicLead } from "@/lib/publicFormsApi";
-import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
-import { ModelTrimSelect } from "@/components/ModelTrimSelect";
+import { leadModelLabel } from "@/data/vinfastModels";
+import { ModelMultiSelect, primaryModelFromSelection } from "@/components/ModelMultiSelect";
+import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
 import { FormCaptcha } from "@/components/FormCaptcha";
 import {
@@ -49,6 +50,7 @@ const ContactPage = () => {
     title: "Contact Patliputra VinFast | Patna Showroom | Bihar",
     description:
       "Contact Patliputra VinFast in Patna — phone, WhatsApp, map and enquiry form for VinFast EV sales and test drives.",
+    keywords: ["contact VinFast Patna", "Patliputra VinFast phone", "VinFast showroom Patna"],
     canonical: "/contact",
   });
   const address = dealer.address;
@@ -63,11 +65,11 @@ const ContactPage = () => {
     email: "",
     city: BIHAR_DEFAULT_DISTRICT,
     otherCity: "",
-    model: "VF 7",
-    variant: DEFAULT_VF7_TRIM,
+    models: ["VF 7"] as string[],
     interest: "General Enquiry",
     message: "",
   });
+  const vehicleCatalog = useVehicleCatalog();
   const [captchaVerified, setCaptchaVerified] = useState(false);
   const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const [waToken, setWaToken] = useState<string | null>(null);
@@ -86,6 +88,10 @@ const ContactPage = () => {
     }
     if (formData.city === DISTRICT_OTHER && !formData.otherCity.trim()) {
       toast.error("Please enter your city or district (outside Bihar).");
+      return;
+    }
+    if (!formData.models.length) {
+      toast.error("Please select at least one vehicle model.");
       return;
     }
     if (!captchaVerified) {
@@ -112,8 +118,7 @@ const ContactPage = () => {
           email: "",
           city: BIHAR_DEFAULT_DISTRICT,
           otherCity: "",
-          model: "VF 7",
-          variant: DEFAULT_VF7_TRIM,
+          models: ["VF 7"],
           interest: "General Enquiry",
           message: "",
         });
@@ -131,14 +136,17 @@ const ContactPage = () => {
         );
         return;
       }
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       try {
         const enquiryRes = await submitPublicEnquiry({
           name: formData.name,
           mobile: mobileDigits,
           email: formData.email,
           city: cityResolved,
-          model: formData.model,
-          variant: formData.variant,
+          model: primary,
+          variant: primaryVariant,
+          interestedModels: formData.models,
           interest: formData.interest,
           message: formData.message,
           recaptchaToken: enquiryToken,
@@ -150,7 +158,8 @@ const ContactPage = () => {
           city:
             formData.city === DISTRICT_OTHER ? DISTRICT_OTHER : formData.city,
           otherCity: formData.city === DISTRICT_OTHER ? formData.otherCity : "",
-          modelDisplay: leadModelLabel(formData.model, formData.variant),
+          modelDisplay: leadModelLabel(primary, primaryVariant),
+          interestedModels: formData.models,
           source: "Website",
           interest: formData.interest,
           email: formData.email,
@@ -174,8 +183,7 @@ const ContactPage = () => {
         email: "",
         city: BIHAR_DEFAULT_DISTRICT,
         otherCity: "",
-        model: "VF 7",
-        variant: DEFAULT_VF7_TRIM,
+        models: ["VF 7"],
         interest: "General Enquiry",
         message: "",
       });
@@ -186,6 +194,8 @@ const ContactPage = () => {
     try {
       const todayStr = getLocalISODate();
       const ts = Date.now();
+      const primary = primaryModelFromSelection(formData.models);
+      const primaryVariant = vehicleCatalog.defaultVariantFor(primary);
       const enquiry: Enquiry = {
         id: `WE_${ts}`,
         name: formData.name.trim(),
@@ -203,13 +213,19 @@ const ContactPage = () => {
         mobile: formData.mobile.trim(),
         email: formData.email.trim(),
         city: cityResolved,
-        model: leadModelLabel(formData.model, formData.variant),
+        model: leadModelLabel(primary, primaryVariant),
         source: "Website",
         status: "New Lead",
         assignedTo: "",
         createdAt: todayStr,
         nextFollowUp: "",
-        remarks: formData.message.trim() || `Interest: ${formData.interest}`,
+        remarks:
+          [
+            formData.message.trim() || `Interest: ${formData.interest}`,
+            formData.models.length > 1 ? `Interested models: ${formData.models.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | "),
         financeNeeded: false,
         exchangeNeeded: false,
       };
@@ -228,8 +244,7 @@ const ContactPage = () => {
       email: "",
       city: BIHAR_DEFAULT_DISTRICT,
       otherCity: "",
-      model: "VF 7",
-      variant: DEFAULT_VF7_TRIM,
+      models: ["VF 7"],
       interest: "General Enquiry",
       message: "",
     });
@@ -403,22 +418,13 @@ const ContactPage = () => {
                   />
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                  <div className="flex min-w-0 w-full flex-col gap-2">
-                    <label
-                      htmlFor="contact-model-trim"
-                      className="text-xs font-medium text-muted-foreground"
-                    >
-                      Model &amp; trim
-                    </label>
-                    <ModelTrimSelect
-                      id="contact-model-trim"
-                      model={formData.model}
-                      variant={formData.variant}
-                      onChange={(m, v) =>
-                        setFormData({ ...formData, model: m, variant: v })
-                      }
-                      className={inputClass}
-                      includeNotSureBoth
+                  <div className="flex min-w-0 w-full flex-col gap-2 sm:col-span-2">
+                    <ModelMultiSelect
+                      id="contact-models"
+                      value={formData.models}
+                      onChange={(models) => setFormData({ ...formData, models })}
+                      label="Interested models *"
+                      hint="Select one or more vehicles"
                     />
                   </div>
                   <BiharDistrictField
