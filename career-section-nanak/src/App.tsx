@@ -80,6 +80,8 @@ import AdminLeadStages from "./pages/admin/AdminLeadStages";
 import AdminBuyerTypes from "./pages/admin/AdminBuyerTypes";
 import AdminPricing from "./pages/admin/AdminPricing";
 import AdminDeliveryReports from "./pages/admin/AdminDeliveryReports";
+import AdminBookingReports from "./pages/admin/AdminBookingReports";
+import AdminComplaints from "./pages/admin/AdminComplaints";
 import AdminExecutiveDashboard from "./pages/admin/AdminExecutiveDashboard";
 import AdminTDMyBookings from "./pages/admin/AdminTDMyBookings";
 import AdminTDLeads from "./pages/admin/AdminTDLeads";
@@ -186,6 +188,9 @@ const App = () => {
             <Route path="crm/buyer-types" element={<AdminBuyerTypes />} />
             <Route path="pricing" element={<AdminPricing />} />
             <Route path="reports/deliveries" element={<AdminDeliveryReports />} />
+            <Route path="reports/bookings" element={<AdminBookingReports />} />
+            <Route path="complaints/inbound" element={<AdminComplaints direction="INBOUND" />} />
+            <Route path="complaints/outbound" element={<AdminComplaints direction="OUTBOUND" />} />
 
             {/* Customer feedback form submissions (QR pages) */}
             <Route path="feedback/test-drive" element={<AdminFeedbackSubmissions kind="testDrive" />} />

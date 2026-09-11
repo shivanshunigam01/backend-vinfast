@@ -8,6 +8,7 @@ const {
   isManagerDashboardUser,
 } = require('../utils/executiveDashboardBuilder');
 const { buildDeliveryReport } = require('../utils/deliveryReportBuilder');
+const { buildBookingReport } = require('../utils/bookingReportBuilder');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
 const { isCreUser } = require('../utils/leadAssignment');
@@ -44,6 +45,14 @@ exports.getAdminReport = asyncHandler(async (req, res) => {
 
 exports.getDeliveryReport = asyncHandler(async (req, res) => {
   const data = await buildDeliveryReport({
+    ...readPeriodQuery(req),
+    source: req.query.source || undefined,
+  });
+  return successResponse(res, data);
+});
+
+exports.getBookingReport = asyncHandler(async (req, res) => {
+  const data = await buildBookingReport({
     ...readPeriodQuery(req),
     source: req.query.source || undefined,
   });

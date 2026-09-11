@@ -30,6 +30,7 @@ const postDeliveryFeedbackController = require('../../controllers/postDeliveryFe
 const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
 const calendarController = require('../../controllers/calendarController');
 const geocodeController = require('../../controllers/geocodeController');
+const complaintsRoutes = require('./complaints');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { otpSendLimiter, otpVerifyLimiter } = require('../../middleware/rateLimiter');
 const { loginValidator } = require('../../validators/authValidators');
@@ -190,6 +191,17 @@ router.get(
   requireModuleAction('delivery_reports', 'view'),
   leadReportController.getDeliveryReport,
 );
+router.get(
+  '/reports/bookings',
+  requireModuleAction('booking_reports', 'view'),
+  leadReportController.getBookingReport,
+);
+router.get(
+  '/crm/reports/bookings',
+  requireModuleAction('booking_reports', 'view'),
+  leadReportController.getBookingReport,
+);
+router.use('/complaints', complaintsRoutes);
 router.get('/td/branches/public', tdBranchesController.listPublicBranches);
 
 // Test drives (legacy CRM)

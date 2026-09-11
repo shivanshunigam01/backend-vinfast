@@ -13,6 +13,7 @@ const ADMIN_MODULE_KEYS = [
   'crm_buyer_types',
   'pricing',
   'delivery_reports', // Reports group in sidebar / User Master ACL UI
+  'booking_reports',
   'products',
   'offers',
   'content',
@@ -24,6 +25,9 @@ const ADMIN_MODULE_KEYS = [
   // Customer feedback
   'feedback_test_drive',
   'feedback_post_delivery',
+  // Complaints (CRM)
+  'complaint_inbound',
+  'complaint_outbound',
   // Reports
   'td_lead_reports',
   'td_reports',
@@ -65,6 +69,7 @@ const ADMIN_MODULE_ACTIONS = {
   crm_buyer_types: ['view', 'create', 'update', 'delete'],
   pricing: ['view', 'update'],
   delivery_reports: ['view', 'export'],
+  booking_reports: ['view', 'export'],
   products: ['view', 'create', 'update', 'delete'],
   offers: ['view', 'create', 'update', 'delete'],
   content: ['view', 'create', 'update', 'delete'],
@@ -74,6 +79,8 @@ const ADMIN_MODULE_ACTIONS = {
   td_my_bookings: ['view', 'update', 'verify_dl', 'start_drive', 'reschedule', 'cancel', 'complete'],
   feedback_test_drive: ['view', 'delete'],
   feedback_post_delivery: ['view', 'delete'],
+  complaint_inbound: ['view', 'create', 'update', 'delete'],
+  complaint_outbound: ['view', 'create', 'update', 'delete'],
   td_lead_reports: ['view', 'export'],
   td_bookings: ['view', 'create', 'update', 'assign', 'reschedule_approve', 'verify_dl', 'start_drive', 'cancel'],
   td_users: ['view', 'create', 'update', 'delete', 'view_password'],

@@ -68,6 +68,8 @@ const crmNavItems = [
 const feedbackNavItems = [
   { label: "TD Feedback", icon: CarFront, path: "/admin/feedback/test-drive" },
   { label: "Delivery Feedback", icon: PackageCheck, path: "/admin/feedback/post-delivery" },
+  { label: "Complaint Inbound", icon: MessageSquare, path: "/admin/complaints/inbound" },
+  { label: "Complaint Outbound", icon: MessageSquare, path: "/admin/complaints/outbound" },
 ];
 
 const tdNavItems = [
@@ -131,6 +133,7 @@ function isTdManagementPath(pathname: string) {
 const reportsNavItems = [
   { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: false },
   { label: "TD Reports", icon: BarChart3, path: "/admin/td/reports", staff: false },
+  { label: "Booking Report", icon: CalendarCheck, path: "/admin/reports/bookings", staff: false },
   { label: "Delivery Reports", icon: PackageCheck, path: "/admin/reports/deliveries", staff: false },
   { label: "My Dashboard (performance)", icon: LayoutDashboard, path: "/admin/my-dashboard", staff: true },
 ];

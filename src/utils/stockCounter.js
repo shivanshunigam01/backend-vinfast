@@ -58,6 +58,11 @@ async function nextRequisitionNumber() {
   return nextCounter(`req_${ymd}`, `REQ-${ymd}-`, 3);
 }
 
+async function nextComplaintNumber() {
+  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return nextCounter(`complaint_${ymd}`, `CMP-${ymd}-`, 3);
+}
+
 module.exports = {
   nextCounter,
   nextStockId,
@@ -70,4 +75,5 @@ module.exports = {
   nextRectificationNumber,
   nextOrderNumber,
   nextRequisitionNumber,
+  nextComplaintNumber,
 };
