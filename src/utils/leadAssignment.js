@@ -22,8 +22,10 @@ function normalizeEmail(email) {
 /** Designations that CRE may assign leads / TD bookings to. */
 const CRE_ASSIGNABLE_DESIGNATIONS = new Set(['sales_executive', 'sales_manager']);
 
+const { isCreDesignation } = require('../constants/creAccess');
+
 function isCreUser(admin) {
-  return String(admin?.designation || '').toLowerCase() === 'cre';
+  return isCreDesignation(admin?.designation);
 }
 
 function isCreAssignableDesignation(designation) {

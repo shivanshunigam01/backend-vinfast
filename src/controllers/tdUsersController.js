@@ -11,6 +11,7 @@ const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 const { isTeamScopedUser, resolveStaffIdsForUser, isCreUser, isCreAssignableDesignation } = require('../utils/leadAssignment');
+const { isCreDesignation, applyCreAccessInPlace } = require('../constants/creAccess');
 
 const PASSWORD_ALPHABET =
   'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
@@ -227,6 +228,10 @@ exports.createUser = asyncHandler(async (req, res) => {
     staffRoleId: linkedRoleId,
   });
 
+  if (isCreDesignation(doc.designation) && applyCreAccessInPlace(doc)) {
+    await doc.save();
+  }
+
   await doc.populate('staffRoleId', 'name authRole');
   return successResponse(res, formatStaff(doc), 'User created', 201);
 });
@@ -332,6 +337,10 @@ exports.updateUser = asyncHandler(async (req, res) => {
       if (!manager) throw new ApiError(400, 'reportsTo manager not found');
       doc.reportsTo = manager._id;
     }
+  }
+
+  if (isCreDesignation(doc.designation)) {
+    applyCreAccessInPlace(doc);
   }
 
   await doc.save();

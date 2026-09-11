@@ -1,13 +1,14 @@
 const Admin = require('../models/Admin');
 const TDStaff = require('../models/TDStaff');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
+const { applyCreAccessInPlace, withCreAccess, isCreDesignation } = require('../constants/creAccess');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
 const { signToken } = require('../utils/jwt');
 
 function staffLoginPayload(staff) {
-  return {
+  const base = {
     _id: staff._id,
     name: staff.name,
     email: staff.email,
@@ -18,6 +19,7 @@ function staffLoginPayload(staff) {
     allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
     userType: 'tdstaff',
   };
+  return withCreAccess(base);
 }
 
 function adminLoginPayload(admin) {
@@ -94,6 +96,10 @@ exports.staffLogin = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'This account is deactivated. Ask an admin to activate it.');
   }
 
+  if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
+    await staff.save();
+  }
+
   const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });
   return res.status(200).json({
     success: true,
@@ -126,7 +132,7 @@ exports.login = asyncHandler(async (req, res) => {
     staffOk &&
     (staff.role === 'executive' ||
       staff.designation === 'sales_executive' ||
-      staff.designation === 'cre');
+      isCreDesignation(staff.designation));
 
   if (isFieldExecutive) {
     const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });

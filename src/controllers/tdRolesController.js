@@ -5,7 +5,7 @@ const { successResponse } = require('../utils/apiResponse');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 const { ADMIN_MODULE_ACTIONS } = require('../constants/adminModules');
 
-const AUTH_ROLES = ['executive', 'manager'];
+const { CRE_MODULES, CRE_ACTIONS } = require('../constants/creAccess');
 
 const EXECUTIVE_DEFAULT_MODULES = ['my_dashboard', 'td_my_bookings', 'crm_leads', 'calendar'];
 const MANAGER_DEFAULT_MODULES = [
@@ -51,6 +51,13 @@ function formatRole(doc) {
 async function ensureDefaultRoles() {
   const defaults = [
     {
+      name: 'CRE',
+      description: 'Customer Relationship Executive — My Dashboard + full Lead CRM (same as CRE 1 / CRE 2)',
+      authRole: 'executive',
+      allowedModules: CRE_MODULES,
+      allowedActions: CRE_ACTIONS,
+    },
+    {
       name: 'Sales Executive',
       description: 'Field executive — own bookings, CRM leads, calendar',
       authRole: 'executive',
@@ -68,7 +75,18 @@ async function ensureDefaultRoles() {
 
   for (const row of defaults) {
     const exists = await StaffRole.findOne({ name: row.name });
-    if (!exists) await StaffRole.create(row);
+    if (!exists) {
+      await StaffRole.create(row);
+      continue;
+    }
+    if (row.name === 'CRE') {
+      exists.description = row.description;
+      exists.authRole = row.authRole;
+      exists.allowedModules = row.allowedModules;
+      exists.allowedActions = row.allowedActions;
+      exists.active = true;
+      await exists.save();
+    }
   }
 }
 

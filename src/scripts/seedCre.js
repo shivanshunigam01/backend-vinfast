@@ -13,20 +13,10 @@ const connectDB = require('../config/db');
 require('../models/tdModels');
 const TDStaff = require('../models/TDStaff');
 
+const { CRE_MODULES, CRE_ACTIONS, syncAllCreStaffAccess } = require('../constants/creAccess');
+
 const DEFAULT_PASSWORD = process.env.SEED_CRE_PASSWORD || 'Cre@12345';
 const RESET_PASSWORD = process.env.SEED_CRE_RESET_PASSWORD === 'yes';
-
-/** CRE portal: own dashboard + full Lead CRM. */
-const CRE_MODULES = ['my_dashboard', 'crm_leads'];
-const CRE_ACTIONS = [
-  'my_dashboard:view',
-  'crm_leads:view',
-  'crm_leads:create',
-  'crm_leads:update',
-  'crm_leads:delete',
-  'crm_leads:assign',
-  'crm_leads:export',
-];
 
 const CRE_SEED = [
   {
@@ -59,6 +49,7 @@ const CRE_SEED = [
         existing.name = row.name;
         existing.designation = 'cre';
         existing.role = 'executive';
+        existing.reportsScope = 'organisation';
         existing.active = true;
         existing.allowedModules = CRE_MODULES;
         existing.allowedActions = CRE_ACTIONS;
@@ -83,6 +74,7 @@ const CRE_SEED = [
         password: row.password,
         designation: 'cre',
         role: 'executive',
+        reportsScope: 'organisation',
         active: true,
         allowedModules: CRE_MODULES,
         allowedActions: CRE_ACTIONS,
@@ -98,6 +90,10 @@ const CRE_SEED = [
     }
 
     console.log(`\nDone. Created ${created}, updated ${updated}.`);
+
+    const synced = await syncAllCreStaffAccess(TDStaff);
+    console.log(`Synced CRE access on ${synced.matched} CRE user(s) (${synced.modified} updated).`);
+    console.log('All CRE staff now have the same rights as CRE 1 / CRE 2: My Dashboard + full Lead CRM.');
     console.log('\nCRE login credentials (portal: /staff/login → My Dashboard + Lead CRM):');
     for (const c of credentials) {
       console.log(`  ${c.name}`);

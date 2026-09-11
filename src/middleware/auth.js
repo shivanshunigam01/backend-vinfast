@@ -4,6 +4,7 @@ const ApiError = require('../utils/apiError');
 const { verifyToken } = require('../utils/jwt');
 const asyncHandler = require('../utils/asyncHandler');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
+const { applyCreAccessInPlace, withCreAccess, isCreDesignation } = require('../constants/creAccess');
 
 exports.protect = asyncHandler(async (req, res, next) => {
   const authHeader = req.headers.authorization || '';
@@ -19,8 +20,10 @@ exports.protect = asyncHandler(async (req, res, next) => {
     if (!staff || !staff.active) {
       throw new ApiError(401, 'Staff user not found or inactive');
     }
-    req.tdStaff = staff;
-    req.admin = {
+    if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
+      await staff.save();
+    }
+    const creSafe = withCreAccess({
       _id: staff._id,
       name: staff.name,
       email: staff.email,
@@ -31,7 +34,9 @@ exports.protect = asyncHandler(async (req, res, next) => {
       allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
       allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
       userType: 'tdstaff',
-    };
+    });
+    req.tdStaff = staff;
+    req.admin = creSafe;
     return next();
   }
 
