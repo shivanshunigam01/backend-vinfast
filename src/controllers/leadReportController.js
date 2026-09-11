@@ -11,7 +11,9 @@ const { buildDeliveryReport } = require('../utils/deliveryReportBuilder');
 const { buildBookingReport } = require('../utils/bookingReportBuilder');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
-const { isCreUser } = require('../utils/leadAssignment');
+const { isCreUser, isCrmDeskUser } = require('../utils/leadAssignment');
+const { isCreOrCrmDeskUser } = require('../constants/creAccess');
+const { canPerformAction } = require('../utils/modulePermissions');
 
 function readPeriodQuery(req) {
   return {
@@ -33,7 +35,28 @@ function readLeadFilterQuery(req) {
   };
 }
 
+function canViewLeadAdminReport(admin) {
+  if (!admin) return false;
+  if (admin.userType === 'admin' || admin.role === 'superadmin') return true;
+  if (isCreOrCrmDeskUser(admin) || isCreUser(admin) || isCrmDeskUser(admin)) return true;
+  if (canPerformAction(admin, 'td_lead_reports', 'view')) return true;
+  if (['manager', 'superadmin'].includes(admin.role)) return true;
+  return false;
+}
+
+/** Express middleware — CRE / CRM desk + anyone with Lead Reports view. */
+exports.requireLeadAdminReportAccess = (req, _res, next) => {
+  if (!req.admin) return next(new ApiError(401, 'Not authenticated'));
+  if (!canViewLeadAdminReport(req.admin)) {
+    return next(new ApiError(403, 'You do not have permission to view or download lead reports'));
+  }
+  return next();
+};
+
 exports.getAdminReport = asyncHandler(async (req, res) => {
+  if (!canViewLeadAdminReport(req.admin)) {
+    throw new ApiError(403, 'You do not have permission to view or download lead reports');
+  }
   const data = await buildLeadAdminReport({
     from: req.query.from,
     to: req.query.to,
@@ -60,7 +83,7 @@ exports.getBookingReport = asyncHandler(async (req, res) => {
 });
 
 exports.getExecutiveDashboard = asyncHandler(async (req, res) => {
-  if (!isCrmStaffRole(req.admin.role) && !isCreUser(req.admin)) {
+  if (!isCrmStaffRole(req.admin.role) && !isCreUser(req.admin) && !isCrmDeskUser(req.admin)) {
     throw new ApiError(403, 'Executive dashboard is for CRM staff only');
   }
 
@@ -96,8 +119,12 @@ exports.getCreReport = asyncHandler(async (req, res) => {
 
   if (isCreUser(req.admin)) {
     creId = req.admin._id;
-  } else if (!['manager', 'superadmin'].includes(req.admin.role) && !isCreUser(req.admin)) {
-    throw new ApiError(403, 'CRE reports are for CRE users and managers');
+  } else if (
+    !['manager', 'superadmin'].includes(req.admin.role) &&
+    !isCreUser(req.admin) &&
+    !isCrmDeskUser(req.admin)
+  ) {
+    throw new ApiError(403, 'CRE reports are for CRE users, CRM desk, and managers');
   }
 
   if (!creId) throw new ApiError(400, 'creId is required');

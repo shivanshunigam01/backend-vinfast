@@ -7,6 +7,26 @@ const { ADMIN_MODULE_ACTIONS } = require('../constants/adminModules');
 
 const { CRE_MODULES, CRE_ACTIONS } = require('../constants/creAccess');
 
+const CRM_DESK_MODULES = [
+  ...CRE_MODULES,
+  'complaint_inbound',
+  'complaint_outbound',
+  'booking_reports',
+];
+const CRM_DESK_ACTIONS = [
+  ...CRE_ACTIONS,
+  'complaint_inbound:view',
+  'complaint_inbound:create',
+  'complaint_inbound:update',
+  'complaint_inbound:delete',
+  'complaint_outbound:view',
+  'complaint_outbound:create',
+  'complaint_outbound:update',
+  'complaint_outbound:delete',
+  'booking_reports:view',
+  'booking_reports:export',
+];
+
 const EXECUTIVE_DEFAULT_MODULES = ['my_dashboard', 'td_my_bookings', 'crm_leads', 'calendar'];
 const MANAGER_DEFAULT_MODULES = [
   'dashboard',
@@ -58,6 +78,13 @@ async function ensureDefaultRoles() {
       allowedActions: CRE_ACTIONS,
     },
     {
+      name: 'CRM',
+      description: 'CRM desk — same Lead CRM rights as CRE 1 / CRE 2, plus complaints and booking reports',
+      authRole: 'manager',
+      allowedModules: CRM_DESK_MODULES,
+      allowedActions: CRM_DESK_ACTIONS,
+    },
+    {
       name: 'Sales Executive',
       description: 'Field executive — own bookings, CRM leads, calendar',
       authRole: 'executive',
@@ -79,7 +106,7 @@ async function ensureDefaultRoles() {
       await StaffRole.create(row);
       continue;
     }
-    if (row.name === 'CRE') {
+    if (row.name === 'CRE' || row.name === 'CRM') {
       exists.description = row.description;
       exists.authRole = row.authRole;
       exists.allowedModules = row.allowedModules;

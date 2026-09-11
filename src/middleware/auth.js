@@ -4,7 +4,13 @@ const ApiError = require('../utils/apiError');
 const { verifyToken } = require('../utils/jwt');
 const asyncHandler = require('../utils/asyncHandler');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
-const { applyCreAccessInPlace, withCreAccess, isCreDesignation } = require('../constants/creAccess');
+const {
+  applyCreAccessInPlace,
+  applyCrmDeskAccessInPlace,
+  withDeskAccess,
+  isCreDesignation,
+  isCrmDeskDesignation,
+} = require('../constants/creAccess');
 
 exports.protect = asyncHandler(async (req, res, next) => {
   const authHeader = req.headers.authorization || '';
@@ -22,8 +28,10 @@ exports.protect = asyncHandler(async (req, res, next) => {
     }
     if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
       await staff.save();
+    } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
+      await staff.save();
     }
-    const creSafe = withCreAccess({
+    const deskSafe = withDeskAccess({
       _id: staff._id,
       name: staff.name,
       email: staff.email,
@@ -36,7 +44,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
       userType: 'tdstaff',
     });
     req.tdStaff = staff;
-    req.admin = creSafe;
+    req.admin = deskSafe;
     return next();
   }
 

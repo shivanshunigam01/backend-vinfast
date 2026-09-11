@@ -3,7 +3,7 @@ const TDStaff = require('../models/TDStaff');
 const Lead = require('../models/Lead');
 
 /** Designations that see the full dealership (not limited to reporting tree). */
-const UNRESTRICTED_DESIGNATIONS = new Set(['md', 'ceo', 'gm', 'cre']);
+const UNRESTRICTED_DESIGNATIONS = new Set(['md', 'ceo', 'gm', 'cre', 'crm']);
 
 function toObjectId(id) {
   if (id == null) return null;
@@ -22,10 +22,14 @@ function normalizeEmail(email) {
 /** Designations that CRE may assign leads / TD bookings to. */
 const CRE_ASSIGNABLE_DESIGNATIONS = new Set(['sales_executive', 'sales_manager']);
 
-const { isCreDesignation } = require('../constants/creAccess');
+const { isCreDesignation, isCrmDeskDesignation, isCreOrCrmDeskUser } = require('../constants/creAccess');
 
 function isCreUser(admin) {
   return isCreDesignation(admin?.designation);
+}
+
+function isCrmDeskUser(admin) {
+  return isCrmDeskDesignation(admin?.designation);
 }
 
 function isCreAssignableDesignation(designation) {
@@ -58,7 +62,8 @@ function resolveReportsScope(admin) {
   if (explicit === 'organisation' || explicit === 'team' || explicit === 'self') return explicit;
   if (admin?.userType === 'admin' || admin?.role === 'superadmin') return 'organisation';
   const designation = String(admin?.designation || '').toLowerCase();
-  if (['gm', 'ceo', 'md', 'sales_head', 'cre'].includes(designation)) return 'organisation';
+  if (['gm', 'ceo', 'md', 'sales_head', 'cre', 'crm'].includes(designation)) return 'organisation';
+  if (isCrmDeskDesignation(admin?.designation) || isCreDesignation(admin?.designation)) return 'organisation';
   if (['sales_manager', 'branch_manager'].includes(designation)) return 'team';
   return 'self';
 }
@@ -72,7 +77,7 @@ function isUnrestrictedViewer(admin) {
   // Admin-collection logins are not in the TDStaff reporting tree — never team-scope them.
   if (admin.userType === 'admin') return true;
   if (admin.role === 'superadmin') return true;
-  if (isCreUser(admin)) return true;
+  if (isCreOrCrmDeskUser(admin)) return true;
   if (isOrganisationScopedUser(admin)) return true;
   const designation = String(admin.designation || '').toLowerCase();
   return UNRESTRICTED_DESIGNATIONS.has(designation);
@@ -82,7 +87,7 @@ function isUnrestrictedViewer(admin) {
 function isExecutiveScopedUser(admin) {
   if (!admin) return false;
   if (isUnrestrictedViewer(admin)) return false;
-  if (isCreUser(admin)) return false;
+  if (isCreUser(admin) || isCrmDeskUser(admin)) return false;
   const designation = String(admin.designation || '').toLowerCase();
   // Org managers / heads are never leaf-executive scoped (even if role was mis-set).
   if (['sales_manager', 'sales_head', 'branch_manager', 'gm', 'ceo', 'md'].includes(designation)) {
@@ -396,6 +401,7 @@ module.exports = {
   resolveReportsScope,
   isOrganisationScopedUser,
   isCreUser,
+  isCrmDeskUser,
   isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,

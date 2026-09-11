@@ -1,9 +1,13 @@
 /**
- * Canonical CRE (Customer Relationship Executive) access — same as CRE 1 / CRE 2.
+ * Canonical CRE / CRM desk access — same Lead CRM rights as CRE 1 / CRE 2.
  * Portal: staff login → My Dashboard + full Lead CRM (view/create/update/delete/assign/export).
+ *
+ * CRE users are stamped to exactly these modules.
+ * CRM desk users (e.g. Priya Jaiswal) receive the same Lead CRM rights on top of
+ * any extra modules they already have (complaints, booking reports, …).
  */
 
-const CRE_MODULES = ['my_dashboard', 'crm_leads'];
+const CRE_MODULES = ['my_dashboard', 'crm_leads', 'td_lead_reports'];
 const CRE_ACTIONS = [
   'my_dashboard:view',
   'crm_leads:view',
@@ -12,6 +16,8 @@ const CRE_ACTIONS = [
   'crm_leads:delete',
   'crm_leads:assign',
   'crm_leads:export',
+  'td_lead_reports:view',
+  'td_lead_reports:export',
 ];
 
 function normalizeDesignation(raw) {
@@ -31,8 +37,27 @@ function isCreDesignation(raw) {
   return false;
 }
 
+/** True for Priya Ma'am's CRM desk and any CRM staff row. */
+function isCrmDeskDesignation(raw) {
+  const d = normalizeDesignation(raw);
+  if (!d) return false;
+  if (isCreDesignation(raw)) return false;
+  if (d === 'crm' || /^crm\s*\d+$/.test(d)) return true;
+  if (d === 'crm user' || d === 'crm executive' || d === 'crm manager') return true;
+  return false;
+}
+
 function isCreUser(admin) {
   return isCreDesignation(admin?.designation);
+}
+
+function isCrmDeskUser(admin) {
+  return isCrmDeskDesignation(admin?.designation);
+}
+
+/** CRE or CRM desk — organisation-wide Lead CRM (same visibility as CRE 1 / CRE 2). */
+function isCreOrCrmDeskUser(admin) {
+  return isCreUser(admin) || isCrmDeskUser(admin);
 }
 
 function sameStringList(a, b) {
@@ -40,6 +65,15 @@ function sameStringList(a, b) {
   const right = [...(Array.isArray(b) ? b : [])].map(String).sort();
   if (left.length !== right.length) return false;
   return left.every((v, i) => v === right[i]);
+}
+
+function unionStringList(current, extra) {
+  const set = new Set();
+  for (const v of [...(Array.isArray(current) ? current : []), ...(Array.isArray(extra) ? extra : [])]) {
+    const s = String(v || '').trim();
+    if (s) set.add(s);
+  }
+  return [...set];
 }
 
 function creAccessFields() {
@@ -63,8 +97,19 @@ function creStaffMongoFilter() {
   };
 }
 
+/** Mongo filter matching CRM desk staff (not CRE). */
+function crmDeskMongoFilter() {
+  return {
+    $or: [
+      { designation: { $regex: /^crm$/i } },
+      { designation: { $regex: /^crm[\s_-]*\d+$/i } },
+      { designation: { $regex: /^crm[\s_-]*(user|executive|manager)$/i } },
+    ],
+  };
+}
+
 /**
- * Stamp CRE 1 / CRE 2 rights onto a staff document (mongoose or plain).
+ * Stamp CRE 1 / CRE 2 rights onto a CRE staff document (mongoose or plain).
  * @returns {boolean} whether anything changed
  */
 function applyCreAccessInPlace(staff) {
@@ -94,6 +139,34 @@ function applyCreAccessInPlace(staff) {
   return changed;
 }
 
+/**
+ * Give a CRM desk user the same Lead CRM rights as CRE 1 / CRE 2, without
+ * removing extra modules (complaints, booking reports, etc.).
+ */
+function applyCrmDeskAccessInPlace(staff) {
+  if (!staff || !isCrmDeskDesignation(staff.designation)) return false;
+  let changed = false;
+  if (staff.designation !== 'crm') {
+    staff.designation = 'crm';
+    changed = true;
+  }
+  if (staff.reportsScope !== 'organisation') {
+    staff.reportsScope = 'organisation';
+    changed = true;
+  }
+  const modules = unionStringList(staff.allowedModules, CRE_MODULES);
+  if (!sameStringList(staff.allowedModules, modules)) {
+    staff.allowedModules = modules;
+    changed = true;
+  }
+  const actions = unionStringList(staff.allowedActions, CRE_ACTIONS);
+  if (!sameStringList(staff.allowedActions, actions)) {
+    staff.allowedActions = actions;
+    changed = true;
+  }
+  return changed;
+}
+
 function withCreAccess(payload) {
   if (!isCreUser(payload)) return payload;
   const desired = creAccessFields();
@@ -106,6 +179,24 @@ function withCreAccess(payload) {
   };
 }
 
+function withCrmDeskAccess(payload) {
+  if (!isCrmDeskUser(payload)) return payload;
+  return {
+    ...payload,
+    designation: 'crm',
+    reportsScope: 'organisation',
+    allowedModules: unionStringList(payload.allowedModules, CRE_MODULES),
+    allowedActions: unionStringList(payload.allowedActions, CRE_ACTIONS),
+  };
+}
+
+/** Session payload: CRE stamp, or CRM desk union. */
+function withDeskAccess(payload) {
+  if (isCreUser(payload)) return withCreAccess(payload);
+  if (isCrmDeskUser(payload)) return withCrmDeskAccess(payload);
+  return payload;
+}
+
 async function syncAllCreStaffAccess(TDStaff) {
   const result = await TDStaff.updateMany(creStaffMongoFilter(), { $set: creAccessFields() });
   return {
@@ -114,14 +205,34 @@ async function syncAllCreStaffAccess(TDStaff) {
   };
 }
 
+async function syncAllCrmDeskAccess(TDStaff) {
+  const rows = await TDStaff.find(crmDeskMongoFilter());
+  let modified = 0;
+  for (const row of rows) {
+    if (applyCrmDeskAccessInPlace(row)) {
+      await row.save();
+      modified += 1;
+    }
+  }
+  return { matched: rows.length, modified };
+}
+
 module.exports = {
   CRE_MODULES,
   CRE_ACTIONS,
   isCreDesignation,
+  isCrmDeskDesignation,
   isCreUser,
+  isCrmDeskUser,
+  isCreOrCrmDeskUser,
   creAccessFields,
   creStaffMongoFilter,
+  crmDeskMongoFilter,
   applyCreAccessInPlace,
+  applyCrmDeskAccessInPlace,
   withCreAccess,
+  withCrmDeskAccess,
+  withDeskAccess,
   syncAllCreStaffAccess,
+  syncAllCrmDeskAccess,
 };

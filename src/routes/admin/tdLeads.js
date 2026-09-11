@@ -1,14 +1,13 @@
 const router = require('express').Router();
 const ctrl = require('../../controllers/leadCrmController');
 const reportCtrl = require('../../controllers/leadReportController');
-const { authorize } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
 const { crmCreateLeadValidator } = require('../../validators/adminValidators');
 const { requireModuleAction, requireModuleActionOrRoles } = require('../../utils/modulePermissions');
 
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/executives', ctrl.listCrmExecutives);
-router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getAdminReport);
+router.get('/reports/admin', reportCtrl.requireLeadAdminReportAccess, reportCtrl.getAdminReport);
 router.get('/', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeads);
 router.post(
   '/',

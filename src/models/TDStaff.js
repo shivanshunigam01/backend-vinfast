@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const STAFF_DESIGNATIONS = [
   'sales_executive',
   'cre',
+  'crm',
   'sales_manager',
   'sales_head',
   'branch_manager',

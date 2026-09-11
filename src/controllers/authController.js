@@ -1,7 +1,13 @@
 const Admin = require('../models/Admin');
 const TDStaff = require('../models/TDStaff');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
-const { applyCreAccessInPlace, withCreAccess, isCreDesignation } = require('../constants/creAccess');
+const {
+  applyCreAccessInPlace,
+  applyCrmDeskAccessInPlace,
+  withDeskAccess,
+  isCreDesignation,
+  isCrmDeskDesignation,
+} = require('../constants/creAccess');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
@@ -19,7 +25,7 @@ function staffLoginPayload(staff) {
     allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
     userType: 'tdstaff',
   };
-  return withCreAccess(base);
+  return withDeskAccess(base);
 }
 
 function adminLoginPayload(admin) {
@@ -97,6 +103,8 @@ exports.staffLogin = asyncHandler(async (req, res) => {
   }
 
   if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
+    await staff.save();
+  } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
     await staff.save();
   }
 

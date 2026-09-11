@@ -4,20 +4,29 @@ const reportCtrl = require('../../controllers/leadReportController');
 const { authorize } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
 const { crmCreateLeadValidator } = require('../../validators/adminValidators');
-const { requireModuleAction, requireModuleActionOrRoles } = require('../../utils/modulePermissions');
+const { requireModuleAction, requireModuleActionOrRoles, canPerformAction } = require('../../utils/modulePermissions');
+const { isCreOrCrmDeskUser } = require('../../constants/creAccess');
+const ApiError = require('../../utils/apiError');
 const uploadCrmLeadImport = require('../../middleware/uploadCrmLeadImport');
+
+function requireCrmLeadExport(req, _res, next) {
+  const user = req.admin;
+  if (!user) return next(new ApiError(401, 'Not authenticated'));
+  if (isCreOrCrmDeskUser(user) || canPerformAction(user, 'crm_leads', 'export')) return next();
+  return next(new ApiError(403, 'You do not have permission to download this report'));
+}
 
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
 router.get('/meta/executives', ctrl.listCrmExecutives);
 router.get('/stats', requireModuleAction('crm_leads', 'view'), ctrl.getCrmLeadStats);
 router.get('/action-centre', requireModuleAction('crm_leads', 'view'), ctrl.getActionCentre);
-router.get('/reports/admin', authorize('superadmin', 'manager'), reportCtrl.getAdminReport);
+router.get('/reports/admin', reportCtrl.requireLeadAdminReportAccess, reportCtrl.getAdminReport);
 router.get('/reports/me', reportCtrl.getExecutiveDashboard);
 router.get('/reports/cre', reportCtrl.getCreReport);
 router.get('/duplicates/opportunities', authorize('superadmin', 'manager'), ctrl.checkOpportunityDuplicates);
 
-router.get('/export', requireModuleAction('crm_leads', 'export'), ctrl.exportCrmLeads);
+router.get('/export', requireCrmLeadExport, ctrl.exportCrmLeads);
 router.get(
   '/follow-ups/by-customer',
   requireModuleAction('crm_leads', 'view'),
