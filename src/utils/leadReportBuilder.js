@@ -10,7 +10,8 @@ const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { assignedToStaffFilter } = require('./leadAssignment');
-const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, WALK_IN_SOURCES } = require('./crmConversion');
+const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, endOfDay, WALK_IN_SOURCES } = require('./crmConversion');
+const { dateKeyRange } = require('./reportPeriod');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
@@ -35,17 +36,8 @@ function leadAgeBucket(ageDays) {
 }
 
 function buildLeadDateFilter(from, to, field = 'createdAt') {
-  const filter = {};
-  if (from || to) {
-    filter[field] = {};
-    if (from) filter[field].$gte = new Date(from);
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23, 59, 59, 999);
-      filter[field].$lte = end;
-    }
-  }
-  return filter;
+  if (!from && !to) return {};
+  return { [field]: dateKeyRange(from, to) };
 }
 
 function isConverted(status) {
@@ -660,25 +652,30 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
 
 function buildKpiSummary(leads, followUps, tdBookings, now) {
   const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
   const mtdStart = startOfMonth(now);
-  const inRange = (d, from) => d && new Date(d) >= from;
+  const inRange = (d, from, to = null) => {
+    if (!d) return false;
+    const t = new Date(d);
+    if (Number.isNaN(t.getTime()) || t < from) return false;
+    return to ? t <= to : true;
+  };
   const walkIn = (l) => isWalkInSource(l.source);
   const tdBooked = tdBookings.filter((b) => b.bookingStatus !== 'CANCELLED');
   const tdDone = tdBookings.filter((b) => b.bookingStatus === 'COMPLETED');
-  const countToday = (arr, field) => arr.filter((x) => inRange(x[field], todayStart) && new Date(x[field]) <= now).length;
   return {
     today: {
-      totalLeads: leads.filter((l) => inRange(l.createdAt, todayStart)).length,
-      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, todayStart)).length,
-      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, todayStart)).length,
-      followUpDue: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) >= todayStart && new Date(f.scheduledAt) <= now).length,
+      totalLeads: leads.filter((l) => inRange(l.createdAt, todayStart, todayEnd)).length,
+      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, todayStart, todayEnd)).length,
+      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, todayStart, todayEnd)).length,
+      followUpDue: followUps.filter((f) => f.status === 'pending' && inRange(f.scheduledAt, todayStart, todayEnd)).length,
       overdueFollowUps: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) < todayStart).length,
-      tdBooked: tdBooked.filter((b) => inRange(b.slotDate || b.createdAt, todayStart)).length,
-      tdCompleted: tdDone.filter((b) => inRange(b.updatedAt || b.slotDate, todayStart)).length,
-      negotiation: leads.filter((l) => l.status === 'Negotiation').length,
-      bookings: leads.filter((l) => l.status === 'Booking' && inRange(l.updatedAt, todayStart)).length,
-      deliveries: leads.filter((l) => l.status === 'Delivered' && inRange(l.updatedAt, todayStart)).length,
-      lost: leads.filter((l) => l.status === 'Lost' && inRange(l.updatedAt, todayStart)).length,
+      tdBooked: tdBooked.filter((b) => inRange(b.slotDate || b.createdAt, todayStart, todayEnd)).length,
+      tdCompleted: tdDone.filter((b) => inRange(b.updatedAt || b.slotDate, todayStart, todayEnd)).length,
+      negotiation: leads.filter((l) => l.status === 'Negotiation' && inRange(l.updatedAt, todayStart, todayEnd)).length,
+      bookings: leads.filter((l) => l.status === 'Booking' && inRange(l.updatedAt, todayStart, todayEnd)).length,
+      deliveries: leads.filter((l) => l.status === 'Delivered' && inRange(l.updatedAt, todayStart, todayEnd)).length,
+      lost: leads.filter((l) => l.status === 'Lost' && inRange(l.updatedAt, todayStart, todayEnd)).length,
     },
     mtd: {
       totalLeads: leads.filter((l) => inRange(l.createdAt, mtdStart)).length,

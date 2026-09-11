@@ -20,6 +20,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
+const { dateKeyRange, dateKeyDayBounds, parseSlotDate } = require('../utils/reportPeriod');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
 const {
   getActiveStageLabels,
@@ -452,9 +453,7 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (queryParams.address) query.address = new RegExp(String(queryParams.address).trim(), 'i');
   if (queryParams.createdBy) query.createdBy = queryParams.createdBy;
   if (queryParams.from || queryParams.to) {
-    const range = {};
-    if (queryParams.from) range.$gte = new Date(queryParams.from);
-    if (queryParams.to) range.$lte = new Date(`${queryParams.to}T23:59:59.999Z`);
+    const range = dateKeyRange(queryParams.from, queryParams.to);
 
     if (queryParams.dateField === 'activity') {
       query.$and = query.$and || [];
@@ -492,10 +491,7 @@ async function buildLeadQuery(admin, queryParams = {}) {
     query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
   }
   if (queryParams.followUpToday === 'true') {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
+    const { start, end } = dateKeyDayBounds();
     query.nextFollowUp = { $gte: start, $lte: end };
     query.status = { $nin: ['Delivered', 'Lost', 'Not Interested'] };
   }
@@ -1257,9 +1253,8 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   if (!slotDate) throw new ApiError(400, 'slotDate is required');
   if (!slotTime) throw new ApiError(400, 'slotTime is required');
 
-  const nextDate = new Date(slotDate);
-  if (Number.isNaN(nextDate.getTime())) throw new ApiError(400, 'Invalid slotDate');
-  nextDate.setHours(0, 0, 0, 0);
+  const nextDate = parseSlotDate(slotDate);
+  if (!nextDate) throw new ApiError(400, 'Invalid slotDate');
 
   const validModels = await getActiveModelNames();
   const chosenModel = String(model || lead.model || '').trim();

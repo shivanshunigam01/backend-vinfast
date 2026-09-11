@@ -17,6 +17,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildDateRange, buildSearchQuery } = require('../utils/queryBuilder');
+const { dateKeyDayBounds } = require('../utils/reportPeriod');
 const { findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 
 const LEAD_SEARCH_FIELDS = ['name', 'mobile', 'email', 'city', 'model', 'source', 'interest'];
@@ -77,10 +78,8 @@ exports.getTestDrives = getAll(TestDrive, {
     if (req.query.status) query.status = req.query.status;
     if (req.query.model) query.model = req.query.model;
     if (req.query.date) {
-      const day = new Date(req.query.date);
-      const next = new Date(day);
-      next.setDate(next.getDate() + 1);
-      query.preferredDate = { $gte: day, $lt: next };
+      const { start, next } = dateKeyDayBounds(String(req.query.date));
+      query.preferredDate = { $gte: start, $lt: next };
     }
     return query;
   },

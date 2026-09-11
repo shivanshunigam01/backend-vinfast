@@ -32,32 +32,16 @@ function isDeliveredStatus(status) {
   return normalizeStageLabel(status) === 'Delivered';
 }
 
+const { dateKeyRange } = require('./reportPeriod');
+
 function slotDateFilter(from, to) {
-  const filter = {};
-  if (from || to) {
-    filter.slotDate = {};
-    if (from) filter.slotDate.$gte = new Date(from);
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23, 59, 59, 999);
-      filter.slotDate.$lte = end;
-    }
-  }
-  return filter;
+  if (!from && !to) return {};
+  return { slotDate: dateKeyRange(from, to) };
 }
 
 function createdAtFilter(from, to) {
-  const filter = {};
-  if (from || to) {
-    filter.createdAt = {};
-    if (from) filter.createdAt.$gte = new Date(from);
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23, 59, 59, 999);
-      filter.createdAt.$lte = end;
-    }
-  }
-  return filter;
+  if (!from && !to) return {};
+  return { createdAt: dateKeyRange(from, to) };
 }
 
 async function buildExecutiveTdStats({ executiveId, from, to }) {

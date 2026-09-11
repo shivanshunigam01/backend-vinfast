@@ -12,18 +12,11 @@ const { extractCustomerFromBooking } = require('./tdCustomerResolver');
 
 const CONVERTED_LEAD_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 
+const { dateKeyRange } = require('./reportPeriod');
+
 function buildDateFilter(from, to) {
-  const dateFilter = {};
-  if (from || to) {
-    dateFilter.slotDate = {};
-    if (from) dateFilter.slotDate.$gte = new Date(from);
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23, 59, 59, 999);
-      dateFilter.slotDate.$lte = end;
-    }
-  }
-  return dateFilter;
+  if (!from && !to) return {};
+  return { slotDate: dateKeyRange(from, to) };
 }
 
 function isConvertedLead(status) {
@@ -48,16 +41,7 @@ async function buildAdminReport({ from, to, branchId } = {}) {
   const branchFilter = branchId ? { branchId: new mongoose.Types.ObjectId(branchId) } : {};
   const baseFilter = { ...dateFilter, ...branchFilter };
 
-  const feedbackDateFilter = {};
-  if (from || to) {
-    feedbackDateFilter.createdAt = {};
-    if (from) feedbackDateFilter.createdAt.$gte = new Date(from);
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23, 59, 59, 999);
-      feedbackDateFilter.createdAt.$lte = end;
-    }
-  }
+  const feedbackDateFilter = from || to ? { createdAt: dateKeyRange(from, to) } : {};
 
   const [
     totalBookings,

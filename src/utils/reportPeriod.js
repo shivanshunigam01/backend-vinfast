@@ -153,6 +153,34 @@ function periodBucketKey(date, period) {
   return `${y}-${m}`;
 }
 
+/**
+ * Inclusive local-calendar range for YYYY-MM-DD query params.
+ * Avoids `new Date("YYYY-MM-DD")` (UTC midnight) which drops IST same-day rows.
+ */
+function dateKeyRange(fromStr, toStr) {
+  const range = {};
+  if (fromStr) range.$gte = startOfDay(parseDateKey(fromStr));
+  if (toStr) range.$lte = endOfDay(parseDateKey(toStr));
+  return range;
+}
+
+function dateKeyDayBounds(dateStr) {
+  const start = startOfDay(parseDateKey(dateStr || toDateKey(new Date())));
+  const next = new Date(start);
+  next.setDate(next.getDate() + 1);
+  return { start, next, end: endOfDay(start) };
+}
+
+/** Normalize a date-only or datetime value to local start-of-day. */
+function parseSlotDate(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return startOfDay(parseDateKey(s));
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return startOfDay(d);
+}
+
 module.exports = {
   PERIODS,
   resolvePeriodRange,
@@ -163,4 +191,7 @@ module.exports = {
   startOfDay,
   endOfDay,
   isFullCalendarYear,
+  dateKeyRange,
+  dateKeyDayBounds,
+  parseSlotDate,
 };

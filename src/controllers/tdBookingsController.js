@@ -9,6 +9,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
+const { dateKeyDayBounds, parseSlotDate } = require('../utils/reportPeriod');
 const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { ensureBookingsCustomers, ensureBookingCustomer } = require('../utils/tdCustomerResolver');
 const { syncAllLegacyTestDrives } = require('../utils/tdBookingSync');
@@ -81,9 +82,8 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
   }
 
   if (!body.slotDate) throw new ApiError(400, 'slotDate is required');
-  const slotDate = new Date(body.slotDate);
-  if (Number.isNaN(slotDate.getTime())) throw new ApiError(400, 'Invalid slotDate');
-  slotDate.setHours(0, 0, 0, 0);
+  const slotDate = parseSlotDate(body.slotDate);
+  if (!slotDate) throw new ApiError(400, 'Invalid slotDate');
   if (!body.slotTime) throw new ApiError(400, 'slotTime is required');
 
   const summary = await evaluateRepeatDrive(mobile, model);
@@ -199,12 +199,8 @@ function buildBookingListQuery(req) {
   const query = {};
   if (req.query.status) query.bookingStatus = String(req.query.status).toUpperCase();
   if (req.query.date) {
-    const day = new Date(req.query.date);
-    if (!Number.isNaN(day.getTime())) {
-      const next = new Date(day);
-      next.setDate(next.getDate() + 1);
-      query.slotDate = { $gte: day, $lt: next };
-    }
+    const { start, next } = dateKeyDayBounds(String(req.query.date));
+    query.slotDate = { $gte: start, $lt: next };
   }
   return query;
 }
@@ -942,8 +938,8 @@ exports.rescheduleBooking = asyncHandler(async (req, res) => {
   if (!slotDate || !slotTime) throw new ApiError(400, 'slotDate and slotTime are required');
 
   const doc = await findBookingById(req.params.id);
-  const nextDate = new Date(slotDate);
-  if (Number.isNaN(nextDate.getTime())) throw new ApiError(400, 'Invalid slotDate');
+  const nextDate = parseSlotDate(slotDate);
+  if (!nextDate) throw new ApiError(400, 'Invalid slotDate');
 
   doc.slotDate = nextDate;
   doc.slotTime = String(slotTime).trim();
