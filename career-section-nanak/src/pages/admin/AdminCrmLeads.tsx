@@ -129,8 +129,8 @@ export default function AdminCrmLeads() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  // Default CRE list to unassigned so the calling queue is obvious; backend also scopes CRE.
-  const [filterExecutive, setFilterExecutive] = useState(isCre ? "unassigned" : "all");
+  // CRE sees all leads by default (can still filter Unassigned / by executive).
+  const [filterExecutive, setFilterExecutive] = useState("all");
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
   const [customerFollowUpsOnly, setCustomerFollowUpsOnly] = useState(false);
   const [favouriteOnly, setFavouriteOnly] = useState(false);
@@ -908,7 +908,7 @@ export default function AdminCrmLeads() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
             {isCre
-              ? "Calling queue — unassigned, unfollowed, and in-calling leads. Assign to executives after the call."
+              ? "Full lead pipeline — view all leads, assign executives, and track calling / follow-ups."
               : isExecutive
                 ? "Your assigned leads from website, Meta Ads, test drives, and enquiries."
                 : "Unified lead pipeline — assign executives, track stages, notes, and follow-ups."}
@@ -1097,7 +1097,7 @@ export default function AdminCrmLeads() {
               <SelectValue placeholder="Staff" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{isCre ? "Calling queue (all)" : "All (my team)"}</SelectItem>
+              <SelectItem value="all">{isCre ? "All leads" : "All (my team)"}</SelectItem>
               <SelectItem value="unassigned">Unassigned</SelectItem>
               {staffUsers.map((e) => (
                 <SelectItem key={e._id} value={e._id}>

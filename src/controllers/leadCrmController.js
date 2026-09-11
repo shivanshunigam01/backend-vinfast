@@ -526,9 +526,9 @@ async function buildLeadQuery(admin, queryParams = {}) {
     query._id = { $in: favIds.length ? favIds : [null] };
   }
 
-  // CRE work queue: only unassigned, unfollowed, or still-in-calling leads.
-  // Managers/admins keep full CRM; CRE can pass creView=all only if we add it later for support.
-  if (isCreUser(admin) && String(queryParams.creView || 'queue') !== 'all') {
+  // CRE sees the full lead list by default (same as managers for visibility).
+  // Optional ?creView=queue narrows to the calling work queue only.
+  if (isCreUser(admin) && String(queryParams.creView || 'all') === 'queue') {
     applyCreCallingQueueFilter(query);
   }
 
@@ -545,11 +545,10 @@ const CRE_CALLING_STAGES = [
 const CRE_CLOSED_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
 
 /**
- * CRE login list scope — calling work queue only:
+ * Optional CRE calling-queue filter (?creView=queue):
  * - unassigned open leads
  * - unfollowed / still-calling stages (Enquiry, Interested, …)
  * - leads with a CRE call date still in calling stages
- * Assigned leads that have moved past calling (TD / negotiation / booking) stay hidden.
  */
 function applyCreCallingQueueFilter(query) {
   query.$and = query.$and || [];
