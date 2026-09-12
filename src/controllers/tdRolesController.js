@@ -27,6 +27,9 @@ const CRM_DESK_ACTIONS = [
   'booking_reports:export',
 ];
 
+/** Coarse auth roles allowed on StaffRole templates (matches StaffRole schema enum). */
+const AUTH_ROLES = ['executive', 'manager'];
+
 const EXECUTIVE_DEFAULT_MODULES = ['my_dashboard', 'td_my_bookings', 'crm_leads', 'calendar'];
 const MANAGER_DEFAULT_MODULES = [
   'dashboard',
