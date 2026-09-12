@@ -9,7 +9,7 @@ const {
 } = require('../utils/executiveDashboardBuilder');
 const { buildDeliveryReport } = require('../utils/deliveryReportBuilder');
 const { buildBookingReport } = require('../utils/bookingReportBuilder');
-const { buildDetailedReport } = require('../utils/detailedReportBuilder');
+const { buildDetailedReport, buildTeamWiseAssignedLeadsReport } = require('../utils/detailedReportBuilder');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
 const { isCreUser, isCrmDeskUser } = require('../utils/leadAssignment');
@@ -85,6 +85,11 @@ exports.getBookingReport = asyncHandler(async (req, res) => {
 
 exports.getDetailedReport = asyncHandler(async (req, res) => {
   const data = await buildDetailedReport({ admin: req.admin });
+  return successResponse(res, data);
+});
+
+exports.getTeamWiseAssignedLeadsReport = asyncHandler(async (req, res) => {
+  const data = await buildTeamWiseAssignedLeadsReport({ admin: req.admin });
   return successResponse(res, data);
 });
 

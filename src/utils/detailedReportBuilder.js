@@ -105,7 +105,6 @@ async function buildDetailedReport({ admin } = {}) {
     staffRows,
     leadByStaffAgg,
     tdByStaffAgg,
-    matrixAgg,
     monthlyTdAgg,
   ] = await Promise.all([
     countLeads(leadScope),
@@ -176,15 +175,6 @@ async function buildDetailedReport({ admin } = {}) {
         },
       },
     ]),
-    Lead.aggregate([
-      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
-      {
-        $group: {
-          _id: { source: { $ifNull: ['$source', 'Unknown'] }, staffId: '$assignedTo' },
-          count: { $sum: 1 },
-        },
-      },
-    ]),
     TDBooking.aggregate([
       { $match: { slotDate: dateRange(yearStart, todayEnd), bookingStatus: { $ne: 'CANCELLED' } } },
       { $group: { _id: { $month: '$slotDate' }, count: { $sum: 1 } } },
@@ -196,8 +186,6 @@ async function buildDetailedReport({ admin } = {}) {
   const tdByStaff = new Map(
     tdByStaffAgg.map((r) => [String(r._id), { totalTd: r.totalTd, tdMtd: r.tdMtd }]),
   );
-
-  const staffById = new Map(staffRows.map((s) => [String(s._id), s]));
 
   async function teamTdTotals(staffId) {
     const ids = await collectSubtreeStaffIds(staffId);
@@ -264,9 +252,41 @@ async function buildDetailedReport({ admin } = {}) {
   }));
   const monthlyTdTotal = monthlyTestDrives.reduce((s, r) => s + r.count, 0);
 
-  // Team-wise matrix columns (active sales staff only)
+  return {
+    generatedAt: now.toISOString(),
+    period: {
+      mtdFrom: mtdStart.toISOString(),
+      mtdTo: todayEnd.toISOString(),
+      today: toDateKey(now),
+      label: `MTD: ${toDateKey(mtdStart)} – ${toDateKey(now)}`,
+    },
+    summary: {
+      totalLeads: { all: totalLeadsAll, mtd: totalLeadsMtd, today: totalLeadsToday },
+      walkIn: { all: walkInAll, mtd: walkInMtd, today: walkInToday },
+      digital: { all: digitalAll, mtd: digitalMtd, today: digitalToday },
+      testDrives: { all: tdAll, mtd: tdMtd, doneToday: tdDoneToday },
+      bookingCount,
+      callsMadeToday: callsToday,
+    },
+    leadSources,
+    leadSourcesTotal: {
+      count: leadSources.reduce((s, r) => s + r.count, 0),
+      assignedCount: leadSources.reduce((s, r) => s + r.assignedCount, 0),
+    },
+    salesManagers: managers,
+    salesExecutives: executives,
+    leadTypes,
+    leadTypesTotal: leadTypes.reduce((s, r) => s + r.count, 0),
+    monthlyTestDrives,
+    monthlyTestDrivesTotal: monthlyTdTotal,
+  };
+}
+
+function buildTeamMatrix({ staffRows, leadByStaff, matrixAgg, leadSources, now }) {
+  const staffById = new Map(staffRows.map((s) => [String(s._id), s]));
   const matrixStaff = staffRows.filter((s) => MATRIX_DESIGNATIONS.has(s.designation));
   const teamRoots = new Map();
+
   for (const s of matrixStaff) {
     let root = s;
     let cur = s;
@@ -314,10 +334,9 @@ async function buildDetailedReport({ admin } = {}) {
   const matrixByKey = new Map(
     matrixAgg.map((r) => [`${r._id.source}::${String(r._id.staffId)}`, r.count]),
   );
-
   const allSources = leadSources.map((r) => r.source);
 
-  const teamMatrix = {
+  return {
     teams,
     columns: matrixColumns,
     rows: allSources.map((source) => {
@@ -338,6 +357,50 @@ async function buildDetailedReport({ admin } = {}) {
       matrixColumns.map((col) => [col.staffId, leadByStaff.get(col.staffId) || 0]),
     ),
   };
+}
+
+async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
+  const now = new Date();
+  const todayEnd = endOfDay(now);
+  const mtdStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  const leadScope = await buildLeadScope(admin);
+
+  const [sourceAgg, staffRows, leadByStaffAgg, matrixAgg] = await Promise.all([
+    Lead.aggregate([
+      { $match: leadScope },
+      {
+        $group: {
+          _id: { $ifNull: ['$source', 'Unknown'] },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]),
+    TDStaff.find({ active: { $ne: false } })
+      .select('name designation reportsTo email')
+      .sort({ designation: 1, name: 1 })
+      .lean(),
+    Lead.aggregate([
+      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
+      { $group: { _id: '$assignedTo', totalLeads: { $sum: 1 } } },
+    ]),
+    Lead.aggregate([
+      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: { source: { $ifNull: ['$source', 'Unknown'] }, staffId: '$assignedTo' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+  ]);
+
+  const leadByStaff = new Map(leadByStaffAgg.map((r) => [String(r._id), r.totalLeads]));
+  const leadSources = sourceAgg.map((r) => ({
+    source: r._id || 'Unknown',
+    count: r.count,
+  }));
+  const teamMatrix = buildTeamMatrix({ staffRows, leadByStaff, matrixAgg, leadSources, now });
 
   return {
     generatedAt: now.toISOString(),
@@ -345,27 +408,8 @@ async function buildDetailedReport({ admin } = {}) {
       mtdFrom: mtdStart.toISOString(),
       mtdTo: todayEnd.toISOString(),
       today: toDateKey(now),
-      label: `MTD: ${toDateKey(mtdStart)} – ${toDateKey(now)}`,
+      label: `All assigned leads · ${toDateKey(now)}`,
     },
-    summary: {
-      totalLeads: { all: totalLeadsAll, mtd: totalLeadsMtd, today: totalLeadsToday },
-      walkIn: { all: walkInAll, mtd: walkInMtd, today: walkInToday },
-      digital: { all: digitalAll, mtd: digitalMtd, today: digitalToday },
-      testDrives: { all: tdAll, mtd: tdMtd, doneToday: tdDoneToday },
-      bookingCount,
-      callsMadeToday: callsToday,
-    },
-    leadSources,
-    leadSourcesTotal: {
-      count: leadSources.reduce((s, r) => s + r.count, 0),
-      assignedCount: leadSources.reduce((s, r) => s + r.assignedCount, 0),
-    },
-    salesManagers: managers,
-    salesExecutives: executives,
-    leadTypes,
-    leadTypesTotal: leadTypes.reduce((s, r) => s + r.count, 0),
-    monthlyTestDrives,
-    monthlyTestDrivesTotal: monthlyTdTotal,
     teamMatrix,
   };
 }
@@ -377,4 +421,4 @@ function toDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-module.exports = { buildDetailedReport };
+module.exports = { buildDetailedReport, buildTeamWiseAssignedLeadsReport };

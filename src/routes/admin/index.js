@@ -202,6 +202,11 @@ router.get(
   leadReportController.getDetailedReport,
 );
 router.get(
+  '/reports/team-assigned-leads',
+  requireModuleAction('team_wise_leads', 'view'),
+  leadReportController.getTeamWiseAssignedLeadsReport,
+);
+router.get(
   '/crm/reports/bookings',
   requireModuleAction('booking_reports', 'view'),
   leadReportController.getBookingReport,
