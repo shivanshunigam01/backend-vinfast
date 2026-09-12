@@ -1,8 +1,22 @@
 const Lead = require('../models/Lead');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const LeadFavourite = require('../models/LeadFavourite');
+const { normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { startOfDay, endOfDay } = require('./crmConversion');
+
+/** Map raw DB status into an active pipeline stage bucket (legacy + import aliases). */
+function bucketPipelineStage(rawStatus, stages) {
+  const normalized = normalizeStageLabel(rawStatus || 'Enquiry');
+  if (stages.includes(normalized)) return normalized;
+
+  const raw = String(rawStatus || '').trim().toLowerCase();
+  if (raw === 'follow up' || raw === 'follow-up') {
+    return stages.includes('Interested') ? 'Interested' : 'Enquiry';
+  }
+
+  return stages.includes('Enquiry') ? 'Enquiry' : stages[0];
+}
 
 async function favouriteLeadIdsForUser(admin, extraStaffIds = null) {
   if (!admin?._id) return [];
@@ -29,8 +43,8 @@ async function buildCrmLeadStats({ admin, leadQuery }) {
   const pipeline = {};
   for (const s of stages) pipeline[s] = 0;
   for (const row of pipelineAgg) {
-    const key = row._id || 'Enquiry';
-    pipeline[key] = (pipeline[key] || 0) + row.count;
+    const key = bucketPipelineStage(row._id, stages);
+    pipeline[key] += row.count;
   }
 
   const favIds = await favouriteLeadIdsForUser(admin);
@@ -56,7 +70,7 @@ async function buildCrmLeadStats({ admin, leadQuery }) {
     }),
     Lead.countDocuments({
       ...leadQuery,
-      status: 'Enquiry',
+      status: { $in: ['Enquiry', 'New Lead', 'Contact Attempted'] },
       $or: [{ firstRespondedAt: { $exists: false } }, { firstRespondedAt: null }],
     }),
   ]);
@@ -82,4 +96,4 @@ async function buildCrmLeadStats({ admin, leadQuery }) {
   };
 }
 
-module.exports = { buildCrmLeadStats, favouriteLeadIdsForUser };
+module.exports = { buildCrmLeadStats, favouriteLeadIdsForUser, bucketPipelineStage };

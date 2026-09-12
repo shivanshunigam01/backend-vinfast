@@ -209,6 +209,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     buyerType,
     forceNewOpportunity,
     allowMultiOpportunity,
+    interestedModels,
   } = body;
 
   if (!name || String(name).trim().length < 2) {
@@ -319,6 +320,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
       referrer ? ` · referred by ${referrer.name} (${referrer.customerId})` : ''
     }${shouldForceNewOpp ? ' · new opportunity under same customer' : ''}`,
     forceNew: shouldForceNewOpp,
+    interestedModels,
   });
 
   if (Array.isArray(followUps) && followUps.length) {
@@ -402,7 +404,7 @@ function formatCrmLead(doc, extras = {}) {
 }
 
 async function buildLeadQuery(admin, queryParams = {}) {
-  const query = {};
+  const query = { isDuplicate: { $ne: true } };
   // MoM #12: SE/SM/SH/BM see own + reporting subtree; MD/CEO/GM/superadmin see all.
   // Team-scoped users may further narrow with ?assignedTo= (self / SE in subtree / unassigned).
   if (isTeamScopedUser(admin)) {
@@ -784,6 +786,7 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
     exchangeNeeded,
     buyerType,
     interestLevel,
+    interestedModels,
   } = req.body || {};
 
   const changes = [];
@@ -815,6 +818,26 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
     if (lead.model !== normalized) {
       changes.push(`Model: ${lead.model || '—'} → ${normalized}`);
       lead.model = normalized;
+    }
+  }
+
+  if (interestedModels !== undefined) {
+    const list = Array.isArray(interestedModels) ? interestedModels : [];
+    const normalizedList = [
+      ...new Set(
+        list
+          .map((m) => normalizeLeadModelForStorage(m))
+          .filter((m) => m && m !== 'Both' && isValidLeadModel(m)),
+      ),
+    ];
+    if (lead.model && !normalizedList.includes(lead.model)) {
+      normalizedList.unshift(lead.model);
+    }
+    const prev = (lead.interestedModels || []).join(', ') || '—';
+    const next = normalizedList.join(', ') || '—';
+    if (prev !== next) {
+      changes.push(`Interested models: ${prev} → ${next}`);
+      lead.interestedModels = normalizedList.length ? normalizedList : undefined;
     }
   }
 

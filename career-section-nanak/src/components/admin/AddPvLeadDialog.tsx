@@ -8,9 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BiharDistrictField } from "@/components/BiharDistrictField";
-import { ModelTrimSelect } from "@/components/ModelTrimSelect";
+import { ModelTrimMultiSelect, primaryTrimFromSelection } from "@/components/ModelTrimMultiSelect";
 import { BIHAR_DEFAULT_DISTRICT } from "@/data/biharDistricts";
-import { DEFAULT_VF7_TRIM, leadModelLabel } from "@/data/vinfastModels";
+import { DEFAULT_VF7_TRIM } from "@/data/vinfastModels";
 import { formatApiErrors, ApiRequestError } from "@/lib/api";
 import { DEFAULT_LEAD_SOURCE } from "@/data/leadSources";
 import {
@@ -40,8 +40,7 @@ const emptyForm = () => ({
   email: "",
   city: BIHAR_DEFAULT_DISTRICT,
   otherCity: "",
-  model: "VF 7",
-  variant: DEFAULT_VF7_TRIM,
+  selectedTrims: [DEFAULT_VF7_TRIM] as string[],
   source: DEFAULT_LEAD_SOURCE as string,
   remarks: "",
   financeNeeded: false,
@@ -119,6 +118,10 @@ export function AddPvLeadDialog({
       toast.error("Select a city");
       return;
     }
+    if (!form.selectedTrims.length) {
+      toast.error("Select at least one product");
+      return;
+    }
 
     const payload: CreatePvCrmLeadPayload = {
       name: form.name.trim(),
@@ -126,7 +129,8 @@ export function AddPvLeadDialog({
       email: form.email.trim() || undefined,
       city: form.city,
       otherCity: form.city === "Other" ? form.otherCity.trim() : undefined,
-      model: leadModelLabel(form.model, form.variant),
+      model: primaryTrimFromSelection(form.selectedTrims),
+      interestedModels: form.selectedTrims,
       source: form.source,
       remarks: form.remarks.trim() || undefined,
       financeNeeded: form.financeNeeded,
@@ -233,13 +237,10 @@ export function AddPvLeadDialog({
                 fullWidthOtherRow
               />
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs">Model &amp; trim</Label>
-              <ModelTrimSelect
-                model={form.model}
-                variant={form.variant}
-                onChange={(model, variant) => setForm((f) => ({ ...f, model, variant }))}
-                className="h-10 w-full px-3 rounded-lg bg-secondary/50 border border-border text-sm"
+            <div className="sm:col-span-2">
+              <ModelTrimMultiSelect
+                value={form.selectedTrims}
+                onChange={(selectedTrims) => setForm((f) => ({ ...f, selectedTrims }))}
                 includeMpv7
               />
             </div>

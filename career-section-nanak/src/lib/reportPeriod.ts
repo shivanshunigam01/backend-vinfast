@@ -17,6 +17,21 @@ export function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Local calendar YYYY-MM-DD for an ISO/date value (IST-safe). */
+export function localDateKey(v?: string | Date | null): string {
+  if (v == null || v === "") return "";
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : toDateKey(v);
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  return toDateKey(d);
+}
+
+export function isLocalToday(v?: string | Date | null, today = toDateKey(new Date())): boolean {
+  return Boolean(v) && localDateKey(v) === today;
+}
+
 /** Parse YYYY-MM-DD as a local calendar date. */
 export function parseDateKey(s: string): Date {
   const m = String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);

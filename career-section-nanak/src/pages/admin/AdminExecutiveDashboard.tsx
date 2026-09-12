@@ -833,7 +833,7 @@ export default function AdminExecutiveDashboard() {
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="leads">My Leads ({leads.leadDetailRows?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="leads">My Leads ({leads.overview?.totalLeads ?? 0})</TabsTrigger>
           <TabsTrigger value="test-drives">Test Drives ({(selfBlock.recentBookings?.length ?? 0)})</TabsTrigger>
           <TabsTrigger value="compare">Year compare</TabsTrigger>
         </TabsList>
@@ -916,7 +916,12 @@ export default function AdminExecutiveDashboard() {
         <TabsContent value="leads" className="mt-4">
           <Card className="border-border/50 overflow-hidden">
             <div className="p-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="font-semibold text-sm">Your leads — {execData.year}</h3>
+              <h3 className="font-semibold text-sm">
+                Your leads — {execData.year}
+                {(leads.leadDetailRows?.length ?? 0) < (leads.overview?.totalLeads ?? 0)
+                  ? ` (showing latest ${leads.leadDetailRows?.length ?? 0} of ${leads.overview?.totalLeads ?? 0})`
+                  : ""}
+              </h3>
               <Link to="/admin/crm/leads">
                 <Button size="sm" variant="outline">Manage leads</Button>
               </Link>

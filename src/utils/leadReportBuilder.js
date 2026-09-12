@@ -9,6 +9,7 @@ const TDStaff = require('../models/TDStaff');
 const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
+const { bucketPipelineStage } = require('./crmStatsBuilder');
 const { assignedToStaffFilter } = require('./leadAssignment');
 const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, endOfDay, WALK_IN_SOURCES } = require('./crmConversion');
 const { dateKeyRange } = require('./reportPeriod');
@@ -46,7 +47,7 @@ function isConverted(status) {
 
 async function buildLeadAdminReport({ from, to, executiveId, status, source, model, buyerType, channel, designation } = {}) {
   const leadDateFilter = buildLeadDateFilter(from, to);
-  const leadQuery = { ...leadDateFilter };
+  const leadQuery = { isDuplicate: { $ne: true }, ...leadDateFilter };
   if (executiveId) {
     Object.assign(leadQuery, assignedToStaffFilter(executiveId));
   }
@@ -243,8 +244,8 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
   const stageLabels = await getActiveStageLabels();
   for (const stage of stageLabels) pipeline[stage] = 0;
   for (const row of leadsByStatus) {
-    const key = normalizeStageLabel(row._id || 'Enquiry');
-    pipeline[key] = (pipeline[key] || 0) + row.count;
+    const key = bucketPipelineStage(row._id, stageLabels);
+    pipeline[key] += row.count;
   }
 
   const bySource = Object.fromEntries(leadsBySource.map((r) => [r._id || 'Unknown', r.count]));

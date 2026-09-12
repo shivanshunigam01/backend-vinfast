@@ -55,7 +55,7 @@ export type CalendarFiltersParams = {
   model?: string;
 };
 
-export async function fetchCalendarEvents(params: CalendarFiltersParams): Promise<CalendarEvent[]> {
+export async function fetchCalendarEvents(params: CalendarFiltersParams): Promise<CalendarEvent[] | null> {
   const q = new URLSearchParams({
     from: params.from,
     to: params.to,
@@ -64,8 +64,8 @@ export async function fetchCalendarEvents(params: CalendarFiltersParams): Promis
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.assignedTo && params.assignedTo !== "all") q.set("assignedTo", params.assignedTo);
   if (params.model && params.model !== "all") q.set("model", params.model);
-  const { data } = await adminGet<CalendarEvent[]>(`/admin/dashboard/calendar?${q}`);
-  return data ?? [];
+  const { data } = await adminGet<CalendarEvent[] | null>(`/admin/dashboard/calendar?${q}`);
+  return data ?? null;
 }
 
 export async function patchCalendarEvent(

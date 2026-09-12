@@ -20,8 +20,9 @@ import {
   markAdminSessionStart,
   setAdminSession,
   getAdminLoginRedirect,
-  getAdminToken,
   getAdminUser,
+  isAdminSession,
+  isAdminSessionTimedOut,
   type AdminUser,
 } from "@/lib/adminAuth";
 
@@ -56,12 +57,9 @@ const StaffLogin = () => {
   const sessionExpired = searchParams.get("reason") === "session-expired";
 
   useEffect(() => {
-    const token = getAdminToken();
-    const user = getAdminUser();
-    if (token && user) {
-      navigate(getAdminLoginRedirect(user), { replace: true });
-    }
-  }, [navigate]);
+    if (sessionExpired || !isAdminSession() || isAdminSessionTimedOut()) return;
+    navigate(getAdminLoginRedirect(getAdminUser()), { replace: true });
+  }, [navigate, sessionExpired]);
 
   const continueIdentity = (e: React.FormEvent) => {
     e.preventDefault();

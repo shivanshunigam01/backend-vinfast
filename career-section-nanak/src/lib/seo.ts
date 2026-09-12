@@ -6,6 +6,7 @@ export const DEFAULT_OG_IMAGE = `${SITE_URL}/preview.jpg`;
 export type SeoPayload = {
   title: string;
   description: string;
+  keywords?: string | string[];
   /** Path starting with `/`, or absolute URL */
   canonical?: string;
   ogImage?: string;
@@ -65,10 +66,13 @@ export function applyPageSeo(seo: SeoPayload) {
   const description = seo.description.trim();
   const canonical = absoluteCanonical(seo.canonical);
   const ogImage = seo.ogImage || DEFAULT_OG_IMAGE;
+  const keywords = Array.isArray(seo.keywords)
+    ? seo.keywords.filter(Boolean).join(", ")
+    : seo.keywords || "";
 
   document.title = title;
   upsertMeta("name", "description", description);
-  document.head.querySelector('meta[name="keywords"]')?.remove();
+  if (keywords) upsertMeta("name", "keywords", keywords);
   upsertLink("canonical", canonical);
 
   upsertMeta("property", "og:title", title);

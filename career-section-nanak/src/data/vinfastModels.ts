@@ -82,3 +82,15 @@ export function parseStoredModelLine(stored: string): { model: string; variant: 
   if (s === "Limo Green") return { model: "Limo Green", variant: DEFAULT_LIMO_GREEN_TRIM };
   return { model: "VF 7", variant: DEFAULT_VF7_TRIM };
 }
+
+/** Unique stored trim / model lines for a lead (primary + interested). */
+export function leadProductLines(lead?: { model?: string; interestedModels?: string[] } | null): string[] {
+  if (!lead) return [];
+  const lines = [
+    lead.model,
+    ...(Array.isArray(lead.interestedModels) ? lead.interestedModels : []),
+  ]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+  return [...new Set(lines)];
+}

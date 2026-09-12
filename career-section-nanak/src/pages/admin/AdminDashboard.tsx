@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Users, Car, TestTube, MessageSquare, TrendingUp, Clock, Phone, CalendarCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { localDateKey } from "@/lib/reportPeriod";
 
 type CardAction =
   | "all-leads"
@@ -37,14 +38,6 @@ function fmtDate(v?: string) {
   if (!v) return "—";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function localDateKey(v?: string): string {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return v.slice(0, 10);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 const LEAD_STATUS_BADGE: Record<string, string> = {
@@ -139,12 +132,15 @@ const AdminDashboard = () => {
   const allTdsRef = useRef<TestDriveBooking[] | null>(null);
   const allEnquiriesRef = useRef<Enquiry[] | null>(null);
 
-  const loadAllLeads = async (): Promise<Lead[]> => {
+  const loadAllLeads = async (opts?: { from?: string; to?: string }): Promise<Lead[]> => {
     if (!useRemote) return leads;
-    if (allLeadsRef.current) return allLeadsRef.current;
-    const res = await adminGet<unknown[]>("/admin/leads?limit=500&page=1");
+    if (!opts?.from && !opts?.to && allLeadsRef.current) return allLeadsRef.current;
+    const q = new URLSearchParams({ limit: "500", page: "1" });
+    if (opts?.from) q.set("from", opts.from);
+    if (opts?.to) q.set("to", opts.to);
+    const res = await adminGet<unknown[]>(`/admin/leads?${q}`);
     const rows = (res.data as Record<string, unknown>[]).map((d) => leadFromApi(d));
-    allLeadsRef.current = rows;
+    if (!opts?.from && !opts?.to) allLeadsRef.current = rows;
     return rows;
   };
 
@@ -166,12 +162,12 @@ const AdminDashboard = () => {
     return rows;
   };
 
-  const showLeadRows = (title: string, filter?: (l: Lead) => boolean) => {
+  const showLeadRows = (title: string, filter?: (l: Lead) => boolean, range?: { from?: string; to?: string }) => {
     setDetailTitle(title);
     setDetailMode("leads");
     setDetailOpen(true);
     setDetailLoading(true);
-    void loadAllLeads()
+    void loadAllLeads(range)
       .then((rows) => setDetailLeads(filter ? rows.filter(filter) : rows))
       .catch((e) => {
         setDetailLeads([]);
@@ -232,14 +228,15 @@ const AdminDashboard = () => {
   };
 
   const handleCardClick = (action: CardAction) => {
-    const today = localDateKey(new Date().toISOString());
     switch (action) {
       case "all-leads":
         showLeadRows("Total Leads");
         break;
-      case "leads-today":
-        showLeadRows("Leads Today", (l) => localDateKey(l.createdAt) === today);
+      case "leads-today": {
+        const today = localDateKey(new Date());
+        showLeadRows("Leads Today", (l) => localDateKey(l.createdAt) === today, { from: today, to: today });
         break;
+      }
       case "td-pending":
         showTdRows("Pending / Scheduled Test Drives", (t) => t.status === "Pending" || t.status === "Scheduled");
         break;

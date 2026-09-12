@@ -29,7 +29,7 @@ import {
   designationLabel,
 } from "@/lib/staffRoles";
 import { MODULE_GROUPS, modulesForGroup, actionToken, ACTION_LABELS, allActionTokensForModules, type AdminModuleKey, type AdminModuleAction } from "@/lib/adminModules";
-import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
+import { getAdminUser, canPerformManagerAction, CRE_MODULES, CRE_ACTIONS } from "@/lib/adminAuth";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type StaffUser = {
@@ -82,6 +82,7 @@ const emptyForm = {
 const DESIGNATION_COLORS: Record<string, string> = {
   sales_executive: "bg-blue-400/10 text-blue-400 border-blue-400/20",
   cre: "bg-cyan-400/10 text-cyan-400 border-cyan-400/20",
+  crm: "bg-teal-400/10 text-teal-400 border-teal-400/20",
   sales_manager: "bg-indigo-400/10 text-indigo-400 border-indigo-400/20",
   sales_head: "bg-violet-400/10 text-violet-400 border-violet-400/20",
   branch_manager: "bg-purple-400/10 text-purple-400 border-purple-400/20",
@@ -651,7 +652,22 @@ export default function AdminTDUsers() {
             </div>
             <div className="space-y-2">
               <Label>Role / designation</Label>
-              <Select value={form.designation} onValueChange={(v) => setForm({ ...form, designation: v })}>
+              <Select
+                value={form.designation}
+                onValueChange={(v) => {
+                  if (v === "cre" || v === "crm") {
+                    setForm({
+                      ...form,
+                      designation: v,
+                      accessLevel: v === "crm" ? "manager" : "executive",
+                      allowedModules: [...CRE_MODULES],
+                      allowedActions: [...CRE_ACTIONS],
+                    });
+                    return;
+                  }
+                  setForm({ ...form, designation: v });
+                }}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {STAFF_DESIGNATIONS.map((d) => (

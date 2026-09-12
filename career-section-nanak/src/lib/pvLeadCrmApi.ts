@@ -108,6 +108,7 @@ export type CreatePvCrmLeadPayload = {
   city: string;
   otherCity?: string;
   model: string;
+  interestedModels?: string[];
   source?: string;
   remarks?: string;
   interest?: string;
@@ -247,6 +248,7 @@ export type UpdatePvCrmLeadDetailsPayload = {
   city?: string;
   otherCity?: string;
   model?: string;
+  interestedModels?: string[];
   source?: string;
   interest?: string;
   vehicleRegistration?: string;
@@ -318,12 +320,24 @@ export async function fetchPvCrmLeadStats(params?: {
   assignedTo?: string;
   from?: string;
   to?: string;
+  dateField?: PvCrmLeadDateField;
+  search?: string;
+  buyerType?: string;
+  followUpDue?: boolean;
+  customerFollowUps?: boolean;
+  favourite?: boolean;
 }): Promise<CrmLeadStats> {
   const q = new URLSearchParams();
   if (params?.source && params.source !== "all") q.set("source", params.source);
   if (params?.assignedTo) q.set("assignedTo", params.assignedTo);
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
+  if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
+  if (params?.search?.trim()) q.set("search", params.search.trim());
+  if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
+  if (params?.followUpDue) q.set("followUpDue", "true");
+  if (params?.customerFollowUps) q.set("customerFollowUps", "true");
+  if (params?.favourite) q.set("favourite", "true");
   const qs = q.toString();
   const { data } = await adminGet<CrmLeadStats>(`${CRM_BASE}/stats${qs ? `?${qs}` : ""}`);
   return data;

@@ -66,7 +66,7 @@ export default function AdminCalendar() {
     assignedTo: "all",
     model: "all",
   });
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[] | null>([]);
   const [loading, setLoading] = useState(true);
   const [executives, setExecutives] = useState<AssignableStaffUser[]>([]);
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
@@ -84,6 +84,11 @@ export default function AdminCalendar() {
   }, []);
 
   const loadEvents = useCallback(async () => {
+    if (filters.types.length === 0) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await fetchCalendarEvents({
@@ -94,7 +99,7 @@ export default function AdminCalendar() {
         assignedTo: filters.assignedTo,
         model: filters.model,
       });
-      setEvents(data);
+      setEvents(data ?? []);
     } catch (e) {
       toast.error(formatApiErrors(e));
       setEvents([]);
@@ -111,7 +116,7 @@ export default function AdminCalendar() {
     void loadEvents();
   }, [loadEvents]);
 
-  const fcEvents = useMemo(() => events.map(calendarEventToFc), [events]);
+  const fcEvents = useMemo(() => (events ?? []).map(calendarEventToFc), [events]);
 
   const api = () => calendarRef.current?.getApi();
 

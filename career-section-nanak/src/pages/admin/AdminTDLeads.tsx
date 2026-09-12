@@ -30,6 +30,7 @@ import {
   type CrmLead,
   type CrmLeadDetail,
 } from "@/lib/leadCrmApi";
+import { fetchPvCrmLeadStats } from "@/lib/pvLeadCrmApi";
 import { CRM_LEAD_STAGES, normalizeCrmStage, STAGE_COLORS } from "@/lib/leadStages";
 import { cn } from "@/lib/utils";
 import { AddCrmLeadDialog } from "@/components/admin/AddCrmLeadDialog";
@@ -56,6 +57,9 @@ export default function AdminTDLeads() {
   const canAssignLeads = canPerformManagerAction(adminUser, "crm_leads", "assign");
 
   const [leads, setLeads] = useState<CrmLead[]>([]);
+  const [total, setTotal] = useState(0);
+  const [statsTotal, setStatsTotal] = useState(0);
+  const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
   const [executives, setExecutives] = useState<AssignableStaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -107,8 +111,10 @@ export default function AdminTDLeads() {
             : undefined,
       });
       setLeads(Array.isArray(res.leads) ? res.leads : []);
+      setTotal(res.total ?? 0);
     } catch (e) {
       setLeads([]);
+      setTotal(0);
       toast.error(formatApiErrors(e));
     } finally {
       setLoading(false);
@@ -119,16 +125,36 @@ export default function AdminTDLeads() {
     void loadLeads();
   }, [loadLeads]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const stats = await fetchPvCrmLeadStats({
+          search: search.trim() || undefined,
+          assignedTo:
+            canAssignLeads && filterExecutive !== "all"
+              ? filterExecutive === "unassigned"
+                ? "unassigned"
+                : filterExecutive
+              : undefined,
+          followUpDue: followUpDueOnly || undefined,
+        });
+        setPipelineCounts(stats.pipeline || {});
+        setStatsTotal(stats.total ?? 0);
+      } catch {
+        setPipelineCounts({});
+        setStatsTotal(0);
+      }
+    })();
+  }, [search, filterExecutive, followUpDueOnly, canAssignLeads]);
+
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const s of CRM_LEAD_STAGES) counts[s] = 0;
-    const rows = Array.isArray(leads) ? leads : [];
-    for (const l of rows) {
-      const key = normalizeCrmStage(l.status);
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
+    for (const s of CRM_LEAD_STAGES) counts[s] = pipelineCounts[s] ?? 0;
     return counts;
-  }, [leads]);
+  }, [pipelineCounts]);
+
+  const displayTotal =
+    filterStatus && filterStatus !== "all" ? stageCounts[filterStatus] ?? total : statsTotal;
 
   const safeLeads = Array.isArray(leads) ? leads : [];
   const staffUsers = Array.isArray(executives) ? executives : [];
@@ -286,6 +312,9 @@ export default function AdminTDLeads() {
       </div>
 
       <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary" className="text-xs font-semibold">
+          {isExecutive && !canAssignLeads ? "Your leads" : "Total leads"}: {displayTotal}
+        </Badge>
         {CRM_LEAD_STAGES.map((s) => (
           <Badge key={s} variant="outline" className={cn("text-xs", stageBadgeClass(s))}>
             {s}: {stageCounts[s] ?? 0}

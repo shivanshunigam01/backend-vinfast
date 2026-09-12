@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, Car, FileText, Settings, LogOut, Menu, X, ArrowLeft,
@@ -23,6 +23,7 @@ import {
   clearAdminSession,
   getAdminToken,
   getAdminUser,
+  isAdminSession,
   isAdminSessionTimedOut,
   canAccessFullAdmin,
   isFieldStaffUser,
@@ -31,6 +32,7 @@ import {
   isPathAllowed,
   getAdminLoginRedirect,
   getPortalLoginPath,
+  updateStoredAdminUser,
 } from "@/lib/adminAuth";
 import { MODULE_BY_PATH } from "@/lib/adminModules";
 import {
@@ -40,6 +42,7 @@ import {
   type StaffInboxItem,
 } from "@/lib/crmNotificationsApi";
 import { toast } from "sonner";
+import { adminMe } from "@/lib/api";
 
 const ADMIN_SESSION_EXPIRED_TOAST =
   "Your session has expired. Please sign in again — your access token is no longer valid after one hour.";
@@ -130,8 +133,21 @@ function isTdManagementPath(pathname: string) {
   return pathname.startsWith("/admin/td") && !isReportsPath(pathname) && !isUserMasterPath(pathname);
 }
 
+function isPortalLoginPath(pathname: string) {
+  return pathname.startsWith("/admin/login") || pathname.startsWith("/staff/login");
+}
+
+/** In-app back must stay inside the authenticated admin shell — never login or the public site. */
+function isAuthedPortalPath(pathname: string) {
+  return pathname.startsWith("/admin") && !isPortalLoginPath(pathname);
+}
+
+function pathWithoutQuery(path: string) {
+  return path.split("?")[0] || path;
+}
+
 const reportsNavItems = [
-  { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: false },
+  { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: true },
   { label: "TD Reports", icon: BarChart3, path: "/admin/td/reports", staff: false },
   { label: "Booking Report", icon: CalendarCheck, path: "/admin/reports/bookings", staff: false },
   { label: "Delivery Reports", icon: PackageCheck, path: "/admin/reports/deliveries", staff: false },
@@ -173,6 +189,7 @@ const AdminLayout = () => {
 
   const [adminUser, setAdminUser] = useState(() => getAdminUser());
   const fieldStaff = isFieldStaffUser(adminUser);
+  const portalHistoryRef = useRef<string[]>([]);
 
   useEffect(() => {
     const syncUser = () => setAdminUser(getAdminUser());
@@ -181,11 +198,54 @@ const AdminLayout = () => {
   }, []);
 
   useEffect(() => {
+    if (!hasApi() || !getAdminToken()) return;
+    let cancelled = false;
+    void adminMe()
+      .then((data) => {
+        if (cancelled || !data || typeof data !== "object") return;
+        const me = data as Record<string, unknown>;
+        updateStoredAdminUser({
+          name: typeof me.name === "string" ? me.name : undefined,
+          role: typeof me.role === "string" ? me.role : undefined,
+          designation: typeof me.designation === "string" ? me.designation : undefined,
+          designationLabel: typeof me.designationLabel === "string" ? me.designationLabel : undefined,
+          allowedModules: Array.isArray(me.allowedModules) ? (me.allowedModules as string[]) : undefined,
+          allowedActions: Array.isArray(me.allowedActions) ? (me.allowedActions as string[]) : undefined,
+        });
+        setAdminUser(getAdminUser());
+      })
+      .catch(() => {
+        /* keep the stored session if /me is briefly unavailable */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (isTdManagementPath(location.pathname)) setTdMenuOpen(true);
     if (isReportsPath(location.pathname)) setReportsMenuOpen(true);
     if (isUserMasterPath(location.pathname)) setUserMasterMenuOpen(true);
     if (isStockPath(location.pathname)) setStockMenuOpen(true);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const full = `${location.pathname}${location.search}`;
+    const stack = portalHistoryRef.current;
+    if (stack[stack.length - 1] !== full) stack.push(full);
+  }, [location.pathname, location.search]);
+
+  // Phone/browser Back can still pop to login/public. Keep a valid session in the portal.
+  useEffect(() => {
+    const onPopState = () => {
+      if (!isAdminSession() || isAdminSessionTimedOut()) return;
+      if (isAuthedPortalPath(window.location.pathname)) return;
+      navigate(getAdminLoginRedirect(getAdminUser()), { replace: true });
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [navigate]);
+
   const fullAdmin = canAccessFullAdmin(adminUser);
   // Per-user module access configured in User Master (null = no restriction).
   const restrictedModules = getRestrictedModules(adminUser);
@@ -289,6 +349,36 @@ const AdminLayout = () => {
     const loginPath = getPortalLoginPath(adminUser);
     clearAdminSession();
     navigate(loginPath);
+  };
+
+  const handleMobileBack = () => {
+    const fallback = getAdminLoginRedirect(adminUser);
+    const stack = portalHistoryRef.current;
+    const current = `${location.pathname}${location.search}`;
+    if (stack[stack.length - 1] === current) stack.pop();
+
+    while (stack.length > 0) {
+      const prev = stack[stack.length - 1];
+      const prevPath = pathWithoutQuery(prev);
+      if (prevPath === location.pathname || !isAuthedPortalPath(prevPath)) {
+        stack.pop();
+        continue;
+      }
+      if (fieldStaff && !isStaffPortalPath(prevPath)) {
+        stack.pop();
+        continue;
+      }
+      if (restrictedModules && !isPathAllowed(adminUser, prevPath)) {
+        stack.pop();
+        continue;
+      }
+      navigate(prev, { replace: true });
+      return;
+    }
+
+    if (location.pathname !== pathWithoutQuery(fallback)) {
+      navigate(fallback, { replace: true });
+    }
   };
 
   const visibleTdItems = tdNavItems.filter(
@@ -662,13 +752,7 @@ const AdminLayout = () => {
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border bg-card/95 px-3 py-2 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80 sm:min-h-16 sm:gap-4 sm:px-4 sm:py-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
           <button
             type="button"
-            onClick={() => {
-              if (typeof window !== "undefined" && window.history.length > 1) {
-                navigate(-1);
-              } else {
-                navigate(fieldStaff ? "/admin/my-dashboard" : "/admin/dashboard");
-              }
-            }}
+            onClick={handleMobileBack}
             className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden touch-manipulation"
             aria-label="Go back"
           >

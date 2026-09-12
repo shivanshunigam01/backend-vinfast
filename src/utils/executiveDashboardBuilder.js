@@ -197,15 +197,17 @@ async function buildExecutiveDashboard({ executiveId, year, period, from, to, st
     buildExecutiveTdStats({ executiveId, from: previous.from, to: previous.to }),
     buildMonthlyBreakdown(executiveId, range.year),
     fetchRecentBookings(executiveId),
-    Lead.countDocuments(assignedToStaffFilter(executiveId)),
+    Lead.countDocuments({ isDuplicate: { $ne: true }, ...assignedToStaffFilter(executiveId) }),
     execId ? TDBooking.countDocuments({ assignedExecutive: execId }) : Promise.resolve(0),
     Lead.countDocuments({
+      isDuplicate: { $ne: true },
       ...assignedToStaffFilter(executiveId),
       ...createdAtFilter(range.from, range.to),
       ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),
       ...(source && String(source).toLowerCase() !== 'all' ? { source: String(source).trim() } : {}),
     }),
     Lead.countDocuments({
+      isDuplicate: { $ne: true },
       ...assignedToStaffFilter(executiveId),
       ...createdAtFilter(previous.from, previous.to),
       ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),

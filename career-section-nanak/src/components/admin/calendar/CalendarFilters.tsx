@@ -1,6 +1,6 @@
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { AssignableStaffUser } from "@/lib/pvLeadCrmApi";
 
 export type CalendarFilterState = {
@@ -48,33 +48,31 @@ export function CalendarFilters({
   models,
   showAssigneeFilter = true,
 }: Props) {
-  const toggleType = (key: string) => {
-    const has = filters.types.includes(key);
-    const next = has ? filters.types.filter((t) => t !== key) : [...filters.types, key];
-    onChange({
-      ...filters,
-      types: next.length ? next : [...DEFAULT_CALENDAR_TYPES],
-    });
+  const toggleType = (key: string, checked: boolean) => {
+    const next = checked
+      ? [...filters.types, key]
+      : filters.types.filter((t) => t !== key);
+    onChange({ ...filters, types: next });
   };
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/80 p-3 sm:flex-row sm:flex-wrap sm:items-end">
-      <div className="space-y-1.5">
+      <div className="space-y-1.5 flex-1 min-w-0">
         <Label className="text-xs text-muted-foreground">Show</Label>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
           {TYPE_OPTIONS.map((t) => {
             const on = filters.types.includes(t.key);
             return (
-              <Button
+              <label
                 key={t.key}
-                type="button"
-                size="sm"
-                variant={on ? "default" : "outline"}
-                className="h-8"
-                onClick={() => toggleType(t.key)}
+                className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
               >
-                {t.label}
-              </Button>
+                <Checkbox
+                  checked={on}
+                  onCheckedChange={(v) => toggleType(t.key, v === true)}
+                />
+                <span>{t.label}</span>
+              </label>
             );
           })}
         </div>
