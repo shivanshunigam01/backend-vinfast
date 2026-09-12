@@ -14,6 +14,7 @@ const ADMIN_MODULE_KEYS = [
   'pricing',
   'delivery_reports', // Reports group in sidebar / User Master ACL UI
   'booking_reports',
+  'detailed_reports',
   'products',
   'offers',
   'content',
@@ -70,6 +71,7 @@ const ADMIN_MODULE_ACTIONS = {
   pricing: ['view', 'update'],
   delivery_reports: ['view', 'export'],
   booking_reports: ['view', 'export'],
+  detailed_reports: ['view', 'export'],
   products: ['view', 'create', 'update', 'delete'],
   offers: ['view', 'create', 'update', 'delete'],
   content: ['view', 'create', 'update', 'delete'],

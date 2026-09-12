@@ -197,6 +197,11 @@ router.get(
   leadReportController.getBookingReport,
 );
 router.get(
+  '/reports/detailed',
+  requireModuleAction('detailed_reports', 'view'),
+  leadReportController.getDetailedReport,
+);
+router.get(
   '/crm/reports/bookings',
   requireModuleAction('booking_reports', 'view'),
   leadReportController.getBookingReport,
