@@ -15,6 +15,7 @@ const approvalEntrySchema = new mongoose.Schema(
 
 const poLineSchema = new mongoose.Schema(
   {
+    requisitionId: { type: mongoose.Schema.Types.ObjectId, ref: 'StockRequisition' },
     model: { type: String, required: true, trim: true },
     variant: { type: String, trim: true },
     colour: { type: String, trim: true },
@@ -51,6 +52,13 @@ const purchaseOrderSchema = new mongoose.Schema(
     bookingLinked: { type: Boolean, default: false },
     bookingNumber: { type: String, trim: true },
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
+    /** External supplier PO reference (raised in OEM / ERP software) */
+    externalPoNumber: { type: String, trim: true, index: true },
+    externalPoDate: { type: Date },
+    sourceSystem: { type: String, trim: true, default: 'Manual' },
+    externalDocumentUrl: { type: String, trim: true },
+    requisitionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StockRequisition' }],
+    amendmentVersion: { type: Number, default: 1, min: 1 },
     locked: { type: Boolean, default: false },
     approvalHistory: { type: [approvalEntrySchema], default: [] },
     remarks: { type: String, trim: true },

@@ -33,12 +33,18 @@ router.get('/dashboard', mod('view'), ctrl.getDashboard);
 /** Purchase Orders */
 router.get('/purchase-orders', mod('view'), ctrl.listPurchaseOrders);
 router.post('/purchase-orders', requireAnyModuleAction([['stock_po', 'create'], ['stock_delivery', 'create']]), ctrl.createPurchaseOrder);
+router.post(
+  '/purchase-orders/from-requisitions',
+  requireAnyModuleAction([['stock_po', 'create'], ['stock_delivery', 'create']]),
+  ctrl.createPoFromRequisitions,
+);
 router.get('/purchase-orders/:id', mongoIdParam, validate, mod('view'), ctrl.getPurchaseOrder);
 router.put('/purchase-orders/:id', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.updatePurchaseOrder);
 router.post('/purchase-orders/:id/submit', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.submitPurchaseOrder);
 router.post('/purchase-orders/:id/approve', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'approve'], ['stock_delivery', 'update']]), ctrl.approvePurchaseOrder);
 router.post('/purchase-orders/:id/reject', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'approve'], ['stock_delivery', 'update']]), ctrl.rejectPurchaseOrder);
 router.post('/purchase-orders/:id/release', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.releasePurchaseOrder);
+router.post('/purchase-orders/:id/close', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.closePurchaseOrder);
 router.post('/purchase-orders/:id/cancel', mongoIdParam, validate, requireAnyModuleAction([['stock_po', 'update'], ['stock_delivery', 'update']]), ctrl.cancelPurchaseOrder);
 router.delete('/purchase-orders/:id', mongoIdParam, validate, modDelete('po'), ctrl.deletePurchaseOrder);
 
@@ -122,6 +128,27 @@ router.post(
   validate,
   requireAnyModuleAction([['stock_requisition', 'update'], ['stock_delivery', 'update']]),
   reqCtrl.submitRequisition,
+);
+router.post(
+  '/requisitions/:id/recommend',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'approve'], ['stock_delivery', 'update']]),
+  reqCtrl.recommendRequisition,
+);
+router.post(
+  '/requisitions/:id/return',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'approve'], ['stock_delivery', 'update']]),
+  reqCtrl.returnRequisition,
+);
+router.post(
+  '/requisitions/:id/reject',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([['stock_requisition', 'approve'], ['stock_delivery', 'update']]),
+  reqCtrl.rejectRequisition,
 );
 router.post(
   '/requisitions/:id/approve',

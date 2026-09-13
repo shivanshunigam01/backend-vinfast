@@ -1,4 +1,5 @@
 const PurchaseOrder = require('../models/PurchaseOrder');
+const StockRequisition = require('../models/StockRequisition');
 const Dispatch = require('../models/Dispatch');
 const GateEntry = require('../models/GateEntry');
 const Grn = require('../models/Grn');
@@ -92,6 +93,7 @@ async function uploadPhotos(files, folder) {
 
 function normalizePoLineFields(l) {
   return {
+    requisitionId: l.requisitionId || undefined,
     model: String(l.model || '').trim(),
     variant: String(l.variant || '').trim() || undefined,
     colour: String(l.colour || '').trim() || undefined,
@@ -148,7 +150,26 @@ function applyPoHeader(doc, body) {
   if (body.remarks !== undefined) doc.remarks = body.remarks;
   if (body.supplierId) doc.supplierId = body.supplierId;
   if (body.supplier) doc.supplier = body.supplier;
+  if (body.externalPoNumber !== undefined) doc.externalPoNumber = body.externalPoNumber ? String(body.externalPoNumber).trim() : undefined;
+  if (body.externalPoDate !== undefined) doc.externalPoDate = body.externalPoDate ? new Date(body.externalPoDate) : undefined;
+  if (body.sourceSystem !== undefined) doc.sourceSystem = body.sourceSystem ? String(body.sourceSystem).trim() : 'Manual';
+  if (body.externalDocumentUrl !== undefined) doc.externalDocumentUrl = body.externalDocumentUrl;
+  if (body.requisitionIds !== undefined) doc.requisitionIds = body.requisitionIds;
+  if (body.amendmentVersion !== undefined) doc.amendmentVersion = Math.max(1, Number(body.amendmentVersion) || 1);
   if (body.lines) doc.lines = mergePoLines(doc.lines, body.lines);
+}
+
+async function syncPoFulfillment(po) {
+  const allReceived = po.lines.length > 0 && po.lines.every((l) => (Number(l.receivedQty) || 0) >= l.qty);
+  const anyReceived = po.lines.some((l) => (Number(l.receivedQty) || 0) > 0);
+  const allDispatched = po.lines.length > 0 && po.lines.every((l) => (Number(l.dispatchedQty) || 0) >= l.qty);
+  if (allReceived && ['RELEASED', 'PART_SUPPLIED'].includes(po.status)) {
+    po.status = 'CLOSED';
+    po.closedAt = po.closedAt || new Date();
+  } else if ((anyReceived || allDispatched) && po.status === 'RELEASED') {
+    po.status = 'PART_SUPPLIED';
+  }
+  await po.save();
 }
 
 function pushApproval(doc, action, status, admin, remarks) {
@@ -197,11 +218,97 @@ exports.createPurchaseOrder = asyncHandler(async (req, res) => {
     supplierId: vendorInfo.supplierId,
     createdBy: actorId(req.admin),
   });
+  doc.lines = lines;
   applyPoHeader(doc, req.body);
   doc.supplier = vendorInfo.supplier;
   doc.supplierId = vendorInfo.supplierId;
+  if (!doc.lines?.length) doc.lines = lines;
   await doc.save();
   return successResponse(res, doc, 'Purchase order created', 201);
+});
+
+exports.createPoFromRequisitions = asyncHandler(async (req, res) => {
+  await ensureDefaultVendors();
+  const reqIds = Array.isArray(req.body.requisitionIds) ? req.body.requisitionIds : [];
+  if (!reqIds.length) throw new ApiError(400, 'Select at least one approved requisition');
+
+  const requisitions = await StockRequisition.find({ _id: { $in: reqIds } });
+  if (requisitions.length !== reqIds.length) throw new ApiError(404, 'One or more requisitions not found');
+
+  for (const r of requisitions) {
+    if (!['APPROVED', 'PART_ORDERED'].includes(r.status)) {
+      throw new ApiError(400, `Requisition ${r.requisitionNo} must be approved before PO entry`);
+    }
+    const remaining = r.qty - (Number(r.orderedQty) || 0);
+    if (remaining <= 0) {
+      throw new ApiError(400, `Requisition ${r.requisitionNo} is already fully ordered`);
+    }
+  }
+
+  const vendorInfo = await resolveVendorFromBody(req.body);
+  const overrides = req.body.lineQtyOverrides && typeof req.body.lineQtyOverrides === 'object'
+    ? req.body.lineQtyOverrides
+    : {};
+
+  const lines = requisitions.map((r) => {
+    const remaining = r.qty - (Number(r.orderedQty) || 0);
+    const qty = Math.min(
+      remaining,
+      Math.max(1, Number(overrides[String(r._id)] ?? remaining) || remaining),
+    );
+    return {
+      requisitionId: r._id,
+      model: r.model,
+      variant: r.variant,
+      colour: r.colour,
+      qty,
+    };
+  }).filter((l) => l.qty > 0);
+
+  if (!lines.length) throw new ApiError(400, 'No remaining quantity to order');
+
+  const doc = new PurchaseOrder({
+    poNumber: await nextPoNumber(),
+    status: 'DRAFT',
+    supplier: vendorInfo.supplier,
+    supplierId: vendorInfo.supplierId,
+    createdBy: actorId(req.admin),
+    requisitionIds: reqIds,
+    lines,
+    externalPoNumber: req.body.externalPoNumber ? String(req.body.externalPoNumber).trim() : undefined,
+    externalPoDate: req.body.externalPoDate ? new Date(req.body.externalPoDate) : undefined,
+    sourceSystem: req.body.sourceSystem ? String(req.body.sourceSystem).trim() : 'Manual',
+    externalDocumentUrl: req.body.externalDocumentUrl,
+  });
+  applyPoHeader(doc, req.body);
+  await doc.save();
+
+  for (const r of requisitions) {
+    const line = lines.find((l) => String(l.requisitionId) === String(r._id));
+    if (!line) continue;
+    r.orderedQty = (Number(r.orderedQty) || 0) + line.qty;
+    if (!Array.isArray(r.linkedPoIds)) r.linkedPoIds = [];
+    if (!r.linkedPoIds.some((id) => String(id) === String(doc._id))) r.linkedPoIds.push(doc._id);
+    r.linkedPoId = doc._id;
+    r.status = r.orderedQty >= r.qty ? 'ORDERED' : 'PART_ORDERED';
+    await r.save();
+  }
+
+  return successResponse(res, doc, 'External PO recorded from approved requisition(s)', 201);
+});
+
+exports.closePurchaseOrder = asyncHandler(async (req, res) => {
+  const doc = await PurchaseOrder.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Purchase order not found');
+  if (!['RELEASED', 'PART_SUPPLIED'].includes(doc.status)) {
+    throw new ApiError(400, 'Only released or partly fulfilled POs can be closed');
+  }
+  assertPoTransition(doc.status, 'CLOSED');
+  doc.status = 'CLOSED';
+  doc.closedAt = new Date();
+  pushApproval(doc, 'CLOSE', 'CLOSED', req.admin, req.body?.remarks);
+  await doc.save();
+  return successResponse(res, doc, 'PO closed');
 });
 
 exports.updatePurchaseOrder = asyncHandler(async (req, res) => {
@@ -666,7 +773,15 @@ exports.createGrn = asyncHandler(async (req, res) => {
   const po = await PurchaseOrder.findById(dispatch.purchaseOrderId);
   if (!po) throw new ApiError(404, 'PO not found');
 
-  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  let items = req.body.items;
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      throw new ApiError(400, 'Invalid GRN items JSON');
+    }
+  }
+  if (!Array.isArray(items)) items = [];
   if (!items.length) throw new ApiError(400, 'Provide GRN items');
 
   const grnItems = [];
@@ -678,7 +793,9 @@ exports.createGrn = asyncHandler(async (req, res) => {
     if (!stock) throw new ApiError(404, `VIN ${vin} not found`);
 
     const dispatchItem = dispatch.items.find((d) => d.vin === vin);
-    const poLine = po.lines.find((l) => l.model === stock.model);
+    const poLine = dispatchItem?.poLineId
+      ? po.lines.id(dispatchItem.poLineId)
+      : po.lines.find((l) => l.model === stock.model);
     const match = compareConfig(
       { model: poLine?.model, variant: poLine?.variant, colour: poLine?.colour, batteryConfig: poLine?.batteryConfig },
       { model: item.physicalModel || stock.model, variant: item.physicalVariant || stock.variant, colour: item.physicalColour || stock.colour },
@@ -720,6 +837,10 @@ exports.createGrn = asyncHandler(async (req, res) => {
     stock.status = mapVehicleStatusToLegacy(stock.vehicleStatus);
     await stock.save();
     await logStatusChange('VehicleStock', stock._id, from, stock.vehicleStatus, req.admin, 'GRN');
+
+    if (poLine && match !== 'MISMATCH' && !item.exceptionType) {
+      poLine.receivedQty = (Number(poLine.receivedQty) || 0) + 1;
+    }
   }
 
   const grn = await Grn.create({
@@ -743,6 +864,8 @@ exports.createGrn = asyncHandler(async (req, res) => {
 
   gate.status = 'GRN_IN_PROGRESS';
   await gate.save();
+
+  await syncPoFulfillment(po);
 
   return successResponse(res, grn, hasException ? 'GRN recorded with exceptions' : 'GRN recorded', 201);
 });
