@@ -21,6 +21,7 @@ function staffLoginPayload(staff) {
     role: staff.role,
     designation: staff.designation,
     designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
+    staffRoleId: staff.staffRoleId?._id || staff.staffRoleId || null,
     allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
     allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
     userType: 'tdstaff',
@@ -102,10 +103,12 @@ exports.staffLogin = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'This account is deactivated. Ask an admin to activate it.');
   }
 
-  if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
-    await staff.save();
-  } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
-    await staff.save();
+  if (!staff.staffRoleId) {
+    if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
+      await staff.save();
+    } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
+      await staff.save();
+    }
   }
 
   const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });

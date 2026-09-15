@@ -86,6 +86,15 @@ function creAccessFields() {
   };
 }
 
+/** Staff linked to a Roles template — permissions come from StaffRole, not CRE/CRM defaults. */
+function hasStaffRoleTemplate(staff) {
+  if (!staff) return false;
+  const id = staff.staffRoleId;
+  if (!id) return false;
+  if (typeof id === 'object' && id._id) return true;
+  return Boolean(id);
+}
+
 /** Mongo filter matching every CRE staff row. */
 function creStaffMongoFilter() {
   return {
@@ -114,6 +123,7 @@ function crmDeskMongoFilter() {
  */
 function applyCreAccessInPlace(staff) {
   if (!staff || !isCreDesignation(staff.designation)) return false;
+  if (hasStaffRoleTemplate(staff)) return false;
   const desired = creAccessFields();
   let changed = false;
   if (staff.designation !== desired.designation) {
@@ -145,6 +155,7 @@ function applyCreAccessInPlace(staff) {
  */
 function applyCrmDeskAccessInPlace(staff) {
   if (!staff || !isCrmDeskDesignation(staff.designation)) return false;
+  if (hasStaffRoleTemplate(staff)) return false;
   let changed = false;
   if (staff.designation !== 'crm') {
     staff.designation = 'crm';
@@ -169,6 +180,7 @@ function applyCrmDeskAccessInPlace(staff) {
 
 function withCreAccess(payload) {
   if (!isCreUser(payload)) return payload;
+  if (hasStaffRoleTemplate(payload)) return payload;
   const desired = creAccessFields();
   return {
     ...payload,
@@ -181,6 +193,7 @@ function withCreAccess(payload) {
 
 function withCrmDeskAccess(payload) {
   if (!isCrmDeskUser(payload)) return payload;
+  if (hasStaffRoleTemplate(payload)) return payload;
   return {
     ...payload,
     designation: 'crm',
@@ -198,7 +211,13 @@ function withDeskAccess(payload) {
 }
 
 async function syncAllCreStaffAccess(TDStaff) {
-  const result = await TDStaff.updateMany(creStaffMongoFilter(), { $set: creAccessFields() });
+  const result = await TDStaff.updateMany(
+    {
+      ...creStaffMongoFilter(),
+      $or: [{ staffRoleId: null }, { staffRoleId: { $exists: false } }],
+    },
+    { $set: creAccessFields() },
+  );
   return {
     matched: result.matchedCount ?? result.n ?? 0,
     modified: result.modifiedCount ?? result.nModified ?? 0,
@@ -206,7 +225,10 @@ async function syncAllCreStaffAccess(TDStaff) {
 }
 
 async function syncAllCrmDeskAccess(TDStaff) {
-  const rows = await TDStaff.find(crmDeskMongoFilter());
+  const rows = await TDStaff.find({
+    ...crmDeskMongoFilter(),
+    $or: [{ staffRoleId: null }, { staffRoleId: { $exists: false } }],
+  });
   let modified = 0;
   for (const row of rows) {
     if (applyCrmDeskAccessInPlace(row)) {
@@ -226,6 +248,7 @@ module.exports = {
   isCrmDeskUser,
   isCreOrCrmDeskUser,
   creAccessFields,
+  hasStaffRoleTemplate,
   creStaffMongoFilter,
   crmDeskMongoFilter,
   applyCreAccessInPlace,

@@ -228,9 +228,9 @@ exports.createUser = asyncHandler(async (req, res) => {
     staffRoleId: linkedRoleId,
   });
 
-  if (isCreDesignation(doc.designation) && applyCreAccessInPlace(doc)) {
+  if (!linkedRoleId && isCreDesignation(doc.designation) && applyCreAccessInPlace(doc)) {
     await doc.save();
-  } else if (isCrmDeskDesignation(doc.designation) && applyCrmDeskAccessInPlace(doc)) {
+  } else if (!linkedRoleId && isCrmDeskDesignation(doc.designation) && applyCrmDeskAccessInPlace(doc)) {
     await doc.save();
   }
 
@@ -341,9 +341,9 @@ exports.updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  if (isCreDesignation(doc.designation)) {
+  if (!doc.staffRoleId && isCreDesignation(doc.designation)) {
     applyCreAccessInPlace(doc);
-  } else if (isCrmDeskDesignation(doc.designation)) {
+  } else if (!doc.staffRoleId && isCrmDeskDesignation(doc.designation)) {
     applyCrmDeskAccessInPlace(doc);
   }
 

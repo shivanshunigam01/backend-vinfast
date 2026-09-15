@@ -210,3 +210,61 @@ exports.deleteRole = asyncHandler(async (req, res) => {
   await doc.deleteOne();
   return successResponse(res, { _id: doc._id }, 'Role deleted');
 });
+
+/** Push this role template's modules/actions onto every user assigned to it. */
+exports.syncRoleToUsers = asyncHandler(async (req, res) => {
+  const doc = await StaffRole.findById(req.params.id);
+  if (!doc) throw new ApiError(404, 'Role not found');
+
+  const TDStaff = require('../models/TDStaff');
+  const result = await TDStaff.updateMany(
+    { staffRoleId: doc._id },
+    {
+      $set: {
+        allowedModules: doc.allowedModules,
+        allowedActions: doc.allowedActions,
+        role: doc.authRole,
+      },
+    },
+  );
+
+  const matched = result.matchedCount ?? result.n ?? 0;
+  const modified = result.modifiedCount ?? result.nModified ?? 0;
+
+  return successResponse(
+    res,
+    { matched, modified, role: formatRole(doc) },
+    modified > 0 ? `Synced role to ${modified} user(s)` : 'No users needed updating',
+  );
+});
+
+/** Push every role template onto all users linked to that role. */
+exports.syncAllRolesToUsers = asyncHandler(async (req, res) => {
+  const TDStaff = require('../models/TDStaff');
+  const roles = await StaffRole.find({});
+  let matched = 0;
+  let modified = 0;
+
+  for (const role of roles) {
+    const result = await TDStaff.updateMany(
+      { staffRoleId: role._id },
+      {
+        $set: {
+          allowedModules: role.allowedModules,
+          allowedActions: role.allowedActions,
+          role: role.authRole,
+        },
+      },
+    );
+    matched += result.matchedCount ?? result.n ?? 0;
+    modified += result.modifiedCount ?? result.nModified ?? 0;
+  }
+
+  return successResponse(
+    res,
+    { roles: roles.length, matched, modified },
+    modified > 0
+      ? `Synced ${roles.length} role(s) — updated ${modified} user(s)`
+      : 'All assigned users already match their roles',
+  );
+});

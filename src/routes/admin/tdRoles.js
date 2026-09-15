@@ -31,5 +31,17 @@ router.delete(
   requireModuleActionOrRoles('td_users', 'delete', 'superadmin', 'manager'),
   tdRolesController.deleteRole,
 );
+router.post(
+  '/sync-all-users',
+  requireModuleActionOrRoles('td_users', 'update', 'superadmin', 'manager'),
+  tdRolesController.syncAllRolesToUsers,
+);
+router.post(
+  '/:id/sync-users',
+  mongoIdParam,
+  validate,
+  requireModuleActionOrRoles('td_users', 'update', 'superadmin', 'manager'),
+  tdRolesController.syncRoleToUsers,
+);
 
 module.exports = router;

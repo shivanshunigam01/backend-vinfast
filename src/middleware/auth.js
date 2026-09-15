@@ -26,10 +26,12 @@ exports.protect = asyncHandler(async (req, res, next) => {
     if (!staff || !staff.active) {
       throw new ApiError(401, 'Staff user not found or inactive');
     }
-    if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
-      await staff.save();
-    } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
-      await staff.save();
+    if (!staff.staffRoleId) {
+      if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
+        await staff.save();
+      } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
+        await staff.save();
+      }
     }
     const deskSafe = withDeskAccess({
       _id: staff._id,
@@ -38,6 +40,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
       role: staff.role,
       designation: staff.designation,
       designationLabel: DESIGNATION_LABELS[staff.designation] || staff.designation,
+      staffRoleId: staff.staffRoleId || null,
       active: staff.active,
       allowedModules: Array.isArray(staff.allowedModules) ? staff.allowedModules : [],
       allowedActions: Array.isArray(staff.allowedActions) ? staff.allowedActions : [],
