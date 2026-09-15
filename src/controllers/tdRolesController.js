@@ -109,7 +109,9 @@ async function ensureDefaultRoles() {
       await StaffRole.create(row);
       continue;
     }
-    if (row.name === 'CRE' || row.name === 'CRM') {
+    // Seed legacy rows that were created empty — never overwrite admin-edited templates.
+    const modulesMissing = !Array.isArray(exists.allowedModules) || exists.allowedModules.length === 0;
+    if ((row.name === 'CRE' || row.name === 'CRM') && modulesMissing) {
       exists.description = row.description;
       exists.authRole = row.authRole;
       exists.allowedModules = row.allowedModules;
