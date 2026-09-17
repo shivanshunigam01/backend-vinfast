@@ -110,7 +110,10 @@ async function resolveStaffByFilename(filename, staffRows) {
 
       const ownerLabel = staff ? staff.name : staffHint;
       console.log(`\n=== ${file} (${ownerLabel}, ${rows.length} rows) ===`);
-      const results = await importCurrentFormatRows(admin, rows, { dryRun: false });
+      const results = await importCurrentFormatRows(admin, rows, {
+        dryRun: false,
+        updatesOnly: true,
+      });
 
       totals.files += 1;
       totals.created += results.created;

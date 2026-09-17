@@ -443,7 +443,10 @@ function serializeLeadToCurrentFormatRow(lead, slNo, followUps = []) {
     'MAIL ID': lead.email || '',
     LOCATION: lead.city || lead.area || '',
     'EXISTING VARIANT': cs.existingVariant || '',
-    MODEL: lead.model || '',
+    MODEL:
+      lead.model === 'Both' && Array.isArray(lead.interestedModels) && lead.interestedModels.length
+        ? lead.interestedModels.join(', ')
+        : lead.model || '',
     'CALL DATE': formatDateCell(cs.callDate),
     'INITIAL REMARK': cs.initialRemark || '',
     'FOLLOW-UP': cs.followUp || lead.leadType || '',

@@ -2217,42 +2217,37 @@ function applyRowModelCorrection(parsed, rowNum, corrections) {
   };
 }
 
-function inferSingleModelFromText(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  if (!s || isAmbiguousLeadModel(s)) return null;
-  const normalized = normalizeCreImportModel(s);
-  if (isAmbiguousLeadModel(normalized)) return null;
-  const stored = normalizeLeadModelForStorage(normalized);
-  return isValidLeadModel(stored) ? stored : null;
+/** Parse VF 6 / VF 7 / … from a multi-model MODEL cell for interestedModels. */
+function parseInterestedModelsFromRaw(modelRaw) {
+  const raw = String(modelRaw || '').trim();
+  if (!raw) return [];
+  const parts = raw
+    .split(/[,/]/)
+    .map((p) => normalizeCreImportModel(p.trim()))
+    .filter(Boolean);
+  const uniq = [...new Set(parts)];
+  return uniq.filter((m) => {
+    if (!m || m === 'Both') return false;
+    const stored = normalizeLeadModelForStorage(m);
+    return isValidLeadModel(stored);
+  });
 }
 
-/** When MODEL is "Both", infer a single model from FINAL MODEL / variant columns before failing. */
+/** Keep MODEL = Both with interestedModels filled; users resolve to single model later. */
 function resolveImportModelForRow(parsed) {
-  if (!isAmbiguousLeadModel(parsed.model) && !isAmbiguousLeadModel(parsed.modelRaw)) {
-    return parsed;
-  }
-  const cs = parsed.creSheet || {};
-  for (const candidate of [
-    cs.finalModel,
-    cs.finalVariant,
-    cs.existingVariant,
-    parsed.remarks,
-  ]) {
-    const resolved = inferSingleModelFromText(candidate);
-    if (resolved) {
-      return { ...parsed, model: resolved, modelRaw: parsed.modelRaw || parsed.model };
-    }
-  }
-  const raw = String(parsed.modelRaw || parsed.model || '').toUpperCase();
-  if (raw.includes('VF 6') && !raw.includes('VF 7')) {
-    return { ...parsed, model: 'VF 6', modelRaw: parsed.modelRaw || parsed.model };
-  }
-  if (raw.includes('VF 7') && !raw.includes('VF 6')) {
-    return { ...parsed, model: 'VF 7', modelRaw: parsed.modelRaw || parsed.model };
-  }
-  if (isAmbiguousLeadModel(parsed.model) || isAmbiguousLeadModel(parsed.modelRaw)) {
-    return { ...parsed, model: 'Both', modelRaw: parsed.modelRaw || parsed.model || 'Both' };
+  const raw = String(parsed.modelRaw || parsed.model || '').trim();
+  if (
+    isAmbiguousLeadModel(parsed.model) ||
+    isAmbiguousLeadModel(parsed.modelRaw) ||
+    /^both$/i.test(raw)
+  ) {
+    const interestedModels = parseInterestedModelsFromRaw(raw);
+    return {
+      ...parsed,
+      model: 'Both',
+      modelRaw: parsed.modelRaw || parsed.model || 'Both',
+      interestedModels: interestedModels.length ? interestedModels : undefined,
+    };
   }
   return parsed;
 }
@@ -2277,7 +2272,7 @@ function applyImportSheetAssignment(lead, { assignedTo, assignedToEmail, consult
 async function importCurrentFormatRows(
   admin,
   leadRows,
-  { dryRun = false, modelCorrections = {} } = {},
+  { dryRun = false, modelCorrections = {}, updatesOnly = false } = {},
 ) {
   const results = {
     created: 0,
@@ -2366,6 +2361,20 @@ async function importCurrentFormatRows(
         batchOpportunityByKey,
         batchMobiles,
       );
+
+      if (updatesOnly && resolved.mode !== 'update') {
+        results.skipped += 1;
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'skipped',
+          name: String(name).trim(),
+          mobile,
+          model: modelForStorage,
+          modelRaw: parsed.modelRaw || model,
+          message: 'Update-only — no matching lead in master (phone + model)',
+        });
+        continue;
+      }
 
       if (dryRun) {
         if (resolved.mode === 'update') {
@@ -2456,6 +2465,7 @@ async function importCurrentFormatRows(
           assignedToEmail: assignedToEmail || undefined,
           createdBy: admin._id,
           creSheet: parsed.creSheet || undefined,
+          interestedModels: parsed.interestedModels?.length ? parsed.interestedModels : undefined,
           lastActivityAt: new Date(),
           ...(enquiryAt ? { createdAt: enquiryAt } : {}),
         });
@@ -2497,6 +2507,11 @@ async function importCurrentFormatRows(
         lead.city = String(parsed.city || lead.city || 'Patna').trim();
         lead.area = String(parsed.area || parsed.city || lead.area || '').trim() || lead.area;
         lead.model = modelForStorage;
+        if (parsed.interestedModels?.length) {
+          lead.interestedModels = parsed.interestedModels;
+        } else if (modelForStorage === 'Both') {
+          lead.interestedModels = parsed.interestedModels || lead.interestedModels;
+        }
         if (parsed.source) lead.source = parsed.source;
         if (parsed.leadType) lead.leadType = parsed.leadType;
         if (parsed.remarks) lead.remarks = parsed.remarks;
