@@ -59,8 +59,10 @@ exports.getAdminReport = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'You do not have permission to view or download lead reports');
   }
   const data = await buildLeadAdminReport({
+    admin: req.admin,
     from: req.query.from,
     to: req.query.to,
+    dateField: req.query.dateField || 'enquiry',
     executiveId: req.query.executiveId,
     ...readLeadFilterQuery(req),
   });

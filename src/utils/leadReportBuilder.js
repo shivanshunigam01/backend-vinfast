@@ -10,23 +10,31 @@ const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { bucketPipelineStage } = require('./crmStatsBuilder');
-const { assignedToStaffFilter } = require('./leadAssignment');
+const {
+  assignedToStaffFilter,
+  assignedToStaffFilterAsync,
+  isTeamScopedUser,
+  isUnrestrictedViewer,
+} = require('./leadAssignment');
 const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, endOfDay, WALK_IN_SOURCES } = require('./crmConversion');
 const { dateKeyRange } = require('./reportPeriod');
+const { leadEffectiveDate, appendLeadDateFilter } = require('./leadDateFilter');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
 
 const LEAD_AGE_BUCKET_ORDER = ['0-3 Days', '4-7 Days', '8-15 Days', '15+ Days'];
 
-function leadAgeInDays(createdAt) {
-  if (!createdAt) return 0;
-  const start = new Date(createdAt);
+function leadAgeInDays(leadOrDate) {
+  const start = leadOrDate && typeof leadOrDate === 'object'
+    ? leadEffectiveDate(leadOrDate)
+    : leadOrDate ? new Date(leadOrDate) : null;
+  if (!start || Number.isNaN(start.getTime())) return 0;
   const now = new Date();
-  if (Number.isNaN(start.getTime())) return 0;
-  start.setHours(0, 0, 0, 0);
+  const s = new Date(start);
+  s.setHours(0, 0, 0, 0);
   now.setHours(0, 0, 0, 0);
-  return Math.max(0, Math.floor((now - start) / (24 * 60 * 60 * 1000)));
+  return Math.max(0, Math.floor((now - s) / (24 * 60 * 60 * 1000)));
 }
 
 function leadAgeBucket(ageDays) {
@@ -45,11 +53,27 @@ function isConverted(status) {
   return CONVERTED_STATUSES.includes(normalizeStageLabel(status));
 }
 
-async function buildLeadAdminReport({ from, to, executiveId, status, source, model, buyerType, channel, designation } = {}) {
-  const leadDateFilter = buildLeadDateFilter(from, to);
-  const leadQuery = { isDuplicate: { $ne: true }, ...leadDateFilter };
+async function buildLeadAdminReport({
+  admin,
+  from,
+  to,
+  dateField = 'enquiry',
+  executiveId,
+  status,
+  source,
+  model,
+  buyerType,
+  channel,
+  designation,
+} = {}) {
+  const leadQuery = { isDuplicate: { $ne: true } };
+  appendLeadDateFilter(leadQuery, { from, to, dateField });
   if (executiveId) {
-    Object.assign(leadQuery, assignedToStaffFilter(executiveId));
+    const assignee = await TDStaff.findById(executiveId).select('email').lean();
+    Object.assign(leadQuery, assignedToStaffFilter(executiveId, assignee?.email));
+  } else if (admin && isTeamScopedUser(admin) && !isUnrestrictedViewer(admin)) {
+    leadQuery.$and = leadQuery.$and || [];
+    leadQuery.$and.push(await assignedToStaffFilterAsync(admin));
   }
   const stageFilter = status ? String(status).trim() : '';
   if (stageFilter && stageFilter.toLowerCase() !== 'all') {
@@ -476,7 +500,7 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
   const leadDetailRows = leads.map((l) => {
     const fu = followUpByLead.get(String(l._id));
     const leadFeedback = feedbackRows.find((f) => f.leadId === String(l._id));
-    const ageDays = leadAgeInDays(l.createdAt);
+    const ageDays = leadAgeInDays(l);
     const ageBucket = leadAgeBucket(ageDays);
 
     // Test drive status for this lead's customer.
@@ -638,6 +662,8 @@ async function buildLeadAdminReport({ from, to, executiveId, status, source, mod
     activityLog: activityLog.slice(0, 150),
     feedbackRows,
     leadDetailRows: leadDetailRows.slice(0, 2000),
+    leadDetailRowsTotal: leadDetailRows.length,
+    leadDetailRowsTruncated: leadDetailRows.length > 2000,
     leadAgeing,
     stages: stageLabels,
     kpis: buildKpiSummary(leads, followUps, tdBookings, now),
@@ -661,14 +687,15 @@ function buildKpiSummary(leads, followUps, tdBookings, now) {
     if (Number.isNaN(t.getTime()) || t < from) return false;
     return to ? t <= to : true;
   };
+  const leadOn = (l) => leadEffectiveDate(l);
   const walkIn = (l) => isWalkInSource(l.source);
   const tdBooked = tdBookings.filter((b) => b.bookingStatus !== 'CANCELLED');
   const tdDone = tdBookings.filter((b) => b.bookingStatus === 'COMPLETED');
   return {
     today: {
-      totalLeads: leads.filter((l) => inRange(l.createdAt, todayStart, todayEnd)).length,
-      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, todayStart, todayEnd)).length,
-      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, todayStart, todayEnd)).length,
+      totalLeads: leads.filter((l) => inRange(leadOn(l), todayStart, todayEnd)).length,
+      walkIn: leads.filter((l) => walkIn(l) && inRange(leadOn(l), todayStart, todayEnd)).length,
+      digital: leads.filter((l) => !walkIn(l) && inRange(leadOn(l), todayStart, todayEnd)).length,
       followUpDue: followUps.filter((f) => f.status === 'pending' && inRange(f.scheduledAt, todayStart, todayEnd)).length,
       overdueFollowUps: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) < todayStart).length,
       tdBooked: tdBooked.filter((b) => inRange(b.slotDate || b.createdAt, todayStart, todayEnd)).length,
@@ -679,9 +706,9 @@ function buildKpiSummary(leads, followUps, tdBookings, now) {
       lost: leads.filter((l) => l.status === 'Lost' && inRange(l.updatedAt, todayStart, todayEnd)).length,
     },
     mtd: {
-      totalLeads: leads.filter((l) => inRange(l.createdAt, mtdStart)).length,
-      walkIn: leads.filter((l) => walkIn(l) && inRange(l.createdAt, mtdStart)).length,
-      digital: leads.filter((l) => !walkIn(l) && inRange(l.createdAt, mtdStart)).length,
+      totalLeads: leads.filter((l) => inRange(leadOn(l), mtdStart)).length,
+      walkIn: leads.filter((l) => walkIn(l) && inRange(leadOn(l), mtdStart)).length,
+      digital: leads.filter((l) => !walkIn(l) && inRange(leadOn(l), mtdStart)).length,
       followUpDue: followUps.filter((f) => f.status === 'pending').length,
       overdueFollowUps: followUps.filter((f) => f.status === 'pending' && f.scheduledAt && new Date(f.scheduledAt) < now).length,
       tdBooked: tdBooked.length,

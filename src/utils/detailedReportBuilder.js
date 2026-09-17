@@ -3,7 +3,8 @@ const LeadFollowUp = require('../models/LeadFollowUp');
 const TDBooking = require('../models/TDBooking');
 const TDStaff = require('../models/TDStaff');
 const { WALK_IN_SOURCES, isWalkInSource } = require('./crmConversion');
-const { startOfDay, endOfDay } = require('./reportPeriod');
+const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
+const { appendLeadDateFilter } = require('./leadDateFilter');
 const {
   collectSubtreeStaffIds,
   isTeamScopedUser,
@@ -67,9 +68,15 @@ async function buildLeadScope(admin) {
   return scope;
 }
 
-async function countLeads(scope, extra = {}, createdRange) {
+async function countLeads(scope, extra = {}, enquiryRange) {
   const q = { ...scope, ...extra };
-  if (createdRange) q.createdAt = dateRange(createdRange.from, createdRange.to);
+  if (enquiryRange) {
+    appendLeadDateFilter(q, {
+      from: toDateKey(enquiryRange.from),
+      to: toDateKey(enquiryRange.to),
+      dateField: 'enquiry',
+    });
+  }
   return Lead.countDocuments(q);
 }
 
@@ -412,13 +419,6 @@ async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
     },
     teamMatrix,
   };
-}
-
-function toDateKey(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 module.exports = { buildDetailedReport, buildTeamWiseAssignedLeadsReport };
