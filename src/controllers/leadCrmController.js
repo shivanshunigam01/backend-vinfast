@@ -953,7 +953,7 @@ function parseCreSheetDateField(v) {
 async function syncLeadCreatedAtFromEnquiryDate(leadId, enquiryDate) {
   const d = parseCreSheetDateField(enquiryDate);
   if (!d || !leadId) return;
-  await Lead.updateOne({ _id: leadId }, { $set: { createdAt: d } }, { timestamps: false });
+  await Lead.collection.updateOne({ _id: leadId }, { $set: { createdAt: d } });
 }
 
 function parseCreSheetYesNo(v) {
@@ -1060,13 +1060,13 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
   touchLeadActivity(lead);
   await lead.save();
 
-  if (changes.includes('enquiryDate') && lead.creSheet?.enquiryDate) {
-    await syncLeadCreatedAtFromEnquiryDate(lead._id, lead.creSheet.enquiryDate);
-    lead.createdAt = lead.creSheet.enquiryDate;
-  }
-
   if (lead.creSheet?.tdDate || lead.creSheet?.tdDone) {
     await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
+  }
+
+  if (lead.creSheet?.enquiryDate) {
+    await syncLeadCreatedAtFromEnquiryDate(lead._id, lead.creSheet.enquiryDate);
+    lead.createdAt = lead.creSheet.enquiryDate;
   }
 
   if (changes.length) {
@@ -2506,10 +2506,6 @@ async function importCurrentFormatRows(
         lead.status = nextStage;
         touchLeadActivity(lead);
         await lead.save();
-        if (parsed.creSheet?.enquiryDate) {
-          await syncLeadCreatedAtFromEnquiryDate(lead._id, parsed.creSheet.enquiryDate);
-          lead.createdAt = parsed.creSheet.enquiryDate;
-        }
 
         if (normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)) {
           await LeadStageHistory.create({
@@ -2543,6 +2539,10 @@ async function importCurrentFormatRows(
       }
       touchLeadActivity(lead);
       await lead.save();
+      // Must run after all lead.save() calls — in-memory createdAt is otherwise stale.
+      if (parsed.creSheet?.enquiryDate) {
+        await syncLeadCreatedAtFromEnquiryDate(lead._id, parsed.creSheet.enquiryDate);
+      }
     } catch (err) {
       const status =
         err?.code === 'needs_model' ? 'needs_model' : 'failed';

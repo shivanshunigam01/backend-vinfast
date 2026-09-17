@@ -21,10 +21,9 @@ const Lead = require('../models/Lead');
     for (const lead of leads) {
       const enquiryDate = lead.creSheet?.enquiryDate;
       if (!enquiryDate) continue;
-      await Lead.updateOne(
+      await Lead.collection.updateOne(
         { _id: lead._id },
         { $set: { createdAt: enquiryDate } },
-        { timestamps: false },
       );
       updated += 1;
     }
