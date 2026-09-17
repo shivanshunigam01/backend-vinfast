@@ -10,7 +10,7 @@ const {
   isAmbiguousLeadModel,
   baseProductModel,
 } = require('../utils/leadModel');
-const { intakePvLead, findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
+const { intakePvLead, findOpenLeadForCustomer, ensureParentCustomer } = require('../utils/pvLeadIntake');
 const { assignPvIds } = require('../utils/pvLeadIntake');
 const LeadStageHistory = require('../models/LeadStageHistory');
 const LeadFollowUp = require('../models/LeadFollowUp');
@@ -46,8 +46,12 @@ const {
   CRM_LEAD_LIST_SORT,
 } = require('../utils/leadAssignment');
 const TDBooking = require('../models/TDBooking');
-const { ensureParentCustomer } = require('../utils/pvLeadIntake');
 const { nextBookingId, resolveBranch, normalizeSlotTime } = require('../utils/tdBookingSync');
+const {
+  extractFollowUpSlots,
+  syncStructuredFollowUpSlots,
+  syncTestDriveBookingFromCreSheet,
+} = require('../utils/crmCreSheetSync');
 const { upsertTDCustomer } = require('../utils/tdCustomerResolver');
 const { formatTdBooking } = require('../utils/tdBookingFormatter');
 const { getActiveModelNames } = require('../utils/vehicleCatalog');
@@ -148,10 +152,29 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
     const n = normalizeConsultantName(s.name);
     return n.includes(needle) || needle.includes(n);
   });
-  if (partial && isCreUser(viewer) && !isCreAssignableDesignation(partial.designation)) {
-    throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
+  if (partial) {
+    if (isCreUser(viewer) && !isCreAssignableDesignation(partial.designation)) {
+      throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
+    }
+    return partial;
   }
-  return partial || null;
+
+  // Excel labels like "Saurav 1 (SM)" → match staff "Saurav Kumar" by first name token.
+  const firstToken = needle.replace(/\s+\d+$/, '').split(/\s+/)[0];
+  if (firstToken && firstToken.length >= 3) {
+    const byFirst = staff.find((s) => {
+      const n = normalizeConsultantName(s.name);
+      return n === firstToken || n.startsWith(`${firstToken} `);
+    });
+    if (byFirst) {
+      if (isCreUser(viewer) && !isCreAssignableDesignation(byFirst.designation)) {
+        throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
+      }
+      return byFirst;
+    }
+  }
+
+  return null;
 }
 
 function normalizeImportModel(raw) {
@@ -379,11 +402,16 @@ async function ensureLeadIds(doc) {
   return doc;
 }
 
+function leadEnquiryDate(plain) {
+  return plain?.creSheet?.enquiryDate || plain?.createdAt || null;
+}
+
 function formatCrmLead(doc, extras = {}) {
   const plain = doc.toObject ? doc.toObject() : doc;
   const customer = plain.pvCustomerId;
   const subCustomer = plain.subCustomerId;
   const resolvedName = (customer && customer.name) || plain.name || '';
+  const enquiryDate = leadEnquiryDate(plain);
   return {
     ...plain,
     name: resolvedName,
@@ -396,7 +424,8 @@ function formatCrmLead(doc, extras = {}) {
     buyerType: plain.buyerType || '',
     interestLevel: plain.interestLevel || '',
     firstRespondedAt: plain.firstRespondedAt || null,
-    leadAgeDays: leadAgeInDays(plain.createdAt),
+    enquiryDate: enquiryDate || null,
+    leadAgeDays: leadAgeInDays(enquiryDate),
     followUpHighlight: followUpHighlight(plain.nextFollowUp),
     isFavourite: Boolean(extras.isFavourite),
     followUpCount: extras.followUpCount != null ? extras.followUpCount : undefined,
@@ -464,6 +493,15 @@ async function buildLeadQuery(admin, queryParams = {}) {
           { lastActivityAt: range },
           { lastActivityAt: { $exists: false }, updatedAt: range },
           { lastActivityAt: null, updatedAt: range },
+        ],
+      });
+    } else if (queryParams.dateField === 'enquiry') {
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { 'creSheet.enquiryDate': range },
+          { 'creSheet.enquiryDate': { $exists: false }, createdAt: range },
+          { 'creSheet.enquiryDate': null, createdAt: range },
         ],
       });
     } else {
@@ -664,6 +702,7 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
       showTestDriveDone: !testDriveState.hasCompletedTestDrive,
       bookings: testDriveState.bookings,
     },
+    followUpSlots: extractFollowUpSlots(followUps),
   });
 });
 
@@ -901,6 +940,155 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
 
   await lead.populate(LEAD_POPULATE);
   return successResponse(res, formatCrmLead(lead), 'Lead details updated');
+});
+
+function parseCreSheetDateField(v) {
+  if (v == null || v === '') return undefined;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/** ENQUIRY DATE from sheet is the canonical lead received date (maps to createdAt). */
+async function syncLeadCreatedAtFromEnquiryDate(leadId, enquiryDate) {
+  const d = parseCreSheetDateField(enquiryDate);
+  if (!d || !leadId) return;
+  await Lead.updateOne({ _id: leadId }, { $set: { createdAt: d } }, { timestamps: false });
+}
+
+function parseCreSheetYesNo(v) {
+  if (v === true || v === false) return v;
+  if (v == null || v === '') return undefined;
+  const s = String(v).trim().toUpperCase();
+  if (['YES', 'Y', 'TRUE', '1'].includes(s) || s.startsWith('Y')) return true;
+  if (['NO', 'N', 'FALSE', '0'].includes(s) || s.startsWith('N')) return false;
+  return undefined;
+}
+
+/**
+ * PATCH /admin/crm/leads/:id/cre-sheet
+ * Full CRUD for CRE Current Format columns + structured follow-up pairs + TD sync.
+ */
+exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  assertAdminEditRights(req.admin);
+
+  const lead = await Lead.findById(req.params.id);
+  if (!lead) throw new ApiError(404, 'Lead not found');
+
+  const { creSheet, followUpSlots, salesConsultant, followUp: followUpLabel, exchangeNeeded } = req.body || {};
+  const changes = [];
+
+  if (followUpLabel !== undefined) {
+    const next = String(followUpLabel || '').trim() || undefined;
+    if ((lead.leadType || '') !== (next || '') || (lead.creSheet?.followUp || '') !== (next || '')) {
+      lead.leadType = next;
+      lead.creSheet = lead.creSheet || {};
+      lead.creSheet.followUp = next;
+      changes.push('FOLLOW-UP');
+    }
+  }
+
+  if (creSheet && typeof creSheet === 'object') {
+    lead.creSheet = lead.creSheet || {};
+    const dateFields = [
+      'enquiryDate',
+      'callDate',
+      'salesConsultantDate',
+      'salesPersonDate',
+      'tdDate',
+      'bookingDate',
+      'retailDate',
+      'deliveryDate',
+    ];
+    const boolFields = ['tdDone', 'bookingDone', 'mailSent', 'retailDone'];
+    const stringFields = [
+      'existingVariant',
+      'followUp',
+      'salesConsultantName',
+      'salesPersonRemark',
+      'tdNotDoneWhy',
+      'afterTdRemark',
+      'finalModel',
+      'finalVariant',
+      'finalColour',
+      'initialRemark',
+    ];
+
+    for (const key of dateFields) {
+      if (creSheet[key] === undefined) continue;
+      lead.creSheet[key] = parseCreSheetDateField(creSheet[key]);
+      changes.push(key);
+    }
+    for (const key of boolFields) {
+      if (creSheet[key] === undefined) continue;
+      lead.creSheet[key] = parseCreSheetYesNo(creSheet[key]);
+      changes.push(key);
+    }
+    for (const key of stringFields) {
+      if (creSheet[key] === undefined) continue;
+      lead.creSheet[key] = String(creSheet[key] || '').trim() || undefined;
+      changes.push(key);
+    }
+  }
+
+  if (exchangeNeeded !== undefined) {
+    lead.exchangeNeeded = Boolean(exchangeNeeded);
+    changes.push('exchangeNeeded');
+  }
+
+  if (salesConsultant !== undefined) {
+    const consultantRaw = String(salesConsultant || '').trim();
+    lead.creSheet = lead.creSheet || {};
+    lead.creSheet.salesConsultantName = consultantRaw || undefined;
+    const assignee = consultantRaw
+      ? await resolveSalesConsultant(null, consultantRaw, req.admin)
+      : null;
+    applyImportSheetAssignment(lead, {
+      assignedTo: assignee?._id,
+      assignedToEmail: assignee?.email,
+      consultantRaw,
+    });
+    changes.push('assignment');
+  }
+
+  if (Array.isArray(followUpSlots)) {
+    await syncStructuredFollowUpSlots(lead._id, req.admin._id, followUpSlots);
+    changes.push('followUpSlots');
+  }
+
+  touchLeadActivity(lead);
+  await lead.save();
+
+  if (changes.includes('enquiryDate') && lead.creSheet?.enquiryDate) {
+    await syncLeadCreatedAtFromEnquiryDate(lead._id, lead.creSheet.enquiryDate);
+    lead.createdAt = lead.creSheet.enquiryDate;
+  }
+
+  if (lead.creSheet?.tdDate || lead.creSheet?.tdDone) {
+    await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
+  }
+
+  if (changes.length) {
+    await LeadStageHistory.create({
+      leadId: lead._id,
+      fromStage: lead.status,
+      toStage: lead.status,
+      changedBy: req.admin._id,
+      reason: `CRE sheet updated (${changes.join(', ')}) by ${req.admin.name}`,
+    });
+  }
+
+  await lead.populate(LEAD_POPULATE);
+  const followUps = await LeadFollowUp.find({ leadId: lead._id }).sort({ createdAt: 1 }).lean();
+  return successResponse(
+    res,
+    {
+      lead: formatCrmLead(lead),
+      followUpSlots: extractFollowUpSlots(followUps),
+    },
+    'CRE sheet saved',
+  );
 });
 
 exports.updateLeadRemarks = asyncHandler(async (req, res) => {
@@ -1763,9 +1951,12 @@ const XLSX = require('xlsx');
 const { normalizeMobile, mobileVariants } = require('../utils/mobile');
 const { nextLeadId, nextOpportunityId } = require('../utils/pvIdGenerator');
 const {
+  CURRENT_FORMAT_HEADERS,
   isCurrentFormatSheet,
+  classifyImportRowSkip,
   parseCurrentFormatRow,
   pickForwardStage,
+  serializeLeadToCurrentFormatRow,
   normalizeImportModel: normalizeCreImportModel,
 } = require('../utils/creCurrentFormatImport');
 
@@ -1816,46 +2007,23 @@ exports.exportCrmLeads = asyncHandler(async (req, res) => {
     .sort({ createdAt: 1 })
     .lean();
 
-  const leadById = new Map(leads.map((l) => [String(l._id), l]));
+  const followUpsByLead = new Map();
+  for (const f of followUps) {
+    const key = String(f.leadId);
+    if (!followUpsByLead.has(key)) followUpsByLead.set(key, []);
+    followUpsByLead.get(key).push(f);
+  }
 
-  const leadRows = leads.map((l) => ({
-    LeadId: l.leadId || '',
-    OpportunityId: l.opportunityId || '',
-    Name: l.name || '',
-    Mobile: l.mobile || '',
-    Email: l.email || '',
-    City: l.city || '',
-    Model: l.model || '',
-    Source: l.source || '',
-    BuyerType: l.buyerType || '',
-    InterestLevel: l.interestLevel || '',
-    Status: l.status || '',
-    Remarks: l.remarks || '',
-    AssignedToEmail: l.assignedToEmail || l.assignedTo?.email || '',
-    AssignedToName: l.assignedTo?.name || '',
-    NextFollowUp: l.nextFollowUp ? new Date(l.nextFollowUp).toISOString() : '',
-    FinanceNeeded: l.financeNeeded ? 'Yes' : 'No',
-    ExchangeNeeded: l.exchangeNeeded ? 'Yes' : 'No',
-    CreatedAt: l.createdAt ? new Date(l.createdAt).toISOString() : '',
-  }));
-
-  const followUpRows = followUps.map((f) => {
-    const lead = leadById.get(String(f.leadId));
-    return {
-      LeadId: lead?.leadId || '',
-      Mobile: lead?.mobile || '',
-      Note: f.note || '',
-      ScheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : '',
-      CompletedAt: f.completedAt ? new Date(f.completedAt).toISOString() : '',
-      Outcome: f.outcome || '',
-      Status: f.status || '',
-      CreatedAt: f.createdAt ? new Date(f.createdAt).toISOString() : '',
-    };
-  });
+  const leadRows = leads.map((l, idx) =>
+    serializeLeadToCurrentFormatRow(l, idx + 1, followUpsByLead.get(String(l._id)) || []),
+  );
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(leadRows), 'Leads');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(followUpRows), 'FollowUps');
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(leadRows, { header: CURRENT_FORMAT_HEADERS }),
+    'Sheet3',
+  );
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
   const filename = `crm-leads-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -1875,23 +2043,66 @@ function importModelsMatch(stored, incomingNorm) {
   return baseProductModel(storedRaw) === baseProductModel(incoming);
 }
 
-async function findLeadByMobileAndModel(mobile, modelNorm) {
+function importOpportunityKey(mobile, modelNorm) {
+  return `${mobile}|${modelNorm}`;
+}
+
+function mobileListForQuery(mobile) {
   const variants = mobileVariants(mobile);
-  const mobiles = variants.length ? variants : [mobile];
+  return variants.length ? variants : [mobile];
+}
+
+/** Open opportunity for exact mobile + model (no cross-model merge). */
+async function findOpenOpportunityByMobileAndModel(mobile, modelNorm) {
   const candidates = await Lead.find({
-    mobile: { $in: mobiles },
+    mobile: { $in: mobileListForQuery(mobile) },
+    status: { $nin: CLOSED_STATUSES },
   }).sort({ createdAt: -1 });
+  return candidates.find((l) => importModelsMatch(l.model, modelNorm)) || null;
+}
 
-  const modelMatch = candidates.find((l) => importModelsMatch(l.model, modelNorm));
-  if (modelMatch) return modelMatch;
+async function mobileHasExistingLeads(mobile, batchMobiles) {
+  if (batchMobiles?.has(mobile)) return true;
+  const count = await Lead.countDocuments({ mobile: { $in: mobileListForQuery(mobile) } });
+  return count > 0;
+}
 
-  const openAmbiguous = candidates.find((l) => {
-    const st = normalizeStageLabel(l.status);
-    if (CLOSED_STATUSES.includes(st)) return false;
-    const m = String(l.model || '').trim();
-    return !m || isAmbiguousLeadModel(m) || m === 'Both';
-  });
-  return openAmbiguous || null;
+/**
+ * Bulk import resolution:
+ * - Same PHONE + same MODEL (in file or DB) → update that opportunity.
+ * - Same PHONE + different MODEL → new opportunity under the same customer (pvCustomerId).
+ * - Different PHONE → separate customer/lead even if CUSTOMER NAME repeats.
+ */
+function isDryRunBatchLeadRef(ref) {
+  return typeof ref === 'string' && ref.startsWith('dry:');
+}
+
+async function resolveImportOpportunity(mobile, modelForStorage, batchOpportunityByKey, batchMobiles) {
+  const key = importOpportunityKey(mobile, modelForStorage);
+
+  if (batchOpportunityByKey.has(key)) {
+    const cached = batchOpportunityByKey.get(key);
+    if (isDryRunBatchLeadRef(cached)) {
+      return {
+        lead: null,
+        mode: 'update',
+        linkedOpportunity: batchMobiles.has(mobile),
+        dryRunBatchHit: true,
+      };
+    }
+    const lead = await Lead.findById(cached);
+    if (lead) return { lead, mode: 'update', linkedOpportunity: false };
+  }
+
+  const existing = await findOpenOpportunityByMobileAndModel(mobile, modelForStorage);
+  if (existing) {
+    batchOpportunityByKey.set(key, existing._id);
+    batchMobiles.add(mobile);
+    return { lead: existing, mode: 'update', linkedOpportunity: false };
+  }
+
+  const linkedOpportunity = await mobileHasExistingLeads(mobile, batchMobiles);
+  return { lead: null, mode: linkedOpportunity ? 'create_opportunity' : 'create', linkedOpportunity };
 }
 
 async function syncImportFollowUps(lead, followUps, admin, results) {
@@ -1942,7 +2153,7 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
 }
 
 /**
- * CRE Current Format upsert: match by mobile + model; store creSheet; stage forward only.
+ * CRE Current Format import: PHONE + MODEL opportunity matching; linked opportunities per mobile.
  */
 const AMBIGUOUS_MODEL_ERROR = 'Ambiguous model (Both) — map to a single model';
 
@@ -1980,13 +2191,15 @@ function isDryRunRequest(req) {
 function assertImportModelOrThrow(model, modelRaw) {
   const display = modelRaw || model || '';
   if (isAmbiguousLeadModel(model) || isAmbiguousLeadModel(modelRaw)) {
+    const stored = normalizeLeadModelForStorage(display || model);
+    if (stored === 'Both') return 'Both';
     const err = new Error(AMBIGUOUS_MODEL_ERROR);
     err.code = 'needs_model';
     err.modelRaw = display;
     throw err;
   }
   const modelForStorage = normalizeLeadModelForStorage(model);
-  if (!isValidLeadModel(modelForStorage)) {
+  if (!isValidLeadModel(modelForStorage) && modelForStorage !== 'Both') {
     const err = new Error(`Invalid model: ${display || modelForStorage}`);
     err.code = 'invalid';
     throw err;
@@ -2004,24 +2217,104 @@ function applyRowModelCorrection(parsed, rowNum, corrections) {
   };
 }
 
-async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelCorrections = {} } = {}) {
+function inferSingleModelFromText(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s || isAmbiguousLeadModel(s)) return null;
+  const normalized = normalizeCreImportModel(s);
+  if (isAmbiguousLeadModel(normalized)) return null;
+  const stored = normalizeLeadModelForStorage(normalized);
+  return isValidLeadModel(stored) ? stored : null;
+}
+
+/** When MODEL is "Both", infer a single model from FINAL MODEL / variant columns before failing. */
+function resolveImportModelForRow(parsed) {
+  if (!isAmbiguousLeadModel(parsed.model) && !isAmbiguousLeadModel(parsed.modelRaw)) {
+    return parsed;
+  }
+  const cs = parsed.creSheet || {};
+  for (const candidate of [
+    cs.finalModel,
+    cs.finalVariant,
+    cs.existingVariant,
+    parsed.remarks,
+  ]) {
+    const resolved = inferSingleModelFromText(candidate);
+    if (resolved) {
+      return { ...parsed, model: resolved, modelRaw: parsed.modelRaw || parsed.model };
+    }
+  }
+  const raw = String(parsed.modelRaw || parsed.model || '').toUpperCase();
+  if (raw.includes('VF 6') && !raw.includes('VF 7')) {
+    return { ...parsed, model: 'VF 6', modelRaw: parsed.modelRaw || parsed.model };
+  }
+  if (raw.includes('VF 7') && !raw.includes('VF 6')) {
+    return { ...parsed, model: 'VF 7', modelRaw: parsed.modelRaw || parsed.model };
+  }
+  if (isAmbiguousLeadModel(parsed.model) || isAmbiguousLeadModel(parsed.modelRaw)) {
+    return { ...parsed, model: 'Both', modelRaw: parsed.modelRaw || parsed.model || 'Both' };
+  }
+  return parsed;
+}
+
+/** Apply SALES CONSULTANT from sheet — blank or unknown name stays unassigned. */
+function applyImportSheetAssignment(lead, { assignedTo, assignedToEmail, consultantRaw }) {
+  const consultant = String(consultantRaw || '').trim();
+  if (!consultant) {
+    lead.assignedTo = undefined;
+    lead.assignedToEmail = undefined;
+    return;
+  }
+  if (assignedTo) {
+    lead.assignedTo = assignedTo;
+    lead.assignedToEmail = assignedToEmail;
+    return;
+  }
+  lead.assignedTo = undefined;
+  lead.assignedToEmail = undefined;
+}
+
+async function importCurrentFormatRows(
+  admin,
+  leadRows,
+  { dryRun = false, modelCorrections = {} } = {},
+) {
   const results = {
     created: 0,
     updated: 0,
+    skipped: 0,
     failed: [],
     followUpsCreated: 0,
     rows: [],
     dryRun: Boolean(dryRun),
     needsModel: 0,
   };
-  const seenInBatch = new Set();
+  /** `${mobile}|${model}` → Lead _id processed in this file */
+  const batchOpportunityByKey = new Map();
+  const batchMobiles = new Set();
 
   for (let i = 0; i < leadRows.length; i += 1) {
     const raw = leadRows[i];
     const rowNum = i + 2;
     let parsed;
     try {
-      parsed = applyRowModelCorrection(parseCurrentFormatRow(raw), rowNum, modelCorrections);
+      parsed = resolveImportModelForRow(
+        applyRowModelCorrection(parseCurrentFormatRow(raw), rowNum, modelCorrections),
+      );
+      const skipInfo = classifyImportRowSkip(parsed);
+      if (skipInfo.skip) {
+        results.skipped += 1;
+        pushImportRow(results, {
+          row: rowNum,
+          status: 'skipped',
+          name: String(parsed?.name || '').trim(),
+          mobile: parsed?.mobile || '',
+          model: parsed?.modelRaw || parsed?.model || '',
+          message: skipInfo.reason,
+        });
+        continue;
+      }
+
       const { name, mobile, model } = parsed;
       if (!name || String(name).trim().length < 2) {
         throw Object.assign(new Error('Customer name is required'), { code: 'invalid' });
@@ -2067,18 +2360,15 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
         throw modelErr;
       }
 
-      const batchKey = `${mobile}|${modelForStorage}`;
-      if (seenInBatch.has(batchKey)) {
-        throw Object.assign(
-          new Error(`Duplicate mobile + model within this import file (${mobile} / ${modelForStorage})`),
-          { code: 'invalid' },
-        );
-      }
-      seenInBatch.add(batchKey);
+      const resolved = await resolveImportOpportunity(
+        mobile,
+        modelForStorage,
+        batchOpportunityByKey,
+        batchMobiles,
+      );
 
       if (dryRun) {
-        const existing = await findLeadByMobileAndModel(mobile, modelForStorage);
-        if (existing) {
+        if (resolved.mode === 'update') {
           results.updated += 1;
           pushImportRow(results, {
             row: rowNum,
@@ -2087,8 +2377,11 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
             mobile,
             model: modelForStorage,
             modelRaw: parsed.modelRaw || model,
-            leadId: existing.leadId || String(existing._id),
-            message: `Will update existing lead (${existing.leadId || existing._id}, ${existing.status})`,
+            leadId: resolved.lead?.leadId || '',
+            opportunityId: resolved.lead?.opportunityId || '',
+            message: resolved.dryRunBatchHit
+              ? `Will update opportunity from earlier row in this file (mobile ${mobile}, model ${modelForStorage})`
+              : `Will update opportunity ${resolved.lead?.opportunityId || resolved.lead?.leadId || resolved.lead?._id} (${resolved.lead?.status})`,
           });
         } else {
           results.created += 1;
@@ -2099,12 +2392,19 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
             mobile,
             model: modelForStorage,
             modelRaw: parsed.modelRaw || model,
-            message: 'Will create new lead',
+            message: resolved.linkedOpportunity
+              ? `Will create new linked opportunity for mobile ${mobile} (same customer, new model ${modelForStorage})`
+              : 'Will create new lead',
           });
+          batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), `dry:${rowNum}`);
         }
+        batchMobiles.add(mobile);
         continue;
       }
 
+      const consultantRaw = String(
+        parsed.salesConsultant ?? parsed.creSheet?.salesConsultantName ?? '',
+      ).trim();
       let assignedTo = null;
       let assignedToEmail;
       let assignLabel = '';
@@ -2112,18 +2412,22 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
         assignedTo = toObjectId(admin._id) || admin._id;
         assignedToEmail = admin.email;
         assignLabel = admin.name;
-      } else if (parsed.salesConsultant) {
-        const assignee = await resolveSalesConsultant(null, parsed.salesConsultant, admin);
+      } else if (consultantRaw) {
+        const assignee = await resolveSalesConsultant(null, consultantRaw, admin);
         if (assignee) {
           assignedTo = assignee._id;
           assignedToEmail = assignee.email;
           assignLabel = assignee.name;
         }
       }
+      parsed.creSheet = {
+        ...(parsed.creSheet || {}),
+        salesConsultantName: consultantRaw || undefined,
+      };
 
-      let lead = await findLeadByMobileAndModel(mobile, modelForStorage);
+      let lead = resolved.lead;
       const incomingStatus = parsed.derivedStatus || 'Enquiry';
-      const isNew = !lead;
+      const isNew = resolved.mode !== 'update';
 
       if (isNew) {
         const parent = await ensureParentCustomer({
@@ -2132,6 +2436,7 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
           email: parsed.email,
           city: parsed.city,
         });
+        const enquiryAt = parseCreSheetDateField(parsed.creSheet?.enquiryDate);
         lead = await Lead.create({
           leadId: await nextLeadId(),
           opportunityId: await nextOpportunityId(),
@@ -2152,14 +2457,21 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
           createdBy: admin._id,
           creSheet: parsed.creSheet || undefined,
           lastActivityAt: new Date(),
+          ...(enquiryAt ? { createdAt: enquiryAt } : {}),
         });
+        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchMobiles.add(mobile);
         await LeadStageHistory.create({
           leadId: lead._id,
           toStage: incomingStatus,
           changedBy: admin._id,
-          reason: `Lead imported from Current Format Excel by ${admin.name}${
-            assignLabel ? ` · assigned to ${assignLabel}` : ''
-          }`,
+          reason: resolved.linkedOpportunity
+            ? `Linked opportunity imported from Current Format Excel by ${admin.name} · customer mobile ${mobile}${
+                assignLabel ? ` · assigned to ${assignLabel}` : ''
+              }`
+            : `Lead imported from Current Format Excel by ${admin.name}${
+                assignLabel ? ` · assigned to ${assignLabel}` : ''
+              }`,
         });
         results.created += 1;
         pushImportRow(results, {
@@ -2169,9 +2481,14 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
           mobile,
           model: modelForStorage,
           leadId: lead.leadId || String(lead._id),
-          message: 'New lead created',
+          opportunityId: lead.opportunityId || '',
+          message: resolved.linkedOpportunity
+            ? `New opportunity ${lead.opportunityId || lead.leadId} linked to customer (mobile ${mobile})`
+            : 'New lead created',
         });
       } else {
+        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchMobiles.add(mobile);
         const prevStage = lead.status;
         const nextStage = await pickForwardStage(prevStage, incomingStatus);
 
@@ -2184,14 +2501,15 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
         if (parsed.leadType) lead.leadType = parsed.leadType;
         if (parsed.remarks) lead.remarks = parsed.remarks;
         lead.exchangeNeeded = Boolean(parsed.exchangeNeeded);
-        if (assignedTo) {
-          lead.assignedTo = assignedTo;
-          lead.assignedToEmail = assignedToEmail;
-        }
+        applyImportSheetAssignment(lead, { assignedTo, assignedToEmail, consultantRaw });
         lead.creSheet = { ...(lead.creSheet?.toObject?.() || lead.creSheet || {}), ...parsed.creSheet };
         lead.status = nextStage;
         touchLeadActivity(lead);
         await lead.save();
+        if (parsed.creSheet?.enquiryDate) {
+          await syncLeadCreatedAtFromEnquiryDate(lead._id, parsed.creSheet.enquiryDate);
+          lead.createdAt = parsed.creSheet.enquiryDate;
+        }
 
         if (normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)) {
           await LeadStageHistory.create({
@@ -2214,11 +2532,15 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
           mobile,
           model: modelForStorage,
           leadId: lead.leadId || String(lead._id),
+          opportunityId: lead.opportunityId || '',
           message: stageNote,
         });
       }
 
       await syncImportFollowUps(lead, parsed.followUps, admin, results);
+      if (parsed.creSheet?.tdDate || parsed.creSheet?.tdDone) {
+        await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
+      }
       touchLeadActivity(lead);
       await lead.save();
     } catch (err) {
@@ -2250,7 +2572,8 @@ async function importCurrentFormatRows(admin, leadRows, { dryRun = false, modelC
  * Body JSON: { leads: [...], followUps: [...] } OR multipart file.
  * Query/body dryRun=true|1 validates only (valid | needs_model | invalid), no writes.
  * Optional modelCorrections: { "<rowNumber>": "VF 7" } applied before commit/validate.
- * Auto-detects CRE Current Format vs simple Excel. Both upsert on mobile + normalized model.
+ * Auto-detects CRE Current Format vs simple Excel.
+ * Dedupes by PHONE + MODEL; same mobile with different models → linked opportunities (same customer).
  */
 exports.importCrmLeads = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
@@ -2292,7 +2615,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
     });
     const msg = dryRun
       ? `Validated ${leadRows.length} row(s): ${results.created} will create, ${results.updated} will update, ${results.needsModel} need model, ${results.failed.length} invalid.`
-      : `Imported ${results.created} created, ${results.updated} updated, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`;
+      : `Imported ${results.created} created, ${results.updated} updated, ${results.skipped || 0} skipped, ${results.followUpsCreated} follow-up(s). ${results.failed.length} failed.`;
     return successResponse(res, results, msg, 200, {
       total: leadRows.length,
       failed: results.failed.length,
@@ -2311,9 +2634,10 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
     dryRun: Boolean(dryRun),
     needsModel: 0,
   };
-  /** mobile (normalized) -> created lead _id for follow-up linking in this batch */
+  /** mobile (normalized) -> latest lead _id in this batch (for optional FollowUps sheet) */
   const createdByMobile = new Map();
-  const seenInBatch = new Set();
+  const batchOpportunityByKey = new Map();
+  const batchMobiles = new Set();
 
   for (let i = 0; i < leadRows.length; i += 1) {
     const raw = leadRows[i];
@@ -2373,19 +2697,15 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         throw modelErr;
       }
 
-      const batchKey = `${mobile}|${modelForStorage}`;
-      if (seenInBatch.has(batchKey)) {
-        throw Object.assign(
-          new Error(`Duplicate mobile + model within this import file (${mobile} / ${modelForStorage})`),
-          { code: 'invalid' },
-        );
-      }
-      seenInBatch.add(batchKey);
-
-      const existing = await findLeadByMobileAndModel(mobile, modelForStorage);
+      const resolved = await resolveImportOpportunity(
+        mobile,
+        modelForStorage,
+        batchOpportunityByKey,
+        batchMobiles,
+      );
 
       if (dryRun) {
-        if (existing) {
+        if (resolved.mode === 'update') {
           results.updated += 1;
           pushImportRow(results, {
             row: rowNum,
@@ -2394,8 +2714,11 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
             mobile,
             model: modelForStorage,
             modelRaw,
-            leadId: existing.leadId || String(existing._id),
-            message: `Will update existing lead (${existing.leadId || existing._id}, ${existing.status})`,
+            leadId: resolved.lead?.leadId || '',
+            opportunityId: resolved.lead?.opportunityId || '',
+            message: resolved.dryRunBatchHit
+              ? `Will update opportunity from earlier row in this file (mobile ${mobile}, model ${modelForStorage})`
+              : `Will update opportunity ${resolved.lead?.opportunityId || resolved.lead?.leadId || resolved.lead?._id} (${resolved.lead?.status})`,
           });
         } else {
           results.created += 1;
@@ -2406,9 +2729,13 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
             mobile,
             model: modelForStorage,
             modelRaw,
-            message: 'Will create new lead',
+            message: resolved.linkedOpportunity
+              ? `Will create new linked opportunity for mobile ${mobile} (same customer, new model ${modelForStorage})`
+              : 'Will create new lead',
           });
+          batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), `dry:${rowNum}`);
         }
+        batchMobiles.add(mobile);
         continue;
       }
 
@@ -2450,35 +2777,37 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
         headerKey(raw, ['exchange', 'exchange needed']);
 
       let lead;
-      if (existing) {
+      if (resolved.mode === 'update' && resolved.lead) {
+        lead = resolved.lead;
         const incomingStatus = normalizeStageLabel(status) || 'Enquiry';
-        const prevStage = existing.status;
+        const prevStage = lead.status;
         const nextStage = await pickForwardStage(prevStage, incomingStatus);
-        existing.name = String(name).trim();
-        if (email) existing.email = email;
-        existing.city = String(city || existing.city || 'Patna').trim();
-        existing.model = modelForStorage;
-        if (source) existing.source = source;
-        if (remarks) existing.remarks = remarks;
+        lead.name = String(name).trim();
+        if (email) lead.email = email;
+        lead.city = String(city || lead.city || 'Patna').trim();
+        lead.model = modelForStorage;
+        if (source) lead.source = source;
+        if (remarks) lead.remarks = remarks;
         if (assignedTo) {
-          existing.assignedTo = assignedTo;
-          existing.assignedToEmail = assignedEmail;
+          lead.assignedTo = assignedTo;
+          lead.assignedToEmail = assignedEmail;
         }
-        if (financeRaw) existing.financeNeeded = /^(yes|y|true|1)$/i.test(financeRaw);
-        if (exchangeRaw) existing.exchangeNeeded = /^(yes|y|true|1)$/i.test(exchangeRaw);
-        existing.status = nextStage;
-        touchLeadActivity(existing);
-        await existing.save();
+        if (financeRaw) lead.financeNeeded = /^(yes|y|true|1)$/i.test(financeRaw);
+        if (exchangeRaw) lead.exchangeNeeded = /^(yes|y|true|1)$/i.test(exchangeRaw);
+        lead.status = nextStage;
+        touchLeadActivity(lead);
+        await lead.save();
         if (normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)) {
           await LeadStageHistory.create({
-            leadId: existing._id,
+            leadId: lead._id,
             fromStage: prevStage,
             toStage: nextStage,
             changedBy: req.admin._id,
             reason: `Stage updated from Excel import by ${req.admin.name}`,
           });
         }
-        lead = existing;
+        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchMobiles.add(mobile);
         results.updated += 1;
         pushImportRow(results, {
           row: rowNum,
@@ -2487,6 +2816,7 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
           mobile,
           model: modelForStorage,
           leadId: lead.leadId || String(lead._id),
+          opportunityId: lead.opportunityId || '',
           message:
             normalizeStageLabel(prevStage) !== normalizeStageLabel(nextStage)
               ? `Updated · stage ${prevStage} → ${nextStage}`
@@ -2507,9 +2837,14 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
           financeNeeded: /^(yes|y|true|1)$/i.test(financeRaw),
           exchangeNeeded: /^(yes|y|true|1)$/i.test(exchangeRaw),
           changedBy: req.admin._id,
-          historyReason: `Lead imported from Excel by ${req.admin.name}`,
+          forceNew: Boolean(resolved.linkedOpportunity),
+          historyReason: resolved.linkedOpportunity
+            ? `Linked opportunity imported from Excel by ${req.admin.name} · customer mobile ${mobile}`
+            : `Lead imported from Excel by ${req.admin.name}`,
         });
         lead = created.lead;
+        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchMobiles.add(mobile);
         results.created += 1;
         pushImportRow(results, {
           row: rowNum,
@@ -2518,7 +2853,10 @@ exports.importCrmLeads = asyncHandler(async (req, res) => {
           mobile,
           model: modelForStorage,
           leadId: lead.leadId || String(lead._id),
-          message: 'New lead created',
+          opportunityId: lead.opportunityId || '',
+          message: resolved.linkedOpportunity
+            ? `New opportunity ${lead.opportunityId || lead.leadId} linked to customer (mobile ${mobile})`
+            : 'New lead created',
         });
       }
 
@@ -2688,3 +3026,4 @@ exports.bulkDeleteCrmLeads = asyncHandler(async (req, res) => {
 
 module.exports.buildLeadQuery = buildLeadQuery;
 module.exports.formatCrmLead = formatCrmLead;
+module.exports.importCurrentFormatRows = importCurrentFormatRows;

@@ -20,9 +20,9 @@ const CURRENT_FORMAT_HEADERS = [
   'MODEL',
   'CALL DATE',
   'INITIAL REMARK',
-  'LEAD TYPE',
+  'FOLLOW-UP',
   'SALES CONSULTANT',
-  'DATE',
+  'Sales Consultant DATE',
   'SALES PERSON REMARK',
   'TD Date',
   'TD DONE\nYES/ NO',
@@ -147,10 +147,12 @@ function isCurrentFormatSheet(rows) {
   const hasTd =
     keys.some((k) => k.includes('test drive date') || k.includes('test drive done')) ||
     keys.some((k) => k.includes('td date') || k.includes('td done'));
-  const hasLeadType = keys.some((k) => k.includes('lead type'));
+  const hasFollowUp =
+    keys.some((k) => k.includes('follow up') || k.includes('followup')) ||
+    keys.some((k) => k.includes('lead type'));
   const hasSalesConsultant = keys.some((k) => k.includes('sales consultant'));
-  // Strong signal: PHONE + CUSTOMER NAME + (ENQUIRY DATE or LEAD TYPE or TD)
-  return hasPhone && hasCustomer && (hasEnquiry || hasLeadType || hasTd || hasSalesConsultant);
+  // Strong signal: PHONE + CUSTOMER NAME + (ENQUIRY DATE or FOLLOW-UP or TD)
+  return hasPhone && hasCustomer && (hasEnquiry || hasFollowUp || hasTd || hasSalesConsultant);
 }
 
 function mapLeadTypeToStatus(leadType, status) {
@@ -177,6 +179,28 @@ function deriveStatusFromSheet({ retailDone, deliveryDate, bookingDone, tdDone, 
   if (tdDone === true) return 'Test Drive Completed';
   if (tdDate && tdDone !== true) return 'Test Drive Booked';
   return mapLeadTypeToStatus(leadType);
+}
+
+/**
+ * Rows that are notes / blank lines in executive sheets — skip quietly on import.
+ */
+function classifyImportRowSkip(parsed) {
+  const name = String(parsed?.name || '').trim();
+  const mobile = String(parsed?.mobile || '').replace(/\D/g, '').slice(-10);
+  const validPhone = /^[6-9]\d{9}$/.test(mobile);
+
+  if (!name && !mobile) return { skip: true, reason: 'empty row' };
+  if (!validPhone) {
+    const noteLike =
+      !name ||
+      name.length > 60 ||
+      /^(td\s|schedule|tommorow|tomorrow|call |follow|note:|pending|reschedule|reminder)/i.test(name) ||
+      /\b\d{1,2}\s*(:\s*\d{2})?\s*(am|pm)\b/i.test(name);
+    if (noteLike) return { skip: true, reason: 'note row' };
+    return { skip: true, reason: 'invalid phone' };
+  }
+  if (!name || name.length < 2) return { skip: true, reason: 'missing customer name' };
+  return { skip: false };
 }
 
 function normalizeImportModel(raw) {
@@ -219,14 +243,21 @@ function parseCurrentFormatRow(row) {
   const modelRaw = cellStr(pickFromMap(map, ['model', 'interested model']));
   const model = normalizeImportModel(modelRaw);
   const source = cellStr(pickFromMap(map, ['lead source', 'source'])) || 'Excel Import';
-  const leadType = cellStr(pickFromMap(map, ['lead type'])) || undefined;
+  const followUpVal =
+    cellStr(pickFromMap(map, ['follow up', 'follow-up', 'followup', 'lead type'])) || undefined;
+  const leadType = followUpVal;
   const salesConsultant = cellStr(pickFromMap(map, ['sales consultant'])) || undefined;
 
   const enquiryDate = parseSheetDate(pickFromMap(map, ['enquiry date']));
   const callDate = parseSheetDate(pickFromMap(map, ['call date']));
   const existingVariant = cellStr(pickFromMap(map, ['existing variant'])) || undefined;
   const initialRemark = cellStr(pickFromMap(map, ['initial remark'])) || undefined;
-  const salesPersonDate = parseSheetDate(pickFromMap(map, ['date'], { exactOnly: true }));
+  const salesConsultantDate = parseSheetDate(
+    pickFromMap(map, ['sales consultant date', 'sales cousultant date']),
+  );
+  const salesPersonDate =
+    salesConsultantDate ||
+    parseSheetDate(pickFromMap(map, ['date'], { exactOnly: true }));
   const salesPersonRemark = cellStr(pickFromMap(map, ['sales person remark'])) || undefined;
 
   const tdDate = parseSheetDate(pickFromMap(map, ['test drive date', 'td date']));
@@ -319,7 +350,9 @@ function parseCurrentFormatRow(row) {
     enquiryDate: enquiryDate || undefined,
     callDate: callDate || undefined,
     existingVariant: existingVariant || undefined,
+    followUp: followUpVal || undefined,
     salesConsultantName: salesConsultant || undefined,
+    salesConsultantDate: salesConsultantDate || salesPersonDate || undefined,
     salesPersonDate: salesPersonDate || undefined,
     salesPersonRemark: salesPersonRemark || undefined,
     tdDate: tdDate || undefined,
@@ -362,6 +395,115 @@ function parseCurrentFormatRow(row) {
  * Advance stage only forward; Lost may reopen when sheet is active.
  * Uses dynamic CRM stages when available (async).
  */
+function formatDateCell(d) {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  return Number.isNaN(dt.getTime()) ? '' : dt;
+}
+
+function formatYesNoCell(v) {
+  if (v === true) return 'YES';
+  if (v === false) return 'NO';
+  return '';
+}
+
+/** Split imported follow-up notes back into sheet columns for export. */
+function followUpColumnsFromNotes(followUps = []) {
+  const out = {};
+  const rules = [
+    ['cre follow up call 1 date', 'cre follow up call remark 1', 'CRE #1: '],
+    ['sales person follow up call 1 date', 'sales person follow up call 1 remark 1', 'Sales #1: '],
+    ['cre follow up call 2 date', 'cre follow up call remark 2', 'CRE #2: '],
+    ['sales person follow up call remark 2 date', 'sales person follow up call remark 2', 'Sales #2: '],
+    ['cre follow up call 3 date', 'cre follow up call remark 3', 'CRE #3: '],
+    ['sales person follow up call remark 3 date', 'sales person follow up call remark 3', 'Sales #3: '],
+  ];
+  for (const fu of followUps) {
+    const note = String(fu.note || '');
+    for (const [dateKey, remarkKey, prefix] of rules) {
+      if (!note.startsWith(prefix)) continue;
+      out[dateKey] = formatDateCell(fu.scheduledAt || fu.completedAt);
+      out[remarkKey] = note.slice(prefix.length).trim();
+      break;
+    }
+  }
+  return out;
+}
+
+/** Map a CRM lead + follow-ups into one Current Format export row. */
+function serializeLeadToCurrentFormatRow(lead, slNo, followUps = []) {
+  const cs = lead.creSheet || {};
+  const fuCols = followUpColumnsFromNotes(followUps);
+  const row = {
+    'Sl. No.': slNo,
+    'ENQUIRY DATE': formatDateCell(cs.enquiryDate || lead.createdAt),
+    'LEAD SOURCE': lead.source || '',
+    'CUSTOMER NAME': lead.name || '',
+    PHONE: lead.mobile || '',
+    'MAIL ID': lead.email || '',
+    LOCATION: lead.city || lead.area || '',
+    'EXISTING VARIANT': cs.existingVariant || '',
+    MODEL: lead.model || '',
+    'CALL DATE': formatDateCell(cs.callDate),
+    'INITIAL REMARK': cs.initialRemark || '',
+    'FOLLOW-UP': cs.followUp || lead.leadType || '',
+    'SALES CONSULTANT': cs.salesConsultantName || lead.assignedTo?.name || '',
+    'Sales Consultant DATE': formatDateCell(cs.salesConsultantDate || cs.salesPersonDate),
+    'SALES PERSON REMARK': cs.salesPersonRemark || '',
+    'TD Date': formatDateCell(cs.tdDate),
+    'TD DONE\nYES/ NO': formatYesNoCell(cs.tdDone),
+    'TD NOT DONE,\nWHY?': cs.tdNotDoneWhy || '',
+    'AFTER TD REMARK': cs.afterTdRemark || '',
+    'CRE Follow up call 1 Date': '',
+    'CRE Follow up call remark 1': '',
+    'Sales Person Follow up call 1 Date': '',
+    'Sales Person Follow up call 1 Remark 1': '',
+    'CRE Follow up call 2 Date': '',
+    'CRE Follow up call remark 2': '',
+    'Sales Person Follow up call remark 2 Date': '',
+    'Sales Person Follow up call remark 2': '',
+    'CRE Follow up call 3 Date': '',
+    'CRE Follow up call remark 3': '',
+    'Sales Person Follow up call remark 3 Date': '',
+    'Sales Person Follow up call remark 3': '',
+    'BOOKING DONE\nYES / NO': formatYesNoCell(cs.bookingDone),
+    'BOOKING DATE': formatDateCell(cs.bookingDate),
+    'FINAL MODEL': cs.finalModel || '',
+    'FINAL VARIANT': cs.finalVariant || '',
+    'FINAL COLOUR': cs.finalColour || '',
+    'MAIL SENT\nYES / NO': formatYesNoCell(cs.mailSent),
+    'EXCHANGE\nYES / NO': formatYesNoCell(Boolean(lead.exchangeNeeded)),
+    'RETAIL DONE\nYES / NO': formatYesNoCell(cs.retailDone),
+    'RETAIL DATE': formatDateCell(cs.retailDate),
+    'DELIVERY DATE': formatDateCell(cs.deliveryDate),
+  };
+  for (const [key, val] of Object.entries(fuCols)) {
+    const header = CURRENT_FORMAT_HEADERS.find((h) => normalizeHeaderKey(h) === key);
+    if (header && val !== '') row[header] = val;
+  }
+  return row;
+}
+
+function buildCurrentFormatTemplateRow() {
+  const row = {};
+  for (const header of CURRENT_FORMAT_HEADERS) row[header] = '';
+  row['Sl. No.'] = 1;
+  row['LEAD SOURCE'] = 'Walk-In';
+  row['CUSTOMER NAME'] = 'Sample Customer';
+  row.PHONE = '9876543210';
+  row['MAIL ID'] = 'sample@example.com';
+  row.LOCATION = 'Patna';
+  row['EXISTING VARIANT'] = 'NO';
+  row.MODEL = 'VF 7';
+  row['FOLLOW-UP'] = 'HOT';
+  row['TD DONE\nYES/ NO'] = 'NO';
+  row['BOOKING DONE\nYES / NO'] = 'NO';
+  row['MAIL SENT\nYES / NO'] = 'NO';
+  row['EXCHANGE\nYES / NO'] = 'NO';
+  row['RETAIL DONE\nYES / NO'] = 'NO';
+  return row;
+}
+
 async function pickForwardStage(currentStatus, incomingStatus) {
   const prev = normalizeStageLabel(currentStatus);
   const next = normalizeStageLabel(incomingStatus);
@@ -383,7 +525,10 @@ module.exports = {
   CURRENT_FORMAT_HEADERS,
   normalizeHeaderKey,
   isCurrentFormatSheet,
+  classifyImportRowSkip,
   parseCurrentFormatRow,
+  serializeLeadToCurrentFormatRow,
+  buildCurrentFormatTemplateRow,
   deriveStatusFromSheet,
   mapLeadTypeToStatus,
   normalizeImportModel,

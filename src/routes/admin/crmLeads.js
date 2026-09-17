@@ -70,6 +70,7 @@ router.patch(
   ctrl.assignLeadExecutive,
 );
 router.patch('/:id/details', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadDetails);
+router.patch('/:id/cre-sheet', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadCreSheet);
 router.patch('/:id/stage', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadStage);
 router.patch('/:id/remarks', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadRemarks);
 router.patch('/:id/favourite', requireModuleAction('crm_leads', 'update'), ctrl.toggleFavourite);
