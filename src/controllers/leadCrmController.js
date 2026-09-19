@@ -233,6 +233,8 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     forceNewOpportunity,
     allowMultiOpportunity,
     interestedModels,
+    creSheet,
+    followUpSlots,
   } = body;
 
   if (!name || String(name).trim().length < 2) {
@@ -370,6 +372,32 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
     }
     touchLeadActivity(lead);
     await lead.save();
+  }
+
+  const crePayload = {};
+  if (creSheet && typeof creSheet === 'object') {
+    crePayload.creSheet = {
+      ...creSheet,
+      enquiryDate: creSheet.enquiryDate ?? enquiryDate,
+      callDate: creSheet.callDate ?? callDate,
+    };
+  } else if (enquiryDate || callDate) {
+    crePayload.creSheet = {
+      enquiryDate: enquiryDate || undefined,
+      callDate: callDate || undefined,
+    };
+  }
+  if (Array.isArray(followUpSlots) && followUpSlots.length) {
+    crePayload.followUpSlots = followUpSlots;
+  }
+  if (salesConsultant) {
+    crePayload.salesConsultant = salesConsultant;
+  }
+  if (leadType) {
+    crePayload.followUp = leadType;
+  }
+  if (Object.keys(crePayload).length) {
+    await applyCreSheetPayloadToLead(lead, admin, crePayload);
   }
 
   await lead.populate(LEAD_POPULATE);
@@ -965,18 +993,9 @@ function parseCreSheetYesNo(v) {
   return undefined;
 }
 
-/**
- * PATCH /admin/crm/leads/:id/cre-sheet
- * Full CRUD for CRE Current Format columns + structured follow-up pairs + TD sync.
- */
-exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
-  assertCrmAccess(req.admin);
-  assertAdminEditRights(req.admin);
-
-  const lead = await Lead.findById(req.params.id);
-  if (!lead) throw new ApiError(404, 'Lead not found');
-
-  const { creSheet, followUpSlots, salesConsultant, followUp: followUpLabel, exchangeNeeded } = req.body || {};
+/** Apply CRE sheet payload (dates, flags, follow-up slots) onto a lead document. */
+async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
+  const { creSheet, followUpSlots, salesConsultant, followUp: followUpLabel, exchangeNeeded } = payload;
   const changes = [];
 
   if (followUpLabel !== undefined) {
@@ -1042,7 +1061,7 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
     lead.creSheet = lead.creSheet || {};
     lead.creSheet.salesConsultantName = consultantRaw || undefined;
     const assignee = consultantRaw
-      ? await resolveSalesConsultant(null, consultantRaw, req.admin)
+      ? await resolveSalesConsultant(null, consultantRaw, admin)
       : null;
     applyImportSheetAssignment(lead, {
       assignedTo: assignee?._id,
@@ -1053,7 +1072,7 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
   }
 
   if (Array.isArray(followUpSlots)) {
-    await syncStructuredFollowUpSlots(lead._id, req.admin._id, followUpSlots);
+    await syncStructuredFollowUpSlots(lead._id, admin._id, followUpSlots);
     changes.push('followUpSlots');
   }
 
@@ -1068,6 +1087,22 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
     await syncLeadCreatedAtFromEnquiryDate(lead._id, lead.creSheet.enquiryDate);
     lead.createdAt = lead.creSheet.enquiryDate;
   }
+
+  return changes;
+}
+
+/**
+ * PATCH /admin/crm/leads/:id/cre-sheet
+ * Full CRUD for CRE Current Format columns + structured follow-up pairs + TD sync.
+ */
+exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+
+  const lead = await Lead.findById(req.params.id);
+  if (!lead) throw new ApiError(404, 'Lead not found');
+  await assertLeadReadable(lead, req.admin);
+
+  const changes = await applyCreSheetPayloadToLead(lead, req.admin, req.body || {});
 
   if (changes.length) {
     await LeadStageHistory.create({
