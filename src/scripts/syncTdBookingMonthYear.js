@@ -8,7 +8,7 @@ const { syncTestDriveBookingFromCreSheet } = require('../utils/crmCreSheetSync')
   await connectDB();
   const leads = await Lead.find({
     $or: [{ 'creSheet.monthYear': { $exists: true, $ne: null } }, { 'creSheet.tdDate': { $exists: true, $ne: null } }],
-  }).select('_id assignedTo creSheet');
+  }).select('name mobile email city model assignedTo creSheet tdBookingId');
   let n = 0;
   for (const lead of leads) {
     if (lead.creSheet?.tdDate || lead.creSheet?.tdDone) {

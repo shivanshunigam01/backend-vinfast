@@ -1,3 +1,4 @@
+const Lead = require('../models/Lead');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const TDBooking = require('../models/TDBooking');
 const { upsertTDCustomer } = require('./tdCustomerResolver');
@@ -125,26 +126,40 @@ async function syncStructuredFollowUpSlots(leadId, adminId, slots = []) {
   return changed;
 }
 
+function pickLeadStr(v) {
+  if (v == null) return '';
+  const s = String(v).trim();
+  return s;
+}
+
 /** Create or update a TD booking from imported / edited creSheet TD columns (for reports). */
 async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
-  const cs = lead.creSheet || {};
+  let row = lead;
+  if (!pickLeadStr(lead?.name) || !pickLeadStr(lead?.mobile)) {
+    const full = await Lead.findById(lead._id).select(
+      'name mobile email city model creSheet tdBookingId assignedTo',
+    );
+    if (full) row = full;
+  }
+
+  const cs = row.creSheet || {};
   const tdDate = parseDateInput(cs.tdDate);
   const tdDone = cs.tdDone === true;
   if (!tdDate && !tdDone) return null;
 
   const slotDate = tdDate || new Date();
   const customer = await upsertTDCustomer({
-    name: lead.name,
-    mobile: lead.mobile,
-    email: lead.email,
-    city: lead.city,
+    name: row.name,
+    mobile: row.mobile,
+    email: row.email,
+    city: row.city,
   });
   const branchDoc = await resolveBranch(null);
 
-  let booking = lead.tdBookingId ? await TDBooking.findById(lead.tdBookingId) : null;
+  let booking = row.tdBookingId ? await TDBooking.findById(row.tdBookingId) : null;
   if (!booking) {
     booking = await TDBooking.findOne({
-      leadId: lead._id,
+      leadId: row._id,
       bookingStatus: { $ne: 'CANCELLED' },
     }).sort({ createdAt: -1 });
   }
@@ -154,15 +169,15 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
     slotDate,
     slotTime: booking?.slotTime || normalizeSlotTime('10:00'),
     slotDuration: booking?.slotDuration || 60,
-    preferredModel: lead.model,
+    preferredModel: row.model,
     bookingStatus,
     customerId: customer._id,
     branchId: branchDoc._id,
-    leadId: lead._id,
-    customerName: lead.name,
-    customerMobile: lead.mobile,
-    customerEmail: lead.email,
-    customerCity: lead.city,
+    leadId: row._id,
+    customerName: row.name,
+    customerMobile: row.mobile,
+    customerEmail: row.email,
+    customerCity: row.city,
     remarks: cs.afterTdRemark || cs.tdNotDoneWhy || undefined,
     importMonthYear: cs.monthYear || undefined,
     approvalStatus: 'NOT_REQUIRED',
@@ -192,9 +207,9 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
     });
   }
 
-  lead.tdBookingId = booking._id;
-  touchLeadActivity(lead);
-  await lead.save();
+  row.tdBookingId = booking._id;
+  touchLeadActivity(row);
+  await row.save();
   return booking;
 }
 

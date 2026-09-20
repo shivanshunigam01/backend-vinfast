@@ -74,7 +74,8 @@ function extractCustomerFromBooking(raw) {
 
 async function upsertTDCustomer(patch) {
   const mobile = pickStr(patch.mobile);
-  const name = pickStr(patch.name) || 'Customer';
+  const nameRaw = pickStr(patch.name);
+  const name = nameRaw || 'Customer';
   let doc = mobile ? await TDCustomer.findOne({ mobile }) : null;
   if (!doc) {
     doc = await TDCustomer.create({
@@ -87,8 +88,12 @@ async function upsertTDCustomer(patch) {
     return doc;
   }
   let changed = false;
-  if (name && doc.name !== name) {
-    doc.name = name;
+  const shouldReplaceName =
+    nameRaw &&
+    (doc.name !== nameRaw) &&
+    (!doc.name || doc.name === 'Customer' || nameRaw.length > doc.name.length);
+  if (shouldReplaceName) {
+    doc.name = nameRaw;
     changed = true;
   }
   if (patch.email && !doc.email) {
