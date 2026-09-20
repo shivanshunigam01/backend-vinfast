@@ -48,6 +48,7 @@ import {
   type PvCrmLead,
   type PvCrmLeadDetail,
   type PvCrmLeadDateField,
+  type CreSheetFollowUpSlot,
   type OpportunityDuplicatesReport,
   type CrmLeadImportFailure,
   type CrmLeadImportRow,
@@ -61,6 +62,7 @@ import { useCrmLeadStages } from "@/hooks/useCrmLeadStages";
 import { cn } from "@/lib/utils";
 import { toDateKey } from "@/lib/reportPeriod";
 import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
+import { CreLeadSheetPanel } from "@/components/admin/CreLeadSheetPanel";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
 import { LeadFollowUpTimeline } from "@/components/admin/LeadFollowUpTimeline";
 import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
@@ -71,6 +73,36 @@ import { Checkbox } from "@/components/ui/checkbox";
 function stageBadgeClass(stage: string) {
   const normalized = normalizeCrmStage(stage);
   return STAGE_COLORS[normalized] ?? "bg-muted text-muted-foreground";
+}
+
+function leadSheetDateRows(lead: PvCrmLead, followUpSlots?: CreSheetFollowUpSlot[]) {
+  const cs = (lead.creSheet || {}) as Record<string, unknown>;
+  const rows: { label: string; value: string }[] = [
+    { label: "ENQUIRY DATE", value: formatDateOnly(lead.enquiryDate || (cs.enquiryDate as string)) },
+    { label: "CALL DATE", value: formatDateOnly(cs.callDate as string) },
+    { label: "Sales Consultant DATE", value: formatDateOnly((cs.salesConsultantDate || cs.salesPersonDate) as string) },
+    { label: "TD Date", value: formatDateOnly(cs.tdDate as string) },
+    { label: "BOOKING DATE", value: formatDateOnly(cs.bookingDate as string) },
+    { label: "RETAIL DATE", value: formatDateOnly(cs.retailDate as string) },
+    { label: "DELIVERY DATE", value: formatDateOnly(cs.deliveryDate as string) },
+  ];
+  (followUpSlots || []).forEach((slot, idx) => {
+    const n = idx + 1;
+    rows.push(
+      { label: `CRE Follow up call ${n} Date`, value: formatDateOnly(slot.creDate) },
+      { label: `Sales Person Follow up call ${n} Date`, value: formatDateOnly(slot.salesDate) },
+    );
+  });
+  return rows.filter((r) => r.value !== "—");
+}
+
+function formatDateOnly(iso?: string | null) {
+  if (!iso) return "—";
+  try {
+    return format(new Date(iso), "dd MMM yyyy");
+  } catch {
+    return "—";
+  }
 }
 
 function formatDateTime(iso?: string) {
@@ -129,6 +161,7 @@ export default function AdminCrmLeads() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [filterSource, setFilterSource] = useState("all");
+  const [filterModel, setFilterModel] = useState("all");
   const [executives, setExecutives] = useState<AssignableStaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -153,7 +186,7 @@ export default function AdminCrmLeads() {
   const [followUpInterest, setFollowUpInterest] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
-  const [filterDateField, setFilterDateField] = useState<PvCrmLeadDateField>("created");
+  const [filterDateField, setFilterDateField] = useState<PvCrmLeadDateField>("enquiry");
   const [selected, setSelected] = useState<PvCrmLead | null>(null);
   const [detail, setDetail] = useState<PvCrmLeadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -256,6 +289,7 @@ export default function AdminCrmLeads() {
         search: search.trim() || undefined,
         status: filterStatus,
         source: filterSource,
+        model: filterModel !== "all" ? filterModel : undefined,
         followUpDue: followUpDueOnly,
         customerFollowUps: customerFollowUpsOnly,
         favourite: favouriteOnly,
@@ -281,7 +315,7 @@ export default function AdminCrmLeads() {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, filterSource, followUpDueOnly, customerFollowUpsOnly, favouriteOnly, filterBuyerType, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
+  }, [search, filterStatus, filterSource, filterModel, followUpDueOnly, customerFollowUpsOnly, favouriteOnly, filterBuyerType, filterDateFrom, filterDateTo, filterDateField, filterExecutive, canAssignLeads, page]);
 
   const hasDateFilter = Boolean(filterDateFrom || filterDateTo);
 
@@ -289,7 +323,7 @@ export default function AdminCrmLeads() {
     setPage(1);
     setFilterDateFrom("");
     setFilterDateTo("");
-    setFilterDateField("created");
+    setFilterDateField("enquiry");
   };
 
   useEffect(() => {
@@ -301,6 +335,8 @@ export default function AdminCrmLeads() {
       try {
         const stats = await fetchPvCrmLeadStats({
           source: filterSource,
+          status: filterStatus !== "all" ? filterStatus : undefined,
+          model: filterModel !== "all" ? filterModel : undefined,
           assignedTo:
             canAssignLeads && filterExecutive !== "all"
               ? filterExecutive === "unassigned"
@@ -326,6 +362,8 @@ export default function AdminCrmLeads() {
     })();
   }, [
     filterSource,
+    filterStatus,
+    filterModel,
     filterExecutive,
     filterDateFrom,
     filterDateTo,
@@ -1113,6 +1151,25 @@ export default function AdminCrmLeads() {
           </SelectContent>
         </Select>
         <Select
+          value={filterModel}
+          onValueChange={(v) => {
+            setPage(1);
+            setFilterModel(v);
+          }}
+        >
+          <SelectTrigger className="bg-secondary/50">
+            <SelectValue placeholder="Model" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All models</SelectItem>
+            <SelectItem value="Both">Both (needs pick)</SelectItem>
+            <SelectItem value="VF 6">VF 6</SelectItem>
+            <SelectItem value="VF 7">VF 7</SelectItem>
+            <SelectItem value="VF MPV 7">VF MPV 7</SelectItem>
+            <SelectItem value="Limo Green">Limo Green</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
           value={filterBuyerType}
           onValueChange={(v) => {
             setPage(1);
@@ -1221,6 +1278,7 @@ export default function AdminCrmLeads() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="enquiry">Enquiry date</SelectItem>
                 <SelectItem value="created">Created date</SelectItem>
                 <SelectItem value="activity">Last activity</SelectItem>
               </SelectContent>
@@ -1343,12 +1401,15 @@ export default function AdminCrmLeads() {
                 <p>
                   {leadProductLines(lead).join(", ") || lead.model} · {lead.source ?? "Website"}
                 </p>
+                {lead.enquiryDate || lead.createdAt ? (
+                  <p className="text-[11px]">
+                    Enquiry {formatDateOnly(lead.enquiryDate || lead.createdAt)}
+                  </p>
+                ) : null}
                 {(lead.lastActivityAt || lead.updatedAt) ? (
                   <p className="text-[11px]">
                     Updated {formatDateTime(lead.lastActivityAt || lead.updatedAt)}
                   </p>
-                ) : lead.createdAt ? (
-                  <p className="text-[11px]">Created {formatDateTime(lead.createdAt)}</p>
                 ) : null}
                 <p className="flex items-center gap-1">
                   <UserCheck className="w-3 h-3 shrink-0" />
@@ -1542,10 +1603,32 @@ export default function AdminCrmLeads() {
                 <p><span className="text-muted-foreground">Email</span><br />{detail.lead.email || "—"}</p>
                 <p><span className="text-muted-foreground">City</span><br />{detail.lead.city || "—"}</p>
                 <p><span className="text-muted-foreground">Source</span><br />{detail.lead.source || "—"}</p>
+                <p><span className="text-muted-foreground">Model</span><br />{leadProductLines(detail.lead).join(", ") || detail.lead.model || "—"}</p>
+                {detail.lead.model === "Both" ? (
+                  <p className="sm:col-span-2 text-amber-600 dark:text-amber-400">
+                    Multi-model lead — user can pick final model in CRE sheet or edit details.
+                  </p>
+                ) : null}
                 <p><span className="text-muted-foreground">Buyer type</span><br />{detail.lead.buyerType || "—"}</p>
                 <p><span className="text-muted-foreground">Assigned to</span><br />{detail.lead.assignedTo?.name || "—"}</p>
+                <p><span className="text-muted-foreground">Enquiry date</span><br />{formatDateOnly(detail.lead.enquiryDate || detail.lead.createdAt)}</p>
                 <p><span className="text-muted-foreground">Next follow-up</span><br />{formatDateTime(detail.lead.nextFollowUp)}</p>
               </div>
+
+              {leadSheetDateRows(detail.lead, detail.followUpSlots).length > 0 ? (
+                <div className="rounded-lg border border-border/50 bg-secondary/10 p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sheet dates</p>
+                  <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    {leadSheetDateRows(detail.lead, detail.followUpSlots).map((row) => (
+                      <p key={row.label}>
+                        <span className="text-muted-foreground">{row.label}</span>
+                        <br />
+                        {row.value}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {canAssignLeads ? (
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-4 space-y-3">
@@ -1597,6 +1680,8 @@ export default function AdminCrmLeads() {
                   {!detail.lead.convertedAt ? (
                     <TabsTrigger value="convert" className="text-xs">Convert</TabsTrigger>
                   ) : null}
+                  <TabsTrigger value="cre-sheet" className="text-xs">CRE sheet</TabsTrigger>
+                  <TabsTrigger value="test-drive" className="text-xs">Test drive</TabsTrigger>
                   <TabsTrigger value="remarks" className="text-xs">Remarks</TabsTrigger>
                   <TabsTrigger value="followups" className="text-xs">Follow-ups ({detailFollowUps.length})</TabsTrigger>
                   <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
@@ -1637,6 +1722,17 @@ export default function AdminCrmLeads() {
                     {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowRight className="w-4 h-4 mr-2" />}
                     Update stage
                   </Button>
+                </TabsContent>
+
+                <TabsContent value="cre-sheet" className="mt-4">
+                  <CreLeadSheetPanel
+                    lead={detail.lead}
+                    followUpSlots={detail.followUpSlots}
+                    canEdit={canUpdate}
+                    onSaved={async () => {
+                      if (detail.lead._id) await refreshDetail(detail.lead._id);
+                    }}
+                  />
                 </TabsContent>
 
                 {canEditDetails ? (
@@ -1817,6 +1913,64 @@ export default function AdminCrmLeads() {
                     </Button>
                   </TabsContent>
                 ) : null}
+
+                <TabsContent value="test-drive" className="mt-4 space-y-4">
+                  {(() => {
+                    const cs = (detail.lead.creSheet || {}) as Record<string, unknown>;
+                    const tdDone = cs.tdDone === true ? "YES" : cs.tdDone === false ? "NO" : "—";
+                    const sheetDates = [
+                      { label: "TD Date", value: formatDateOnly(cs.tdDate as string) },
+                      { label: "TD DONE", value: tdDone },
+                      { label: "Booking date", value: formatDateOnly(cs.bookingDate as string) },
+                      { label: "Retail date", value: formatDateOnly(cs.retailDate as string) },
+                      { label: "Delivery date", value: formatDateOnly(cs.deliveryDate as string) },
+                    ];
+                    const bookings = detail.testDrive?.bookings || [];
+                    return (
+                      <>
+                        <div className="rounded-lg border border-border/50 bg-secondary/20 p-4 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">From CRE sheet</p>
+                          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                            {sheetDates.map((row) => (
+                              <p key={row.label}>
+                                <span className="text-muted-foreground">{row.label}</span>
+                                <br />
+                                {row.value}
+                              </p>
+                            ))}
+                          </div>
+                          {cs.tdNotDoneWhy ? (
+                            <p className="text-xs"><span className="text-muted-foreground">TD not done why:</span> {String(cs.tdNotDoneWhy)}</p>
+                          ) : null}
+                          {cs.afterTdRemark ? (
+                            <p className="text-xs"><span className="text-muted-foreground">After TD remark:</span> {String(cs.afterTdRemark)}</p>
+                          ) : null}
+                        </div>
+                        <div className="rounded-lg border border-border/50 p-4 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            TD bookings ({bookings.length})
+                          </p>
+                          {bookings.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No test drive bookings linked to this customer yet.</p>
+                          ) : (
+                            bookings.map((b) => (
+                              <div key={b._id || b.bookingId} className="rounded-md border border-border/40 bg-muted/20 p-3 text-xs space-y-1">
+                                <p className="font-mono">{b.bookingId || "—"} · {b.bookingStatus || "—"}</p>
+                                <p>
+                                  Slot: {formatDateOnly(b.slotDate)}
+                                  {b.slotTime ? ` · ${b.slotTime}` : ""}
+                                  {b.preferredModel ? ` · ${b.preferredModel}` : ""}
+                                </p>
+                                {b.approvalStatus ? <p className="text-muted-foreground">Approval: {b.approvalStatus}</p> : null}
+                                {b.createdAt ? <p className="text-muted-foreground">Booked {formatDateTime(b.createdAt)}</p> : null}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </TabsContent>
 
                 <TabsContent value="remarks" className="mt-4 space-y-3">
                   <Label className="text-xs">Remarks</Label>

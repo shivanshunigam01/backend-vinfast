@@ -75,6 +75,20 @@ export async function patchCalendarEvent(
   return adminPatchJson<CalendarEvent>(`/admin/dashboard/calendar/events/${id}`, payload);
 }
 
+/** Local calendar YYYY-MM-DD for grouping / day popups. */
+export function calendarEventDateKey(ev: CalendarEvent): string {
+  if (ev.date) return String(ev.date).slice(0, 10);
+  if (ev.start) {
+    const d = new Date(ev.start);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+    return String(ev.start).slice(0, 10);
+  }
+  return "";
+}
+
 export function calendarEventToFc(ev: CalendarEvent) {
   const allDay = Boolean(ev.allDay);
   // Date-only strings avoid timezone drift that can make all-day events

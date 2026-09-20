@@ -924,11 +924,13 @@ exports.listPendingApprovals = asyncHandler(async (req, res) => {
   if (!['manager', 'superadmin'].includes(req.admin.role)) {
     throw new ApiError(403, 'Only managers and admins can view approval requests');
   }
+  const { limit, skip } = buildPagination(req, { defaultLimit: 500, maxLimit: 10000 });
   const docs = await TDBooking.find({ approvalStatus: 'PENDING' })
     .populate(BOOKING_POPULATE)
     .populate('approvalRequestedBy', 'name email')
     .sort({ createdAt: -1 })
-    .limit(100);
+    .skip(skip)
+    .limit(limit);
   const enriched = await ensureBookingsCustomers(docs);
   return successResponse(res, enriched.map(formatTdBooking));
 });

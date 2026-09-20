@@ -82,9 +82,11 @@ exports.listRescheduleHistory = asyncHandler(async (req, res) => {
 });
 
 exports.listPendingReschedules = asyncHandler(async (req, res) => {
+  const { limit, skip } = buildPagination(req, { defaultLimit: 500, maxLimit: 10000 });
   const docs = await TDRescheduleRequest.find({ status: 'PENDING' })
     .sort({ createdAt: 1 })
-    .limit(100)
+    .skip(skip)
+    .limit(limit)
     .populate('bookingId', 'bookingId bookingStatus slotDate slotTime preferredModel customerName customerMobile');
   return successResponse(res, docs.map(formatRescheduleRow));
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DoorOpen, Loader2, Pencil, RefreshCw } from "lucide-react";
+import { DoorOpen, Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatApiErrors } from "@/lib/api";
 import { getAdminUser, canPerformAction } from "@/lib/adminAuth";
@@ -14,10 +15,12 @@ import PipelineDeleteButton from "@/components/admin/PipelineDeleteButton";
 import StockPrintButton from "@/components/admin/StockPrintButton";
 import { vendorDisplayName, vendorFromPo } from "@/lib/stockVendorsApi";
 import {
+  createGateEntry,
   deleteGateEntry,
   fetchDispatches,
   fetchGateEntries,
   updateGateEntry,
+  type DispatchRecord,
   type PurchaseOrder,
 } from "@/lib/stockPipelineApi";
 
@@ -34,6 +37,9 @@ export default function AdminGateEntry() {
   const canDelete =
     canPerformAction(admin, "stock_gate", "delete") ||
     canPerformAction(admin, "stock_delivery", "delete");
+  const canCreate =
+    canPerformAction(admin, "stock_gate", "create") ||
+    canPerformAction(admin, "stock_delivery", "receive");
   const canUpdate =
     canPerformAction(admin, "stock_gate", "update") ||
     canPerformAction(admin, "stock_delivery", "update") ||
@@ -41,7 +47,7 @@ export default function AdminGateEntry() {
     admin?.role === "superadmin";
 
   const [entries, setEntries] = useState<Array<Record<string, unknown>>>([]);
-  const [dispatches, setDispatches] = useState<Array<Record<string, unknown>>>([]);
+  const [dispatches, setDispatches] = useState<DispatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
   const [editForm, setEditForm] = useState({
@@ -51,13 +57,22 @@ export default function AdminGateEntry() {
     arrivalDatetime: "",
   });
   const [saving, setSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    dispatchId: "",
+    truckNumber: "",
+    sealNumber: "",
+    sealCondition: "OK",
+    arrivalDatetime: "",
+    photo: null as File | null,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [e, d] = await Promise.all([fetchGateEntries(), fetchDispatches()]);
       setEntries(e as Array<Record<string, unknown>>);
-      setDispatches(d.filter((x) => x.status === "IN_TRANSIT" || x.status === "ARRIVED") as unknown as Array<Record<string, unknown>>);
+      setDispatches(d.filter((x) => x.status === "IN_TRANSIT"));
     } catch (err) {
       toast.error(formatApiErrors(err));
     } finally {
@@ -75,6 +90,44 @@ export default function AdminGateEntry() {
       remarks: String(e.remarks ?? ""),
       arrivalDatetime: toDatetimeLocal(e.arrivalDatetime),
     });
+  };
+
+  const openCreate = () => {
+    const first = dispatches[0];
+    setCreateForm({
+      dispatchId: first?._id ?? "",
+      truckNumber: first?.truckNumber ?? "",
+      sealNumber: "",
+      sealCondition: "OK",
+      arrivalDatetime: new Date().toISOString().slice(0, 16),
+      photo: null,
+    });
+    setCreateOpen(true);
+  };
+
+  const saveCreate = async () => {
+    if (!createForm.dispatchId) return toast.error("Select a dispatch");
+    if (!createForm.photo) return toast.error("Arrival photo is required");
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append("dispatchId", createForm.dispatchId);
+      fd.append("truckNumber", createForm.truckNumber.trim());
+      if (createForm.sealNumber.trim()) fd.append("sealNumber", createForm.sealNumber.trim());
+      fd.append("sealCondition", createForm.sealCondition);
+      if (createForm.arrivalDatetime) {
+        fd.append("arrivalDatetime", new Date(createForm.arrivalDatetime).toISOString());
+      }
+      fd.append("arrivalPhoto", createForm.photo);
+      await createGateEntry(fd);
+      toast.success("Gate entry recorded");
+      setCreateOpen(false);
+      void load();
+    } catch (err) {
+      toast.error(formatApiErrors(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveEdit = async () => {
@@ -99,17 +152,26 @@ export default function AdminGateEntry() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="flex justify-between">
+      <div className="flex flex-wrap justify-between gap-2">
         <h1 className="text-2xl font-bold flex items-center gap-2"><DoorOpen className="h-6 w-6" /> Gate Entry</h1>
-        <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
+          {canCreate ? (
+            <Button size="sm" onClick={openCreate} disabled={!dispatches.length}>
+              <Plus className="h-4 w-4 mr-1" /> Record arrival
+            </Button>
+          ) : null}
+        </div>
       </div>
-      <p className="text-sm text-muted-foreground">Record truck arrival with seal check and mandatory arrival photo via API (multipart).</p>
+      <p className="text-sm text-muted-foreground">Record truck arrival against in-transit dispatch — seal check and arrival photo required.</p>
       {loading ? <Loader2 className="animate-spin mx-auto" /> : (
         <>
           <Card className="p-4">
             <p className="font-medium mb-2">Pending dispatches ({dispatches.length})</p>
-            {dispatches.map((d) => (
-              <p key={String(d._id)} className="text-sm">{String(d.dispatchNumber)} — {String(d.truckNumber)}</p>
+            {dispatches.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No in-transit dispatches awaiting gate entry.</p>
+            ) : dispatches.map((d) => (
+              <p key={d._id} className="text-sm">{d.dispatchNumber} — {d.truckNumber} ({d.items?.length ?? 0} VINs)</p>
             ))}
           </Card>
           <div className="space-y-2">
@@ -171,6 +233,67 @@ export default function AdminGateEntry() {
           </div>
         </>
       )}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record gate entry</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Dispatch *</Label>
+              <Select
+                value={createForm.dispatchId || undefined}
+                onValueChange={(dispatchId) => {
+                  const d = dispatches.find((x) => x._id === dispatchId);
+                  setCreateForm((f) => ({
+                    ...f,
+                    dispatchId,
+                    truckNumber: d?.truckNumber ?? f.truckNumber,
+                  }));
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Select dispatch" /></SelectTrigger>
+                <SelectContent>
+                  {dispatches.map((d) => (
+                    <SelectItem key={d._id} value={d._id}>
+                      {d.dispatchNumber} — {d.truckNumber}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Truck number *</Label>
+              <Input value={createForm.truckNumber} onChange={(e) => setCreateForm((f) => ({ ...f, truckNumber: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Seal number</Label>
+              <Input value={createForm.sealNumber} onChange={(e) => setCreateForm((f) => ({ ...f, sealNumber: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Arrival datetime</Label>
+              <Input
+                type="datetime-local"
+                value={createForm.arrivalDatetime}
+                onChange={(e) => setCreateForm((f) => ({ ...f, arrivalDatetime: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Arrival photo *</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setCreateForm((f) => ({ ...f, photo: e.target.files?.[0] ?? null }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => void saveCreate()} disabled={saving}>{saving ? "Saving…" : "Record entry"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(editRow)} onOpenChange={(open) => !open && setEditRow(null)}>
         <DialogContent className="max-w-md">

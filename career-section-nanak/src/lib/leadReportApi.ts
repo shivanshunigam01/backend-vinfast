@@ -148,6 +148,8 @@ export type LeadAdminReport = {
   activityLog: LeadActivityRow[];
   feedbackRows: LeadFeedbackReportRow[];
   leadDetailRows: LeadDetailReportRow[];
+  leadDetailRowsTotal?: number;
+  leadDetailRowsTruncated?: boolean;
   leadAgeing: LeadAgeingBucket[];
   stages: string[];
   kpis?: {
@@ -221,6 +223,8 @@ function normalizeLeadReport(raw: LeadAdminReport | null | undefined): LeadAdmin
     activityLog: raw.activityLog ?? [],
     feedbackRows: raw.feedbackRows ?? [],
     leadDetailRows: raw.leadDetailRows ?? [],
+    leadDetailRowsTotal: raw.leadDetailRowsTotal,
+    leadDetailRowsTruncated: raw.leadDetailRowsTruncated,
     leadAgeing: raw.leadAgeing ?? [],
     stages: raw.stages ?? [],
     kpis: raw.kpis,
@@ -237,6 +241,7 @@ function normalizeLeadReport(raw: LeadAdminReport | null | undefined): LeadAdmin
 export async function fetchLeadAdminReport(params?: {
   from?: string;
   to?: string;
+  dateField?: "enquiry" | "created" | "activity";
   executiveId?: string;
   status?: string;
   source?: string;
@@ -248,6 +253,7 @@ export async function fetchLeadAdminReport(params?: {
   const q = new URLSearchParams();
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
+  if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
   if (params?.executiveId) q.set("executiveId", params.executiveId);
   if (params?.status && params.status !== "all") q.set("status", params.status);
   if (params?.source && params.source !== "all") q.set("source", params.source);

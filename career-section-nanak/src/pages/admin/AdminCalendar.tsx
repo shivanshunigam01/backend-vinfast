@@ -4,7 +4,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import listPlugin from "@fullcalendar/list";
 import interactionPlugin from "@fullcalendar/interaction";
-import type { DatesSetArg, EventClickArg, EventDropArg } from "@fullcalendar/core";
+import type { DateClickArg, DatesSetArg, EventClickArg, EventDropArg } from "@fullcalendar/core";
 import {
   CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw,
 } from "lucide-react";
@@ -26,6 +26,7 @@ import {
   type CalendarFilterState,
 } from "@/components/admin/calendar/CalendarFilters";
 import { CalendarEventPanel } from "@/components/admin/calendar/CalendarEventPanel";
+import { CalendarDayEventsDialog } from "@/components/admin/calendar/CalendarDayEventsDialog";
 import { AddPvLeadDialog } from "@/components/admin/AddPvLeadDialog";
 import { BookTestDriveDialog } from "@/components/admin/BookTestDriveDialog";
 import { cn } from "@/lib/utils";
@@ -34,8 +35,9 @@ const MODEL_OPTIONS = ["VF 7", "VF 6", "VF MPV 7", "Limo Green", "Both"];
 
 type CalView = "dayGridMonth" | "timeGridWeek" | "timeGridDay" | "listWeek";
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
+function localDateKey(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export default function AdminCalendar() {
@@ -52,13 +54,17 @@ export default function AdminCalendar() {
     canPerformManagerAction(adminUser, "crm_leads", "update");
 
   const calendarRef = useRef<FullCalendar | null>(null);
+  const didAutoOpenToday = useRef(false);
   const [view, setView] = useState<CalView>("dayGridMonth");
   const [title, setTitle] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => localDateKey(new Date()));
+  const [dayDialogOpen, setDayDialogOpen] = useState(false);
+  const [dayDialogDate, setDayDialogDate] = useState<string | null>(null);
   const [range, setRange] = useState(() => {
     const from = new Date();
     from.setDate(1);
     const to = new Date(from.getFullYear(), from.getMonth() + 1, 0);
-    return { from: isoDate(from), to: isoDate(to) };
+    return { from: localDateKey(from), to: localDateKey(to) };
   });
   const [filters, setFilters] = useState<CalendarFilterState>({
     types: [...DEFAULT_CALENDAR_TYPES],
@@ -120,12 +126,18 @@ export default function AdminCalendar() {
 
   const api = () => calendarRef.current?.getApi();
 
+  const openDayDialog = useCallback((dateKey: string) => {
+    setSelectedDate(dateKey);
+    setDayDialogDate(dateKey);
+    setDayDialogOpen(true);
+  }, []);
+
   const onDatesSet = (arg: DatesSetArg) => {
     setTitle(arg.view.title);
-    const from = isoDate(arg.start);
+    const from = localDateKey(arg.start);
     const end = new Date(arg.end);
     end.setDate(end.getDate() - 1);
-    const to = isoDate(end);
+    const to = localDateKey(end);
     setRange((prev) => (prev.from === from && prev.to === to ? prev : { from, to }));
   };
 
@@ -134,9 +146,40 @@ export default function AdminCalendar() {
     api()?.changeView(v);
   };
 
-  const goToday = () => api()?.today();
+  const goToday = () => {
+    api()?.today();
+    openDayDialog(localDateKey(new Date()));
+  };
   const goPrev = () => api()?.prev();
   const goNext = () => api()?.next();
+
+  useEffect(() => {
+    if (didAutoOpenToday.current || loading) return;
+    const t = window.setTimeout(() => {
+      if (didAutoOpenToday.current) return;
+      didAutoOpenToday.current = true;
+      const today = localDateKey(new Date());
+      calendarRef.current?.getApi()?.today();
+      setSelectedDate(today);
+      setDayDialogDate(today);
+      setDayDialogOpen(true);
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [loading]);
+
+  const onDateClick = (arg: DateClickArg) => {
+    openDayDialog(localDateKey(arg.date));
+  };
+
+  const onMoreLinkClick = (arg: { date: Date; jsEvent: UIEvent }) => {
+    arg.jsEvent.preventDefault();
+    openDayDialog(localDateKey(arg.date));
+  };
+
+  const openEventDetail = (ev: CalendarEvent) => {
+    setSelected(ev);
+    setPanelOpen(true);
+  };
 
   const onEventClick = (arg: EventClickArg) => {
     const ev = arg.event.extendedProps as CalendarEvent;
@@ -146,8 +189,7 @@ export default function AdminCalendar() {
       title: arg.event.title,
       href: ev.href,
     };
-    setSelected(full);
-    setPanelOpen(true);
+    openEventDetail(full);
   };
 
   const onEventDrop = async (arg: EventDropArg) => {
@@ -184,7 +226,7 @@ export default function AdminCalendar() {
             Calendar
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Plan leads and test drives — click an event to edit, or drag to reschedule.
+            Today is highlighted — click any date (or +N more) to see all events; click an event for full details.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -257,10 +299,19 @@ export default function AdminCalendar() {
             dayMaxEvents={3}
             dayMaxEventRows={3}
             eventMaxStack={4}
-            moreLinkClick="popover"
+            moreLinkClick={onMoreLinkClick}
             moreLinkContent={(arg) => `+${arg.num} more`}
             events={fcEvents}
             datesSet={onDatesSet}
+            dateClick={onDateClick}
+            dayCellClassNames={(arg) => {
+              const key = localDateKey(arg.date);
+              const today = localDateKey(new Date());
+              const classes: string[] = [];
+              if (key === today) classes.push("fc-day-focus-today");
+              if (key === selectedDate) classes.push("fc-day-selected");
+              return classes;
+            }}
             eventClick={onEventClick}
             eventDrop={(arg) => void onEventDrop(arg)}
             eventTimeFormat={{ hour: "numeric", minute: "2-digit", meridiem: "short" }}
@@ -304,6 +355,14 @@ export default function AdminCalendar() {
           <span className="h-2.5 w-2.5 rounded-sm bg-[#14b8a6]" /> Sales
         </span>
       </div>
+
+      <CalendarDayEventsDialog
+        open={dayDialogOpen}
+        dateKey={dayDialogDate}
+        events={events ?? []}
+        onOpenChange={setDayDialogOpen}
+        onSelectEvent={openEventDetail}
+      />
 
       <CalendarEventPanel
         open={panelOpen}
@@ -361,6 +420,23 @@ export default function AdminCalendar() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          font-weight: 700;
+        }
+        .calendar-fc .fc-daygrid-day .fc-daygrid-day-frame {
+          cursor: pointer;
+          transition: background 0.15s ease, outline-color 0.15s ease;
+        }
+        .calendar-fc .fc-daygrid-day.fc-day-selected .fc-daygrid-day-frame {
+          outline: 2px solid hsl(var(--primary));
+          outline-offset: -2px;
+          background: hsl(var(--primary) / 0.08);
+          border-radius: 0.35rem;
+        }
+        .calendar-fc .fc-daygrid-day.fc-day-focus-today:not(.fc-day-selected) .fc-daygrid-day-frame {
+          box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.35);
+        }
+        .calendar-fc .fc-daygrid-day.fc-day-focus-today.fc-day-selected .fc-daygrid-day-frame {
+          background: hsl(var(--primary) / 0.14);
         }
         .calendar-fc .fc-event {
           border-radius: 4px;
@@ -393,37 +469,15 @@ export default function AdminCalendar() {
         }
         .calendar-fc .fc-more-link {
           font-size: 0.7rem;
-          font-weight: 600;
+          font-weight: 700;
           color: hsl(var(--primary));
-          padding: 1px 4px;
+          padding: 2px 6px;
+          border-radius: 0.25rem;
+          background: hsl(var(--primary) / 0.1);
         }
-        /* "+N more" popover: scroll instead of covering the week grid */
-        .calendar-fc .fc-popover,
-        .calendar-fc .fc-more-popover {
-          z-index: 50 !important;
-          max-width: min(18rem, calc(100vw - 2rem));
-          max-height: min(20rem, 45vh) !important;
-          display: flex !important;
-          flex-direction: column;
-          overflow: hidden;
-          box-shadow: 0 12px 32px hsl(var(--foreground) / 0.18);
-          border: 1px solid hsl(var(--border));
-          border-radius: 0.5rem;
-          background: hsl(var(--card));
-        }
-        .calendar-fc .fc-popover-header {
-          flex-shrink: 0;
-          font-size: 0.8rem;
-          font-weight: 600;
-          padding: 0.5rem 0.65rem;
-          background: hsl(var(--muted) / 0.5);
-        }
-        .calendar-fc .fc-popover-body {
-          flex: 1 1 auto;
-          overflow-y: auto;
-          max-height: none !important;
-          padding: 0.35rem;
-          -webkit-overflow-scrolling: touch;
+        .calendar-fc .fc-more-link:hover {
+          background: hsl(var(--primary) / 0.18);
+          text-decoration: none;
         }
         .calendar-fc .fc-list-event:hover td {
           background: hsl(var(--muted) / 0.4);

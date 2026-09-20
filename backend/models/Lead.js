@@ -9,7 +9,7 @@ const LeadSchema = new mongoose.Schema({
   otherCity: { type: String, trim: true },
   model: { type: String, enum: ['VF 6', 'VF 7', 'Both'], required: true },
   interest: { type: String, trim: true, default: 'Test Drive' },
-  source: { type: String, enum: ['Website', 'Google Ads', 'Meta Ads', 'WhatsApp', 'Walk-in', 'Referral'], default: 'Website' },
+  source: { type: String, trim: true, default: 'Website' },
   status: { type: String, enum: ALL_LEAD_STAGES, default: 'Enquiry' },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   nextFollowUp: { type: Date },

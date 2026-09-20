@@ -23,8 +23,7 @@ import { ModelTrimSelect } from "@/components/ModelTrimSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { Search, Plus, Edit2, Trash2, Phone, Mail, Download, FileText, MessageCircle } from "lucide-react";
 import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
-
-const CRM_LEAD_SOURCES = ["Website", "Google Ads", "Meta Ads", "WhatsApp", "Walk-in", "Referral"] as const;
+import { LEAD_SOURCE_OPTIONS } from "@/data/leadSources";
 
 const AdminLeads = () => {
   const useRemote = hasApi();
@@ -382,7 +381,7 @@ const LeadForm = ({ lead, onSave, onCancel }: { lead: Lead; onSave: (l: Lead) =>
   const [form, setForm] = useState(lead);
   const update = (key: keyof Lead, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
 
-  const sourceChoices: string[] = [...CRM_LEAD_SOURCES];
+  const sourceChoices: string[] = [...LEAD_SOURCE_OPTIONS];
   if (form.source && !sourceChoices.includes(form.source)) {
     sourceChoices.push(form.source);
   }

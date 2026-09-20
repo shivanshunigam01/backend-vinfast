@@ -1,8 +1,9 @@
 const { dateKeyRange } = require('./reportPeriod');
 
-exports.buildPagination = (req) => {
+exports.buildPagination = (req, { defaultLimit = 20, maxLimit = 10000 } = {}) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const limit = Math.max(parseInt(req.query.limit, 10) || 20, 1);
+  const requested = parseInt(req.query.limit, 10) || defaultLimit;
+  const limit = Math.min(Math.max(requested, 1), maxLimit);
   const skip = (page - 1) * limit;
   return { page, limit, skip };
 };

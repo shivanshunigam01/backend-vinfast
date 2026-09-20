@@ -86,11 +86,12 @@ export function parseStoredModelLine(stored: string): { model: string; variant: 
 /** Unique stored trim / model lines for a lead (primary + interested). */
 export function leadProductLines(lead?: { model?: string; interestedModels?: string[] } | null): string[] {
   if (!lead) return [];
-  const lines = [
-    lead.model,
-    ...(Array.isArray(lead.interestedModels) ? lead.interestedModels : []),
-  ]
+  const interested = (Array.isArray(lead.interestedModels) ? lead.interestedModels : [])
     .map((s) => String(s || "").trim())
     .filter(Boolean);
+  if (lead.model === "Both") {
+    return interested.length ? [...new Set(interested)] : ["Both"];
+  }
+  const lines = [lead.model, ...interested].map((s) => String(s || "").trim()).filter(Boolean);
   return [...new Set(lines)];
 }

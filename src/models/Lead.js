@@ -154,6 +154,8 @@ const leadSchema = new mongoose.Schema(
       retailDate: { type: Date },
       deliveryDate: { type: Date },
       initialRemark: { type: String, trim: true },
+      /** Month Year column from TD / CRM sheets (report grouping). */
+      monthYear: { type: Date },
     },
   },
   { timestamps: true },

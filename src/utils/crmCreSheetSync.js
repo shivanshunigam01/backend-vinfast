@@ -164,6 +164,7 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
     customerEmail: lead.email,
     customerCity: lead.city,
     remarks: cs.afterTdRemark || cs.tdNotDoneWhy || undefined,
+    importMonthYear: cs.monthYear || undefined,
     approvalStatus: 'NOT_REQUIRED',
     assignmentStatus: assigneeId ? 'ACCEPTED' : 'UNASSIGNED',
   };
@@ -181,11 +182,13 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
       booking.assignedExecutive = undefined;
       booking.assignedExecutiveEmail = undefined;
     }
+    if (cs.monthYear) booking.set('importMonthYear', cs.monthYear);
     await booking.save();
   } else {
     booking = await TDBooking.create({
       bookingId: nextBookingId(),
       ...payload,
+      ...(cs.monthYear ? { importMonthYear: cs.monthYear } : {}),
     });
   }
 

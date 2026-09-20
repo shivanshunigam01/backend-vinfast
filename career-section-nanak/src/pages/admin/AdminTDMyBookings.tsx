@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { adminGet, adminPatchJson, formatApiErrors } from "@/lib/api";
+import { adminGet, adminPatchJson, fetchAllAdminPages, formatApiErrors } from "@/lib/api";
 import { getAdminUser, isFieldStaffUser, canPerformAction } from "@/lib/adminAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -134,11 +134,11 @@ export default function AdminTDMyBookings() {
   const fetchBookings = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
       if (filterDate) params.set("date", filterDate);
-      const { data } = await adminGet<Booking[]>(`/admin/td/bookings/my?${params}`);
-      setBookings(Array.isArray(data) ? data : []);
+      const data = await fetchAllAdminPages<Booking>("/admin/td/bookings/my", params);
+      setBookings(data);
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {

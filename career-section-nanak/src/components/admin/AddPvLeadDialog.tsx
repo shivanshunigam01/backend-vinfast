@@ -24,6 +24,14 @@ import { fetchBuyerTypes, type BuyerTypeDoc } from "@/lib/buyerTypesApi";
 import { lookupCrmCustomerByMobile, type CustomerHistory } from "@/lib/crmCustomerApi";
 import { CustomerHistoryDialog } from "@/components/admin/CustomerHistoryDialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
+import {
+  CreSheetDatesForm,
+  creSheetDatesToPayload,
+  emptyCreSheetDates,
+  type CreSheetDatesValue,
+} from "@/components/admin/CreSheetDatesForm";
 
 type Props = {
   open: boolean;
@@ -69,6 +77,8 @@ export function AddPvLeadDialog({
   const [existingHistory, setExistingHistory] = useState<CustomerHistory | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [forceNewOpportunity, setForceNewOpportunity] = useState(false);
+  const [sheetDatesOpen, setSheetDatesOpen] = useState(false);
+  const [sheetDates, setSheetDates] = useState<CreSheetDatesValue>(() => emptyCreSheetDates());
   const lookedUpMobileRef = useRef("");
 
   useEffect(() => {
@@ -80,6 +90,8 @@ export function AddPvLeadDialog({
     setExistingHistory(null);
     setShowHistory(false);
     setForceNewOpportunity(false);
+    setSheetDatesOpen(false);
+    setSheetDates(emptyCreSheetDates());
     lookedUpMobileRef.current = "";
     void fetchBuyerTypes().then(setBuyerTypes).catch(() => setBuyerTypes([]));
   }, [open, isExecutive]);
@@ -148,6 +160,10 @@ export function AddPvLeadDialog({
       payload.forceNewOpportunity = true;
     }
 
+    const sheetPayload = creSheetDatesToPayload(sheetDates);
+    if (sheetPayload.creSheet) payload.creSheet = sheetPayload.creSheet;
+    if (sheetPayload.followUpSlots) payload.followUpSlots = sheetPayload.followUpSlots;
+
     setSaving(true);
     try {
       const lead = await createPvCrmLead(payload);
@@ -171,7 +187,7 @@ export function AddPvLeadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">Add New Lead</DialogTitle>
         </DialogHeader>
@@ -307,6 +323,18 @@ export function AddPvLeadDialog({
             <Label className="text-xs">Remarks</Label>
             <Textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} className="bg-secondary/50" rows={2} />
           </div>
+
+          <Collapsible open={sheetDatesOpen} onOpenChange={setSheetDatesOpen}>
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="outline" className="w-full justify-between h-9 text-xs">
+                Sheet dates (enquiry, call, TD, booking…)
+                <ChevronDown className={`w-4 h-4 transition-transform ${sheetDatesOpen ? "rotate-180" : ""}`} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-3">
+              <CreSheetDatesForm value={sheetDates} onChange={setSheetDates} compact />
+            </CollapsibleContent>
+          </Collapsible>
 
           <div className="flex gap-3">
             <Button onClick={() => void handleSave()} disabled={saving} className="flex-1 bg-primary text-primary-foreground">

@@ -1,6 +1,7 @@
 import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson, adminDownloadBlob, adminPostFormData } from "@/lib/api";
 import { CRM_LEAD_STAGES, type CrmLeadStage } from "@/lib/leadStages";
 import { LEAD_SOURCE_OPTIONS } from "@/data/leadSources";
+import { CRM_CURRENT_FORMAT_HEADERS, buildCrmImportTemplateRow } from "@/lib/crmImportFormat";
 import * as XLSX from "xlsx";
 
 const CRM_BASE = "/admin/crm/leads";
@@ -48,6 +49,8 @@ export type PvCrmLead = {
   lastActivityAt?: string;
   convertedAt?: string;
   convertedCustomerId?: { _id: string; customerId?: string; name?: string; mobile?: string } | string | null;
+  /** Canonical enquiry/received date from CRE sheet (falls back to createdAt). */
+  enquiryDate?: string | null;
   creSheet?: Record<string, unknown> | null;
   /** Present when stage→Booking auto-created/opened a vehicle order. */
   vehicleOrder?: { _id: string; orderNumber: string; stage: string; created: boolean };
@@ -83,13 +86,44 @@ export type LeadFollowUpItem = {
   createdBy?: { name?: string; email?: string } | null;
 };
 
+export type CreSheetFollowUpSlot = {
+  creDate?: string | null;
+  creRemark?: string;
+  salesDate?: string | null;
+  salesRemark?: string;
+  creFollowUpId?: string | null;
+  salesFollowUpId?: string | null;
+};
+
+export type PvCrmLeadTdBooking = {
+  _id?: string;
+  bookingId?: string;
+  bookingStatus?: string;
+  slotDate?: string;
+  slotTime?: string;
+  preferredModel?: string;
+  approvalStatus?: string;
+  isRepeatDrive?: boolean;
+  createdAt?: string;
+};
+
+export type PvCrmLeadTestDriveState = {
+  hasCompletedTestDrive?: boolean;
+  hasActiveBooking?: boolean;
+  hasPendingApproval?: boolean;
+  canBookTestDrive?: boolean;
+  bookings?: PvCrmLeadTdBooking[];
+};
+
 export type PvCrmLeadDetail = {
   lead: PvCrmLead;
   history: LeadStageHistoryItem[];
   followUps: LeadFollowUpItem[];
   followUpCount?: number;
+  followUpSlots?: CreSheetFollowUpSlot[];
   siblingLeads?: { leadId?: string; opportunityId?: string; model: string; status: string; source?: string; createdAt?: string }[];
   stages: CrmLeadStage[];
+  testDrive?: PvCrmLeadTestDriveState;
 };
 
 export type AssignableStaffUser = {
@@ -122,6 +156,12 @@ export type CreatePvCrmLeadPayload = {
   /** Create a separate opportunity when customer already has an open lead. */
   forceNewOpportunity?: boolean;
   allowMultiOpportunity?: boolean;
+  /** CRE Current Format sheet dates and columns (optional at create). */
+  creSheet?: Record<string, unknown>;
+  followUpSlots?: CreSheetFollowUpSlot[];
+  salesConsultant?: string;
+  enquiryDate?: string;
+  callDate?: string;
 };
 
 export async function createPvCrmLead(payload: CreatePvCrmLeadPayload): Promise<PvCrmLead> {
@@ -139,7 +179,7 @@ export async function assignPvCrmLeadExecutive(leadId: string, executiveId: stri
   });
 }
 
-export type PvCrmLeadDateField = "created" | "activity";
+export type PvCrmLeadDateField = "created" | "enquiry" | "activity";
 
 export async function fetchPvCrmLeads(params?: {
   search?: string;
@@ -152,6 +192,7 @@ export async function fetchPvCrmLeads(params?: {
   to?: string;
   dateField?: PvCrmLeadDateField;
   buyerType?: string;
+  model?: string;
   customerId?: string;
   customerFollowUps?: boolean;
   pvCustomerId?: string;
@@ -174,6 +215,7 @@ export async function fetchPvCrmLeads(params?: {
   if (params?.to) q.set("to", params.to);
   if (params?.dateField && params.dateField !== "created") q.set("dateField", params.dateField);
   if (params?.buyerType && params.buyerType !== "all") q.set("buyerType", params.buyerType);
+  if (params?.model && params.model !== "all") q.set("model", params.model);
   if (params?.customerId) q.set("customerId", params.customerId);
   if (params?.customerFollowUps) q.set("customerFollowUps", "true");
   if (params?.pvCustomerId) q.set("pvCustomerId", params.pvCustomerId);
@@ -234,10 +276,12 @@ export async function fetchPvCrmLeadDetail(id: string): Promise<PvCrmLeadDetail>
     lead,
     history: asArray<LeadStageHistoryItem>(wrapped?.history),
     followUps: asArray<LeadFollowUpItem>(wrapped?.followUps),
+    followUpSlots: asArray<CreSheetFollowUpSlot>(wrapped?.followUpSlots),
     siblingLeads: asArray(wrapped?.siblingLeads),
     stages: asArray<CrmLeadStage>(wrapped?.stages).length
       ? asArray<CrmLeadStage>(wrapped?.stages)
       : [...CRM_LEAD_STAGES],
+    testDrive: wrapped?.testDrive as PvCrmLeadTestDriveState | undefined,
   };
 }
 
@@ -272,6 +316,24 @@ export async function updatePvCrmLeadStage(id: string, stage: string, reason?: s
 
 export async function updatePvCrmLeadRemarks(id: string, remarks: string): Promise<PvCrmLead> {
   return adminPatchJson<PvCrmLead>(`${CRM_BASE}/${id}/remarks`, { remarks });
+}
+
+export type UpdatePvCrmLeadCreSheetPayload = {
+  creSheet?: Record<string, unknown>;
+  followUpSlots?: CreSheetFollowUpSlot[];
+  salesConsultant?: string;
+  followUp?: string;
+  exchangeNeeded?: boolean;
+};
+
+export async function updatePvCrmLeadCreSheet(
+  id: string,
+  payload: UpdatePvCrmLeadCreSheetPayload,
+): Promise<{ lead: PvCrmLead; followUpSlots: CreSheetFollowUpSlot[] }> {
+  return adminPatchJson<{ lead: PvCrmLead; followUpSlots: CreSheetFollowUpSlot[] }>(
+    `${CRM_BASE}/${id}/cre-sheet`,
+    payload,
+  );
 }
 
 export async function addPvCrmFollowUp(
@@ -317,6 +379,8 @@ export type CrmLeadStats = {
 
 export async function fetchPvCrmLeadStats(params?: {
   source?: string;
+  status?: string;
+  model?: string;
   assignedTo?: string;
   from?: string;
   to?: string;
@@ -329,6 +393,8 @@ export async function fetchPvCrmLeadStats(params?: {
 }): Promise<CrmLeadStats> {
   const q = new URLSearchParams();
   if (params?.source && params.source !== "all") q.set("source", params.source);
+  if (params?.status && params.status !== "all") q.set("status", params.status);
+  if (params?.model && params.model !== "all") q.set("model", params.model);
   if (params?.assignedTo) q.set("assignedTo", params.assignedTo);
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);
@@ -499,54 +565,17 @@ export async function importPvCrmLeadsJson(payload: {
 
 /** CRE Current Format blank template (all sheet columns; TD = Test Drive). */
 export function downloadPvCrmLeadImportTemplate(): void {
-  const sample: Record<string, string | number> = {
-    "Sl. No.": 1,
-    "ENQUIRY DATE": "",
-    "LEAD SOURCE": "Walk-In",
-    "CUSTOMER NAME": "Sample Customer",
-    PHONE: "9876543210",
-    "MAIL ID": "sample@example.com",
-    LOCATION: "Patna",
-    "EXISTING VARIANT": "NO",
-    MODEL: "VF 7",
-    "CALL DATE": "",
-    "INITIAL REMARK": "",
-    "LEAD TYPE": "HOT",
-    "SALES CONSULTANT": "",
-    DATE: "",
-    "SALES PERSON REMARK": "",
-    "TD Date": "",
-    "TD DONE\nYES/ NO": "NO",
-    "TD NOT DONE,\nWHY?": "",
-    "AFTER TD REMARK": "",
-    "CRE Follow up call 1 Date": "",
-    "CRE Follow up call remark 1": "",
-    "Sales Person Follow up call 1 Date": "",
-    "Sales Person Follow up call 1 Remark 1": "",
-    "CRE Follow up call 2 Date": "",
-    "CRE Follow up call remark 2": "",
-    "Sales Person Follow up call remark 2 Date": "",
-    "Sales Person Follow up call remark 2": "",
-    "CRE Follow up call 3 Date": "",
-    "CRE Follow up call remark 3": "",
-    "Sales Person Follow up call remark 3 Date": "",
-    "Sales Person Follow up call remark 3": "",
-    "BOOKING DONE\nYES / NO": "NO",
-    "BOOKING DATE": "",
-    "FINAL MODEL": "",
-    "FINAL VARIANT": "",
-    "FINAL COLOUR": "",
-    "MAIL SENT\nYES / NO": "NO",
-    "EXCHANGE\nYES / NO": "NO",
-    "RETAIL DONE\nYES / NO": "NO",
-    "RETAIL DATE": "",
-    "DELIVERY DATE": "",
-  };
-  const headers = Object.keys(sample);
+  const sample = buildCrmImportTemplateRow();
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([sample], { header: headers }), "Sheet3");
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet([sample], { header: [...CRM_CURRENT_FORMAT_HEADERS] }),
+    "Sheet3",
+  );
   XLSX.writeFile(wb, "crm-current-format-import-template.xlsx");
 }
+
+export { CRM_CURRENT_FORMAT_HEADERS };
 
 export type ConvertLeadToSalePayload = {
   /** Fill only when the actual buyer differs from the lead's customer. */

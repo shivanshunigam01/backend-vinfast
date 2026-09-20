@@ -1019,6 +1019,7 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
       'bookingDate',
       'retailDate',
       'deliveryDate',
+      'monthYear',
     ];
     const boolFields = ['tdDone', 'bookingDone', 'mailSent', 'retailDone'];
     const stringFields = [
@@ -2489,7 +2490,7 @@ async function importCurrentFormatRows(
           mobile,
           email: parsed.email || undefined,
           city: String(parsed.city || 'Patna').trim(),
-          area: String(parsed.area || parsed.city || '').trim() || undefined,
+          area: String(parsed.area || parsed.city || 'Patna').trim() || undefined,
           model: modelForStorage,
           source: parsed.source || 'Excel Import',
           status: incomingStatus,
@@ -2539,8 +2540,10 @@ async function importCurrentFormatRows(
 
         lead.name = String(name).trim();
         if (parsed.email) lead.email = parsed.email;
-        lead.city = String(parsed.city || lead.city || 'Patna').trim();
-        lead.area = String(parsed.area || parsed.city || lead.area || '').trim() || lead.area;
+        if (parsed.city) {
+          lead.city = String(parsed.city).trim();
+          lead.area = String(parsed.area || parsed.city).trim() || lead.area;
+        }
         lead.model = modelForStorage;
         if (parsed.interestedModels?.length) {
           lead.interestedModels = parsed.interestedModels;

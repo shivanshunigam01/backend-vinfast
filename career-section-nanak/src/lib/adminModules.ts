@@ -14,6 +14,8 @@ export type AdminModuleKey =
   | "pricing"
   | "delivery_reports"
   | "booking_reports"
+  | "detailed_reports"
+  | "team_wise_leads"
   | "products"
   | "offers"
   | "content"
@@ -138,6 +140,8 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "td_reports", label: "TD Reports", path: "/admin/td/reports", group: "Reports", actions: ["view", "export"] },
   { key: "delivery_reports", label: "Delivery Reports", path: "/admin/reports/deliveries", group: "Reports", actions: ["view", "export"] },
   { key: "booking_reports", label: "Booking Report", path: "/admin/reports/bookings", group: "Reports", actions: ["view", "export"] },
+  { key: "detailed_reports", label: "Detailed Report", path: "/admin/reports/detailed", group: "Reports", actions: ["view", "export"] },
+  { key: "team_wise_leads", label: "Team Wise Assigned Leads", path: "/admin/reports/team-assigned-leads", group: "Reports", actions: ["view", "export"] },
   { key: "td_bookings", label: "TD Bookings", path: "/admin/td/bookings", group: "TD Management", actions: ["view", "create", "update", "assign", "reschedule_approve", "verify_dl", "start_drive", "cancel"] },
   { key: "td_reschedule_history", label: "Reschedule History", path: "/admin/td/reschedule-history", group: "TD Management", actions: ["view", "approve"] },
   { key: "td_fleet_health", label: "Fleet Charging & Health", path: "/admin/td/fleet-health", group: "TD Management", actions: ["view", "schedule_charge", "log_maintenance"] },
@@ -256,6 +260,8 @@ export const MANAGER_DEFAULT_MODULES: AdminModuleKey[] = [
   "td_reports",
   "delivery_reports",
   "booking_reports",
+  "detailed_reports",
+  "team_wise_leads",
   "complaint_inbound",
   "complaint_outbound",
 ];

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { adminGet, formatApiErrors } from "@/lib/api";
+import { fetchAllAdminPages, formatApiErrors } from "@/lib/api";
 import { getAdminUser, canPerformManagerAction } from "@/lib/adminAuth";
 
 type DeletedBooking = {
@@ -69,10 +69,10 @@ export default function AdminTDDeleteHistory() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams();
       if (mode !== "all") params.set("mode", mode);
-      const res = await adminGet<DeleteAuditRow[]>(`/admin/td/bookings/delete-audit?${params}`);
-      setRows(res.data ?? []);
+      const rows = await fetchAllAdminPages<DeleteAuditRow>("/admin/td/bookings/delete-audit", params);
+      setRows(rows);
     } catch (e) {
       toast.error(formatApiErrors(e));
       setRows([]);

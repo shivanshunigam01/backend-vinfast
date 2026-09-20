@@ -3,6 +3,7 @@ import { ClipboardList, Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,14 +20,18 @@ import { fetchVendors, pickDefaultVendor, vendorDisplayName, vendorFromPo, type 
 import {
   approvePurchaseOrder,
   cancelPurchaseOrder,
+  closePurchaseOrder,
+  createPoFromRequisitions,
   deletePurchaseOrder,
   createPipelinePurchaseOrder,
   fetchPipelinePurchaseOrders,
+  fetchRequisitions,
   rejectPurchaseOrder,
   releasePurchaseOrder,
   submitPurchaseOrder,
   updatePipelinePurchaseOrder,
   type PurchaseOrder,
+  type StockRequisition,
 } from "@/lib/stockPipelineApi";
 
 function poToLineDrafts(po: PurchaseOrder): PoLineDraft[] {
@@ -120,6 +125,13 @@ export default function AdminPurchaseOrders() {
   const [supplierId, setSupplierId] = useState("");
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [saving, setSaving] = useState(false);
+  const [externalPoNumber, setExternalPoNumber] = useState("");
+  const [externalPoDate, setExternalPoDate] = useState("");
+  const [sourceSystem, setSourceSystem] = useState("Manual");
+  const [externalDocumentUrl, setExternalDocumentUrl] = useState("");
+  const [reqDialogOpen, setReqDialogOpen] = useState(false);
+  const [approvedReqs, setApprovedReqs] = useState<StockRequisition[]>([]);
+  const [selectedReqIds, setSelectedReqIds] = useState<string[]>([]);
 
   const selectedVendor = useMemo(
     () => vendors.find((v) => v._id === supplierId) ?? vendors[0],
@@ -159,8 +171,32 @@ export default function AdminPurchaseOrders() {
     const defaultVendor = pickDefaultVendor(vendors);
     setPaymentTerms(defaultVendor?.paymentTermsDefault || "Advance");
     setSupplierId(defaultVendor?._id || vendors[0]?._id || "");
+    setExternalPoNumber("");
+    setExternalPoDate("");
+    setSourceSystem("Manual");
+    setExternalDocumentUrl("");
     setLines(openCreateLines(catalogModels, trimsFor));
     setFormOpen(true);
+  };
+
+  const openFromRequisitions = async () => {
+    try {
+      const all = await fetchRequisitions({ limit: 200 });
+      const eligible = all.filter((r) =>
+        ["APPROVED", "PART_ORDERED"].includes(r.status) &&
+        r.qty - (r.orderedQty ?? 0) > 0,
+      );
+      setApprovedReqs(eligible);
+      setSelectedReqIds(eligible.map((r) => r._id));
+      setExternalPoNumber("");
+      setExternalPoDate(new Date().toISOString().slice(0, 10));
+      setExternalDocumentUrl("");
+      const defaultVendor = pickDefaultVendor(vendors);
+      setSupplierId(defaultVendor?._id || vendors[0]?._id || "");
+      setReqDialogOpen(true);
+    } catch (e) {
+      toast.error(formatApiErrors(e));
+    }
   };
 
   const openEditDialog = (po: PurchaseOrder) => {
@@ -174,6 +210,10 @@ export default function AdminPurchaseOrders() {
           ? po.supplierId
           : vendors.find((v) => v.name === po.supplier)?._id || vendors[0]?._id || "";
     setSupplierId(vendorId);
+    setExternalPoNumber(po.externalPoNumber ?? "");
+    setExternalPoDate(po.externalPoDate ? po.externalPoDate.slice(0, 10) : "");
+    setSourceSystem(po.sourceSystem ?? "Manual");
+    setExternalDocumentUrl(po.externalDocumentUrl ?? "");
     const drafts = poToLineDrafts(po);
     setLines(drafts.length ? drafts : openCreateLines(catalogModels, trimsFor));
     setFormOpen(true);
@@ -208,6 +248,10 @@ export default function AdminPurchaseOrders() {
         supplierId: supplierId || undefined,
         supplier: selectedVendor?.name,
         bookingLinked: false,
+        externalPoNumber: externalPoNumber.trim() || undefined,
+        externalPoDate: externalPoDate || undefined,
+        sourceSystem: sourceSystem.trim() || "Manual",
+        externalDocumentUrl: externalDocumentUrl.trim() || undefined,
         lines: payloadLines,
       });
       toast.success(`Purchase order created with ${payloadLines.length} line(s)`);
@@ -231,6 +275,10 @@ export default function AdminPurchaseOrders() {
         paymentTerms,
         supplierId: supplierId || undefined,
         supplier: selectedVendor?.name,
+        externalPoNumber: externalPoNumber.trim() || undefined,
+        externalPoDate: externalPoDate || undefined,
+        sourceSystem: sourceSystem.trim() || "Manual",
+        externalDocumentUrl: externalDocumentUrl.trim() || undefined,
         lines: payloadLines,
       });
       toast.success(`PO ${editingPo.poNumber} updated`);
@@ -270,7 +318,7 @@ export default function AdminPurchaseOrders() {
             <ClipboardList className="h-6 w-6" /> Purchase Orders
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            One PO can include multiple model lines — each line is model + variant + colour + qty
+            Record external OEM PO reference and lines synced from approved requisitions and vehicle catalogue
           </p>
         </div>
         <div className="flex gap-2">
@@ -278,9 +326,14 @@ export default function AdminPurchaseOrders() {
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
           {canCreatePo ? (
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4 mr-1" /> New PO
-            </Button>
+            <>
+              <Button size="sm" variant="outline" onClick={() => void openFromRequisitions()}>
+                From requisitions
+              </Button>
+              <Button size="sm" onClick={openCreateDialog}>
+                <Plus className="h-4 w-4 mr-1" /> New PO
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -304,6 +357,7 @@ export default function AdminPurchaseOrders() {
                   <p className="font-mono font-semibold">{po.poNumber}</p>
                   <p className="text-xs text-muted-foreground">
                     Vendor: {vendorDisplayName(typeof po.supplierId === "object" ? po.supplierId : po.supplier)} · {po.poType || "Regular"} · {po.paymentTerms || "Advance"} · {po.lines.length} line(s)
+                    {po.externalPoNumber ? ` · Ext PO ${po.externalPoNumber}` : ""}
                   </p>
                 </div>
                 <Badge variant={po.status === "SUBMITTED" ? "default" : "secondary"}>{po.status}</Badge>
@@ -456,6 +510,23 @@ export default function AdminPurchaseOrders() {
                     Release PO
                   </Button>
                 ) : null}
+                {canReleasePo && (po.status === "RELEASED" || po.status === "PART_SUPPLIED") ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await closePurchaseOrder(po._id);
+                        toast.success("PO closed");
+                        void load();
+                      } catch (e) {
+                        toast.error(formatApiErrors(e));
+                      }
+                    }}
+                  >
+                    Close PO
+                  </Button>
+                ) : null}
                 {canSubmitPo && (po.status === "DRAFT" || po.status === "APPROVED") ? (
                   <Button
                     size="sm"
@@ -530,6 +601,24 @@ export default function AdminPurchaseOrders() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
+                <Label>External PO number (OEM / ERP)</Label>
+                <Input value={externalPoNumber} onChange={(e) => setExternalPoNumber(e.target.value)} placeholder="Supplier system PO ref" />
+              </div>
+              <div>
+                <Label>External PO date</Label>
+                <Input type="date" value={externalPoDate} onChange={(e) => setExternalPoDate(e.target.value)} />
+              </div>
+              <div>
+                <Label>Source system</Label>
+                <Input value={sourceSystem} onChange={(e) => setSourceSystem(e.target.value)} placeholder="Manual / SAP / OEM portal" />
+              </div>
+              <div>
+                <Label>Signed PO document URL</Label>
+                <Input value={externalDocumentUrl} onChange={(e) => setExternalDocumentUrl(e.target.value)} placeholder="Link to uploaded PDF" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
                 <Label>PO Type</Label>
                 <Select value={poType} onValueChange={setPoType}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -591,6 +680,93 @@ export default function AdminPurchaseOrders() {
                 Create PO ({lines.filter((l) => l.model.trim()).length} lines)
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reqDialogOpen} onOpenChange={setReqDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>External PO from approved requisitions</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Select approved requisition lines to pre-fill this CRM PO record. The actual supplier PO is raised in external software.
+            </p>
+            {approvedReqs.length === 0 ? (
+              <p className="text-sm text-amber-600">No approved requisitions with remaining quantity.</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-2">
+                {approvedReqs.map((r) => {
+                  const remaining = r.qty - (r.orderedQty ?? 0);
+                  const checked = selectedReqIds.includes(r._id);
+                  return (
+                    <label key={r._id} className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setSelectedReqIds((prev) =>
+                            e.target.checked ? [...prev, r._id] : prev.filter((id) => id !== r._id),
+                          );
+                        }}
+                        className="mt-1"
+                      />
+                      <span>
+                        <strong>{r.requisitionNo}</strong> — {r.model}
+                        {r.variant ? ` ${r.variant}` : ""}
+                        {r.colour ? ` · ${r.colour}` : ""} · qty {remaining}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>External PO number *</Label>
+                <Input value={externalPoNumber} onChange={(e) => setExternalPoNumber(e.target.value)} />
+              </div>
+              <div>
+                <Label>External PO date</Label>
+                <Input type="date" value={externalPoDate} onChange={(e) => setExternalPoDate(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Document URL</Label>
+              <Input value={externalDocumentUrl} onChange={(e) => setExternalDocumentUrl(e.target.value)} placeholder="Signed PO PDF link" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReqDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={saving || !selectedReqIds.length || !externalPoNumber.trim()}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await createPoFromRequisitions({
+                    requisitionIds: selectedReqIds,
+                    supplierId: supplierId || undefined,
+                    supplier: selectedVendor?.name,
+                    externalPoNumber: externalPoNumber.trim(),
+                    externalPoDate: externalPoDate || undefined,
+                    sourceSystem: sourceSystem.trim() || "Manual",
+                    externalDocumentUrl: externalDocumentUrl.trim() || undefined,
+                    paymentTerms,
+                    poType,
+                  });
+                  toast.success("PO created from requisitions");
+                  setReqDialogOpen(false);
+                  void load();
+                } catch (e) {
+                  toast.error(formatApiErrors(e));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Create PO
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

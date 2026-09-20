@@ -7,6 +7,7 @@ import { resolvePeriodRange, type ReportPeriod } from "@/lib/reportPeriod";
 export type { ReportPeriod };
 
 const PERIOD_OPTIONS: { value: ReportPeriod; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "daily", label: "Today" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },

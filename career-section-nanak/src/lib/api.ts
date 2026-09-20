@@ -119,6 +119,29 @@ export async function adminGet<T>(path: string): Promise<{ data: T; meta?: { pag
   return { data: json.data as T, meta: json.meta as { page: number; limit: number; total: number } | undefined };
 }
 
+/** Fetch every page from a paginated admin list endpoint (no 100-row cap). */
+export async function fetchAllAdminPages<T>(
+  path: string,
+  params: URLSearchParams,
+  pageSize = 500,
+): Promise<T[]> {
+  const all: T[] = [];
+  let page = 1;
+  while (true) {
+    const q = new URLSearchParams(params);
+    q.set("page", String(page));
+    q.set("limit", String(pageSize));
+    const sep = path.includes("?") ? "&" : "?";
+    const { data, meta } = await adminGet<T[]>(`${path}${sep}${q}`);
+    const chunk = Array.isArray(data) ? data : [];
+    all.push(...chunk);
+    const total = meta?.total ?? all.length;
+    if (all.length >= total || chunk.length < pageSize) break;
+    page += 1;
+  }
+  return all;
+}
+
 export async function adminGetData<T>(path: string): Promise<T> {
   const { data } = await adminGet<T>(path);
   return data;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson, formatApiErrors } from "@/lib/api";
+import { adminGet, adminPatchJson, adminPostJson, adminDeleteJson, fetchAllAdminPages, formatApiErrors } from "@/lib/api";
 import { getAdminUser, canPerformAction, canPerformManagerAction } from "@/lib/adminAuth";
 import { useVehicleCatalog } from "@/hooks/useVehicleCatalog";
 import { Card } from "@/components/ui/card";
@@ -190,7 +190,7 @@ export default function AdminTDBookings() {
   const fetchBookings = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
       if (filterDate) params.set("date", filterDate);
       if (filterExecutive !== "all") {
@@ -199,8 +199,8 @@ export default function AdminTDBookings() {
           filterExecutive === "unassigned" ? "unassigned" : filterExecutive,
         );
       }
-      const { data } = await adminGet<Booking[]>(`/admin/td/bookings?${params}`);
-      setBookings(data ?? []);
+      const data = await fetchAllAdminPages<Booking>("/admin/td/bookings", params);
+      setBookings(data);
     } catch (e) {
       toast.error(formatApiErrors(e));
     } finally {

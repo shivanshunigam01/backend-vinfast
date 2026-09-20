@@ -216,6 +216,12 @@ function normalizeImportModel(raw) {
   return s;
 }
 
+function compactCreSheetFields(obj = {}) {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== ''),
+  );
+}
+
 function pushFollowUp(list, note, dateVal, prefix) {
   const remark = cellStr(note);
   if (!remark) return;
@@ -239,7 +245,8 @@ function parseCurrentFormatRow(row) {
   const mailRaw = pickFromMap(map, ['mail id', 'email', 'email id']);
   const email = isBlankEmail(mailRaw) ? undefined : cellStr(mailRaw).toLowerCase();
 
-  const city = cellStr(pickFromMap(map, ['location', 'city', 'area'])) || 'Patna';
+  const cityRaw = cellStr(pickFromMap(map, ['location', 'city', 'area']));
+  const city = cityRaw || undefined;
   const modelRaw = cellStr(pickFromMap(map, ['model', 'interested model']));
   const model = normalizeImportModel(modelRaw);
   const source = cellStr(pickFromMap(map, ['lead source', 'source'])) || 'Excel Import';
@@ -280,6 +287,7 @@ function parseCurrentFormatRow(row) {
   const retailDone = parseYesNo(pickFromMap(map, ['retail done yes no', 'retail done']));
   const retailDate = parseSheetDate(pickFromMap(map, ['retail date']));
   const deliveryDate = parseSheetDate(pickFromMap(map, ['delivery date']));
+  const monthYear = parseSheetDate(pickFromMap(map, ['month year', 'month year td']));
 
   const remarkParts = [];
   if (initialRemark) remarkParts.push(`Initial: ${initialRemark}`);
@@ -346,7 +354,7 @@ function parseCurrentFormatRow(row) {
     leadType,
   });
 
-  const creSheet = {
+  const creSheet = compactCreSheetFields({
     enquiryDate: enquiryDate || undefined,
     callDate: callDate || undefined,
     existingVariant: existingVariant || undefined,
@@ -369,7 +377,8 @@ function parseCurrentFormatRow(row) {
     retailDate: retailDate || undefined,
     deliveryDate: deliveryDate || undefined,
     initialRemark: initialRemark || undefined,
-  };
+    monthYear: monthYear || undefined,
+  });
 
   return {
     name,

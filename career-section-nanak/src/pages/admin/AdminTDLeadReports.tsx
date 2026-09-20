@@ -237,7 +237,7 @@ export default function AdminTDLeadReports() {
   const [staff, setStaff] = useState<AssignableStaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const initialRange = resolvePeriodRange({ period: "monthly" });
+  const initialRange = resolvePeriodRange({ period: "all" });
   const [period, setPeriod] = useState<ReportPeriod>(initialRange.period);
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
@@ -300,6 +300,7 @@ export default function AdminTDLeadReports() {
       const report = await fetchLeadAdminReport({
         from: from || undefined,
         to: to || undefined,
+        dateField: "enquiry",
         executiveId: executiveId !== "all" ? executiveId : undefined,
         status: status !== "all" ? status : undefined,
         source: source !== "all" ? source : undefined,
@@ -739,6 +740,11 @@ export default function AdminTDLeadReports() {
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{popupTitle}</DialogTitle>
+            {popupMode === "leads" && data?.leadDetailRowsTruncated ? (
+              <p className="text-xs text-muted-foreground">
+                Showing latest {popupLeads.length} of {data.overview.totalLeads} leads — use Lead CRM for the full list.
+              </p>
+            ) : null}
           </DialogHeader>
           {popupMode === "leads" ? (
             <div className="max-h-[65vh] overflow-auto">

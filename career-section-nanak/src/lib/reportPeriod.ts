@@ -1,8 +1,9 @@
 /** Client-side report period helpers (aligned with `src/utils/reportPeriod.js`). */
 
-export type ReportPeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+export type ReportPeriod = "all" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 export const REPORT_PERIODS: ReportPeriod[] = [
+  "all",
   "daily",
   "weekly",
   "monthly",
@@ -86,6 +87,15 @@ export function resolvePeriodRange(opts: {
 
   let fromDate: Date;
   let toDate: Date;
+
+  if (p === "all") {
+    return {
+      period: "all",
+      from: "",
+      to: "",
+      year: today.getFullYear(),
+    };
+  }
 
   if (p === "yearly" && opts.year) {
     const y = Number(opts.year) || today.getFullYear();

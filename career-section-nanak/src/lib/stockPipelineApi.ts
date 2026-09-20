@@ -1,9 +1,10 @@
-import { adminGet, adminPostJson, adminPutJson, adminPatchJson, adminDeleteJson } from "@/lib/api";
+import { adminGet, adminPostJson, adminPutJson, adminPatchJson, adminDeleteJson, adminPostFormData } from "@/lib/api";
 
 const BASE = "/admin/stock/pipeline";
 
 export type PoLine = {
   _id?: string;
+  requisitionId?: string;
   model: string;
   variant?: string;
   colour?: string;
@@ -34,6 +35,12 @@ export type PurchaseOrder = {
   bookingLinked?: boolean;
   bookingNumber?: string;
   lines: PoLine[];
+  externalPoNumber?: string;
+  externalPoDate?: string;
+  sourceSystem?: string;
+  externalDocumentUrl?: string;
+  requisitionIds?: string[];
+  amendmentVersion?: number;
   approvalHistory?: Array<{ action: string; status: string; byName?: string; at?: string; remarks?: string }>;
   remarks?: string;
   createdAt?: string;
@@ -166,6 +173,14 @@ export async function deletePurchaseOrder(id: string) {
   return adminDeleteJson(`${BASE}/purchase-orders/${id}`);
 }
 
+export async function createPoFromRequisitions(body: Record<string, unknown>) {
+  return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/from-requisitions`, body);
+}
+
+export async function closePurchaseOrder(id: string, remarks?: string) {
+  return adminPostJson<PurchaseOrder>(`${BASE}/purchase-orders/${id}/close`, { remarks });
+}
+
 export async function fetchDispatches(limit = 50) {
   const { data } = await adminGet<DispatchRecord[]>(`${BASE}/dispatches?limit=${limit}`);
   return data ?? [];
@@ -196,6 +211,10 @@ export async function deleteGateEntry(id: string) {
   return adminDeleteJson(`${BASE}/gate-entries/${id}`);
 }
 
+export async function createGateEntry(formData: FormData) {
+  return adminPostFormData(`${BASE}/gate-entries`, formData);
+}
+
 export async function fetchGrns(limit = 50) {
   const { data } = await adminGet(`${BASE}/grns?limit=${limit}`);
   return data ?? [];
@@ -209,21 +228,40 @@ export async function deleteGrn(id: string) {
   return adminDeleteJson(`${BASE}/grns/${id}`);
 }
 
+export async function createGrn(formData: FormData) {
+  return adminPostFormData(`${BASE}/grns`, formData);
+}
+
+export async function createGrnRecord(body: Record<string, unknown>) {
+  return adminPostJson(`${BASE}/grns`, body);
+}
+
 export type StockRequisition = {
   _id: string;
   requisitionNo: string;
+  version?: number;
   model: string;
   variant?: string;
   colour?: string;
   qty: number;
+  orderedQty?: number;
   priority: string;
   neededBy?: string;
+  receivingLocation?: string;
+  purpose?: string;
+  justification?: string;
+  indicativeAmount?: number;
+  planReference?: string;
   status: string;
   remarks?: string;
-  requestedBy?: { _id?: string; name?: string; email?: string } | string;
+  requestedBy?: { _id?: string; name?: string; email?: string; designation?: string } | string;
+  recommendedBy?: { _id?: string; name?: string; email?: string } | string;
   approvedBy?: { _id?: string; name?: string; email?: string } | string;
-  linkedPoId?: { _id?: string; poNumber?: string; status?: string } | string;
+  linkedPoId?: { _id?: string; poNumber?: string; status?: string; externalPoNumber?: string } | string;
+  linkedPoIds?: Array<{ _id?: string; poNumber?: string; status?: string } | string>;
+  approvalHistory?: Array<{ action: string; status: string; byName?: string; at?: string; remarks?: string }>;
   submittedAt?: string;
+  recommendedAt?: string;
   approvedAt?: string;
   createdAt?: string;
 };
@@ -248,7 +286,19 @@ export async function submitRequisition(id: string) {
   return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/submit`, {});
 }
 
-export async function approveRequisition(id: string, body?: { remarks?: string; linkedPoId?: string }) {
+export async function recommendRequisition(id: string, remarks?: string) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/recommend`, { remarks });
+}
+
+export async function returnRequisition(id: string, remarks: string) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/return`, { remarks });
+}
+
+export async function rejectRequisition(id: string, remarks: string) {
+  return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/reject`, { remarks });
+}
+
+export async function approveRequisition(id: string, body?: { remarks?: string }) {
   return adminPostJson<StockRequisition>(`${BASE}/requisitions/${id}/approve`, body ?? {});
 }
 

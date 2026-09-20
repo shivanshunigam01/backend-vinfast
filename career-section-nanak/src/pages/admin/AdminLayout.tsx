@@ -5,7 +5,7 @@ import {
   Tag, Bell, Home, Image, Layers, Briefcase,
   CalendarCheck, Gauge, BarChart3, Building2, ChevronDown as ChevDown, User,
   MessageSquare, Clock, BellOff, Warehouse, CarFront, PackageCheck, Shield, Trash2, ClipboardList,
-  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle, Receipt, CheckCircle2, ArrowLeftRight
+  Truck, DoorOpen, ClipboardCheck, Key, Wrench, AlertTriangle, Receipt, CheckCircle2, ArrowLeftRight, Grid3x3
 } from "lucide-react";
 import vinfastLogo from "@/assets/patliputra-vinfast-logo.png";
 import patliputraOutlineLogo from "@/assets/black outline logo patliputra.png";
@@ -150,6 +150,8 @@ const reportsNavItems = [
   { label: "Lead Reports", icon: BarChart3, path: "/admin/td/leads/reports", staff: true },
   { label: "TD Reports", icon: BarChart3, path: "/admin/td/reports", staff: false },
   { label: "Booking Report", icon: CalendarCheck, path: "/admin/reports/bookings", staff: false },
+  { label: "Detailed Report", icon: BarChart3, path: "/admin/reports/detailed", staff: false },
+  { label: "Team Wise Assigned Leads", icon: Grid3x3, path: "/admin/reports/team-assigned-leads", staff: false },
   { label: "Delivery Reports", icon: PackageCheck, path: "/admin/reports/deliveries", staff: false },
   { label: "My Dashboard (performance)", icon: LayoutDashboard, path: "/admin/my-dashboard", staff: true },
 ];
