@@ -79,7 +79,7 @@ function combineDateTime(dateVal, timeStr) {
 }
 
 function leadHref(id) {
-  return id ? `/admin/crm/leads?leadId=${id}` : '/admin/crm/leads';
+  return id ? `/admin/crm/leads?lead=${id}` : '/admin/crm/leads';
 }
 
 function colorForEvent(type, status) {
@@ -225,7 +225,7 @@ function formatTdEvent(b) {
     leadId: b.leadId ? String(b.leadId) : null,
     remarks: b.remarks || '',
     assignmentStatus: b.assignmentStatus,
-    href: `/admin/td/bookings?highlight=${b._id}`,
+    href: b.leadId ? leadHref(b.leadId) : `/admin/td/bookings?highlight=${b._id}`,
     color: colorForEvent('test_drive', b.bookingStatus),
   };
 }
