@@ -5,6 +5,15 @@ const validate = require('../../middleware/validate');
 const { crmCreateLeadValidator } = require('../../validators/adminValidators');
 const { requireModuleAction, requireModuleActionOrRoles } = require('../../utils/modulePermissions');
 
+function withModuleView(view) {
+  return (req, _res, next) => {
+    req.query.moduleView = req.query.moduleView || view;
+    next();
+  };
+}
+
+router.use(withModuleView('td'));
+
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/executives', ctrl.listCrmExecutives);
 router.get('/reports/admin', reportCtrl.requireLeadAdminReportAccess, reportCtrl.getAdminReport);

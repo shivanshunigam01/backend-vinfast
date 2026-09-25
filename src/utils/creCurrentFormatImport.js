@@ -50,6 +50,8 @@ const CURRENT_FORMAT_HEADERS = [
   'RETAIL DONE\nYES / NO',
   'RETAIL DATE',
   'DELIVERY DATE',
+  'Month Year',
+  'Month Year TD',
 ];
 
 function normalizeHeaderKey(raw) {
@@ -287,7 +289,8 @@ function parseCurrentFormatRow(row) {
   const retailDone = parseYesNo(pickFromMap(map, ['retail done yes no', 'retail done']));
   const retailDate = parseSheetDate(pickFromMap(map, ['retail date']));
   const deliveryDate = parseSheetDate(pickFromMap(map, ['delivery date']));
-  const monthYear = parseSheetDate(pickFromMap(map, ['month year', 'month year td']));
+  const monthYear = parseSheetDate(pickFromMap(map, ['month year']));
+  const monthYearTd = parseSheetDate(pickFromMap(map, ['month year td', 'month year test drive']));
 
   const remarkParts = [];
   if (initialRemark) remarkParts.push(`Initial: ${initialRemark}`);
@@ -378,6 +381,7 @@ function parseCurrentFormatRow(row) {
     deliveryDate: deliveryDate || undefined,
     initialRemark: initialRemark || undefined,
     monthYear: monthYear || undefined,
+    monthYearTd: monthYearTd || undefined,
   });
 
   return {
@@ -488,6 +492,8 @@ function serializeLeadToCurrentFormatRow(lead, slNo, followUps = []) {
     'RETAIL DONE\nYES / NO': formatYesNoCell(cs.retailDone),
     'RETAIL DATE': formatDateCell(cs.retailDate),
     'DELIVERY DATE': formatDateCell(cs.deliveryDate),
+    'Month Year': formatDateCell(cs.monthYear),
+    'Month Year TD': formatDateCell(cs.monthYearTd),
   };
   for (const [key, val] of Object.entries(fuCols)) {
     const header = CURRENT_FORMAT_HEADERS.find((h) => normalizeHeaderKey(h) === key);

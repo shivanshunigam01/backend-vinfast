@@ -123,7 +123,13 @@ async function buildDetailedReport({ admin } = {}) {
     countLeads(leadScope, digitalQuery()),
     countLeads(leadScope, digitalQuery(), mtdRange),
     countLeads(leadScope, digitalQuery(), todayRange),
-    Lead.countDocuments({ ...leadScope, status: { $in: ['Booking', 'Booked'] } }),
+    Lead.countDocuments({
+      ...leadScope,
+      $or: [
+        { 'creSheet.bookingDone': true },
+        { status: { $in: ['Booking', 'Booked', 'Delivered'] } },
+      ],
+    }),
     scopedLeadIds.length
       ? LeadFollowUp.countDocuments({
           leadId: { $in: scopedLeadIds },
@@ -133,14 +139,19 @@ async function buildDetailedReport({ admin } = {}) {
           ],
         })
       : Promise.resolve(0),
-    TDBooking.countDocuments({ bookingStatus: { $ne: 'CANCELLED' } }),
-    TDBooking.countDocuments({
-      bookingStatus: { $ne: 'CANCELLED' },
-      slotDate: dateRange(mtdStart, todayEnd),
+    Lead.countDocuments({ ...leadScope, 'creSheet.tdDone': true }),
+    Lead.countDocuments({
+      ...leadScope,
+      'creSheet.tdDone': true,
+      $or: [
+        { 'creSheet.monthYearTd': dateRange(mtdStart, todayEnd) },
+        { 'creSheet.tdDate': dateRange(mtdStart, todayEnd) },
+      ],
     }),
-    TDBooking.countDocuments({
-      bookingStatus: 'COMPLETED',
-      slotDate: dateRange(todayStart, todayEnd),
+    Lead.countDocuments({
+      ...leadScope,
+      'creSheet.tdDone': true,
+      'creSheet.tdDate': dateRange(todayStart, todayEnd),
     }),
     Lead.aggregate([
       { $match: leadScope },
@@ -168,23 +179,62 @@ async function buildDetailedReport({ admin } = {}) {
       { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
       { $group: { _id: '$assignedTo', totalLeads: { $sum: 1 } } },
     ]),
-    TDBooking.aggregate([
-      { $match: { assignedExecutive: { $exists: true, $ne: null }, bookingStatus: { $ne: 'CANCELLED' } } },
+    Lead.aggregate([
+      {
+        $match: {
+          ...leadScope,
+          'creSheet.tdDone': true,
+          assignedTo: { $exists: true, $ne: null },
+        },
+      },
       {
         $group: {
-          _id: '$assignedExecutive',
+          _id: '$assignedTo',
           totalTd: { $sum: 1 },
           tdMtd: {
             $sum: {
-              $cond: [{ $and: [{ $gte: ['$slotDate', mtdStart] }, { $lte: ['$slotDate', todayEnd] }] }, 1, 0],
+              $cond: [
+                {
+                  $or: [
+                    {
+                      $and: [
+                        { $gte: ['$creSheet.monthYearTd', mtdStart] },
+                        { $lte: ['$creSheet.monthYearTd', todayEnd] },
+                      ],
+                    },
+                    {
+                      $and: [
+                        { $gte: ['$creSheet.tdDate', mtdStart] },
+                        { $lte: ['$creSheet.tdDate', todayEnd] },
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
       },
     ]),
-    TDBooking.aggregate([
-      { $match: { slotDate: dateRange(yearStart, todayEnd), bookingStatus: { $ne: 'CANCELLED' } } },
-      { $group: { _id: { $month: '$slotDate' }, count: { $sum: 1 } } },
+    Lead.aggregate([
+      {
+        $match: {
+          ...leadScope,
+          'creSheet.tdDone': true,
+          $or: [
+            { 'creSheet.monthYearTd': dateRange(yearStart, todayEnd) },
+            { 'creSheet.tdDate': dateRange(yearStart, todayEnd) },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          tdMonthDate: { $ifNull: ['$creSheet.monthYearTd', '$creSheet.tdDate'] },
+        },
+      },
+      { $group: { _id: { $month: '$tdMonthDate' }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]),
   ]);

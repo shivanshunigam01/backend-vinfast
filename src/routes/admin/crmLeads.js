@@ -8,6 +8,14 @@ const { requireModuleAction, requireModuleActionOrRoles, canPerformAction } = re
 const { isCreOrCrmDeskUser } = require('../../constants/creAccess');
 const ApiError = require('../../utils/apiError');
 const uploadCrmLeadImport = require('../../middleware/uploadCrmLeadImport');
+const importBatchCtrl = require('../../controllers/importBatchController');
+
+function withModuleView(view) {
+  return (req, _res, next) => {
+    req.query.moduleView = req.query.moduleView || view;
+    next();
+  };
+}
 
 function requireCrmLeadExport(req, _res, next) {
   const user = req.admin;
@@ -15,6 +23,8 @@ function requireCrmLeadExport(req, _res, next) {
   if (isCreOrCrmDeskUser(user) || canPerformAction(user, 'crm_leads', 'export')) return next();
   return next(new ApiError(403, 'You do not have permission to download this report'));
 }
+
+router.use(withModuleView('crm'));
 
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
@@ -43,6 +53,37 @@ router.post(
     return next();
   },
   ctrl.importCrmLeads,
+);
+router.post(
+  '/import/preview',
+  requireModuleAction('crm_import_review', 'create'),
+  uploadCrmLeadImport,
+  importBatchCtrl.previewImportBatch,
+);
+router.get(
+  '/import/batches',
+  requireModuleAction('crm_import_review', 'view'),
+  importBatchCtrl.listImportBatches,
+);
+router.get(
+  '/import/batches/:id',
+  requireModuleAction('crm_import_review', 'view'),
+  importBatchCtrl.getImportBatch,
+);
+router.patch(
+  '/import/batches/:batchId/rows/:rowNumber',
+  requireModuleAction('crm_import_review', 'update'),
+  importBatchCtrl.updateImportBatchRow,
+);
+router.post(
+  '/import/batches/:id/commit',
+  requireModuleAction('crm_import_review', 'create'),
+  importBatchCtrl.commitImportBatch,
+);
+router.post(
+  '/import/batches/:id/cancel',
+  requireModuleAction('crm_import_review', 'update'),
+  importBatchCtrl.cancelImportBatch,
 );
 router.post(
   '/bulk-delete',

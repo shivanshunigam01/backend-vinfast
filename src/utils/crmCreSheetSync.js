@@ -145,7 +145,8 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
   const cs = row.creSheet || {};
   const tdDate = parseDateInput(cs.tdDate);
   const tdDone = cs.tdDone === true;
-  if (!tdDate && !tdDone) return null;
+  // Only create TD bookings when test drive is marked done (Yes).
+  if (!tdDone) return null;
 
   const slotDate = tdDate || new Date();
   const customer = await upsertTDCustomer({
@@ -179,7 +180,7 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
     customerEmail: row.email,
     customerCity: row.city,
     remarks: cs.afterTdRemark || cs.tdNotDoneWhy || undefined,
-    importMonthYear: cs.monthYear || undefined,
+    importMonthYear: cs.monthYearTd || cs.monthYear || undefined,
     approvalStatus: 'NOT_REQUIRED',
     assignmentStatus: assigneeId ? 'ACCEPTED' : 'UNASSIGNED',
   };
@@ -197,13 +198,17 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
       booking.assignedExecutive = undefined;
       booking.assignedExecutiveEmail = undefined;
     }
-    if (cs.monthYear) booking.set('importMonthYear', cs.monthYear);
+    if (cs.monthYearTd || cs.monthYear) {
+      booking.set('importMonthYear', cs.monthYearTd || cs.monthYear);
+    }
     await booking.save();
   } else {
     booking = await TDBooking.create({
       bookingId: nextBookingId(),
       ...payload,
-      ...(cs.monthYear ? { importMonthYear: cs.monthYear } : {}),
+      ...(cs.monthYearTd || cs.monthYear
+        ? { importMonthYear: cs.monthYearTd || cs.monthYear }
+        : {}),
     });
   }
 

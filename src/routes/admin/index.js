@@ -132,6 +132,7 @@ router.use('/td/fleet', fleetHealthRoutes);
 
 // Standalone Lead CRM module (/api/v1/admin/crm/*)
 router.use('/crm/leads', crmLeadsRoutes);
+router.use('/crm/booking-leads', require('./bookingLeads'));
 router.use('/crm/customers', crmCustomersRoutes);
 router.use('/crm/lead-stages', leadStagesRoutes);
 router.use('/crm/buyer-types', require('./buyerTypes'));

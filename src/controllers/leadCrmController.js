@@ -21,6 +21,7 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { dateKeyRange, dateKeyDayBounds, parseSlotDate } = require('../utils/reportPeriod');
+const { applyLeadModuleViewFilter } = require('../utils/leadModuleFilters');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
 const {
   getActiveStageLabels,
@@ -596,6 +597,10 @@ async function buildLeadQuery(admin, queryParams = {}) {
     applyCreCallingQueueFilter(query);
   }
 
+  if (queryParams.moduleView) {
+    applyLeadModuleViewFilter(query, queryParams.moduleView);
+  }
+
   return query;
 }
 
@@ -1020,6 +1025,7 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
       'retailDate',
       'deliveryDate',
       'monthYear',
+      'monthYearTd',
     ];
     const boolFields = ['tdDone', 'bookingDone', 'mailSent', 'retailDone'];
     const stringFields = [
@@ -1080,7 +1086,7 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
   touchLeadActivity(lead);
   await lead.save();
 
-  if (lead.creSheet?.tdDate || lead.creSheet?.tdDone) {
+  if (lead.creSheet?.tdDone === true) {
     await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
   }
 
@@ -2587,7 +2593,7 @@ async function importCurrentFormatRows(
       }
 
       await syncImportFollowUps(lead, parsed.followUps, admin, results);
-      if (parsed.creSheet?.tdDate || parsed.creSheet?.tdDone) {
+      if (parsed.creSheet?.tdDone === true) {
         await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
       }
       touchLeadActivity(lead);
@@ -3080,3 +3086,4 @@ exports.bulkDeleteCrmLeads = asyncHandler(async (req, res) => {
 module.exports.buildLeadQuery = buildLeadQuery;
 module.exports.formatCrmLead = formatCrmLead;
 module.exports.importCurrentFormatRows = importCurrentFormatRows;
+module.exports.resolveSalesConsultant = resolveSalesConsultant;
