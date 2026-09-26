@@ -13,6 +13,7 @@ const {
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
+const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
 const {
   isTeamScopedUser,
   assignedToStaffFilterAsync,
@@ -111,8 +112,7 @@ async function buildDetailedReport({ admin } = {}) {
     sourceAgg,
     leadTypeAgg,
     staffRows,
-    leadByStaffAgg,
-    tdByStaffAgg,
+    sheetAttributionLeads,
     monthlyTdAgg,
   ] = await Promise.all([
     countLeads(leadScope),
@@ -169,39 +169,9 @@ async function buildDetailedReport({ admin } = {}) {
       .select('name designation reportsTo email')
       .sort({ designation: 1, name: 1 })
       .lean(),
-    Lead.aggregate([
-      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
-      { $group: { _id: '$assignedTo', totalLeads: { $sum: 1 } } },
-    ]),
-    Lead.aggregate([
-      {
-        $match: {
-          ...leadScope,
-          ...sheetTdDoneQuery(),
-          assignedTo: { $exists: true, $ne: null },
-        },
-      },
-      {
-        $group: {
-          _id: '$assignedTo',
-          totalTd: { $sum: 1 },
-          tdMtd: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gte: ['$creSheet.tdDate', mtdStart] },
-                    { $lte: ['$creSheet.tdDate', todayEnd] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-        },
-      },
-    ]),
+    Lead.find(leadScope)
+      .select('source creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone')
+      .lean(),
     Lead.aggregate([
       {
         $match: {
@@ -215,9 +185,16 @@ async function buildDetailedReport({ admin } = {}) {
     ]),
   ]);
 
-  const leadByStaff = new Map(leadByStaffAgg.map((r) => [String(r._id), r.totalLeads]));
+  const {
+    leadByStaff,
+    tdByStaff: tdByStaffRaw,
+    unassigned: unassignedSheet,
+  } = attributeLeadsBySheetConsultant(sheetAttributionLeads, staffRows, {
+    mtdStart,
+    mtdMonthEnd,
+  });
   const tdByStaff = new Map(
-    tdByStaffAgg.map((r) => [String(r._id), { totalTd: r.totalTd, tdMtd: r.tdMtd }]),
+    [...tdByStaffRaw.entries()].map(([id, v]) => [id, { totalTd: v.totalTd, tdMtd: v.tdMtd }]),
   );
 
   /** Direct reports by manager id (active staff only). */
@@ -339,6 +316,9 @@ async function buildDetailedReport({ admin } = {}) {
     leadTypesTotal: leadTypes.reduce((s, r) => s + r.count, 0),
     monthlyTestDrives,
     monthlyTestDrivesTotal: monthlyTdTotal,
+    unassignedSheet,
+    attributionNote:
+      'Staff lead and TD counts follow Excel SALES CONSULTANT on each lead (not CRM assignedTo). Unassigned = blank, Un-assigned, or consultant not matched to User Master.',
   };
 }
 
@@ -425,7 +405,7 @@ async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
   const mtdStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
   const leadScope = await buildLeadScope(admin);
 
-  const [sourceAgg, staffRows, leadByStaffAgg, matrixAgg] = await Promise.all([
+  const [sourceAgg, staffRows, sheetAttributionLeads] = await Promise.all([
     Lead.aggregate([
       { $match: leadScope },
       {
@@ -440,22 +420,14 @@ async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
       .select('name designation reportsTo email')
       .sort({ designation: 1, name: 1 })
       .lean(),
-    Lead.aggregate([
-      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
-      { $group: { _id: '$assignedTo', totalLeads: { $sum: 1 } } },
-    ]),
-    Lead.aggregate([
-      { $match: { ...leadScope, assignedTo: { $exists: true, $ne: null } } },
-      {
-        $group: {
-          _id: { source: { $ifNull: ['$source', 'Unknown'] }, staffId: '$assignedTo' },
-          count: { $sum: 1 },
-        },
-      },
-    ]),
+    Lead.find(leadScope).select('source creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone').lean(),
   ]);
 
-  const leadByStaff = new Map(leadByStaffAgg.map((r) => [String(r._id), r.totalLeads]));
+  const mtdMonthEnd = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const { leadByStaff, matrixAgg } = attributeLeadsBySheetConsultant(sheetAttributionLeads, staffRows, {
+    mtdStart,
+    mtdMonthEnd,
+  });
   const leadSources = sourceAgg.map((r) => ({
     source: r._id || 'Unknown',
     count: r.count,
