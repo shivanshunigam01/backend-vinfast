@@ -1,4 +1,5 @@
 const Lead = require('../models/Lead');
+const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('./leadUnassigned');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const LeadFavourite = require('../models/LeadFavourite');
 const { normalizeStageLabel } = require('../constants/leadStages');
@@ -25,7 +26,7 @@ async function favouriteLeadIdsForUser(admin, extraStaffIds = null) {
   return rows.map((r) => r.leadId);
 }
 
-async function buildCrmLeadStats({ admin, leadQuery }) {
+async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
   const stages = await getActiveStageLabels();
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -49,14 +50,20 @@ async function buildCrmLeadStats({ admin, leadQuery }) {
 
   const favIds = await favouriteLeadIdsForUser(admin);
 
+  const unassignedScope = unassignedQuery || leadQuery;
+
   const [
     total,
+    unassignedCount,
+    assignedCount,
     favouriteCount,
     followUpDueToday,
     followUpOverdue,
     newEnquiries,
   ] = await Promise.all([
     Lead.countDocuments(leadQuery),
+    Lead.countDocuments({ ...unassignedScope, ...leadUnassignedMongoFilter() }),
+    Lead.countDocuments({ ...unassignedScope, ...leadAssignedMongoFilter() }),
     favIds.length
       ? Lead.countDocuments({ ...leadQuery, _id: { $in: favIds } })
       : 0,
@@ -86,6 +93,8 @@ async function buildCrmLeadStats({ admin, leadQuery }) {
 
   return {
     total,
+    unassignedCount,
+    assignedCount,
     pipeline,
     stages,
     favouriteCount,

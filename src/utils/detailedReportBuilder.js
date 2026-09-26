@@ -12,6 +12,7 @@ const {
 } = require('./sheetCalculationLogic');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { appendLeadDateFilter } = require('./leadDateFilter');
+const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
 const {
   isTeamScopedUser,
   assignedToStaffFilterAsync,
@@ -152,18 +153,7 @@ async function buildDetailedReport({ admin } = {}) {
           count: { $sum: 1 },
           assignedCount: {
             $sum: {
-              $cond: [
-                {
-                  $not: {
-                    $regexMatch: {
-                      input: { $ifNull: ['$creSheet.salesConsultantName', ''] },
-                      regex: /^un-assigned$/i,
-                    },
-                  },
-                },
-                1,
-                0,
-              ],
+              $cond: [sheetConsultantAssignedExpr(), 1, 0],
             },
           },
         },

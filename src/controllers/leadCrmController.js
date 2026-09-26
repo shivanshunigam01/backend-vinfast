@@ -22,6 +22,7 @@ const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { dateKeyRange, dateKeyDayBounds, parseSlotDate } = require('../utils/reportPeriod');
 const { applyLeadModuleViewFilter } = require('../utils/leadModuleFilters');
+const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('../utils/leadUnassigned');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
 const {
   getActiveStageLabels,
@@ -467,11 +468,19 @@ async function buildLeadQuery(admin, queryParams = {}) {
   // Team-scoped users may further narrow with ?assignedTo= (self / SE in subtree / unassigned).
   if (isTeamScopedUser(admin)) {
     query.$and = query.$and || [];
-    query.$and.push(await assignedToStaffFilterAsync(admin));
+    if (queryParams.assignedTo === 'unassigned') {
+      // Dealership pool — not limited to reporting tree (no owner yet).
+      query.$and.push(leadUnassignedMongoFilter());
+    } else if (queryParams.assignedTo === 'assigned') {
+      query.$and.push(leadAssignedMongoFilter());
+      query.$and.push(await assignedToStaffFilterAsync(admin));
+    } else {
+      query.$and.push(await assignedToStaffFilterAsync(admin));
+    }
 
     if (queryParams.assignedTo) {
-      if (queryParams.assignedTo === 'unassigned') {
-        query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
+      if (queryParams.assignedTo === 'unassigned' || queryParams.assignedTo === 'assigned') {
+        /* filter applied above */
       } else if (queryParams.assignedTo === 'me') {
         query.$and.push(assignedToStaffFilter(admin._id, admin.email));
       } else {
@@ -487,7 +496,10 @@ async function buildLeadQuery(admin, queryParams = {}) {
   } else if (queryParams.assignedTo) {
     if (queryParams.assignedTo === 'unassigned') {
       query.$and = query.$and || [];
-      query.$and.push({ $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] });
+      query.$and.push(leadUnassignedMongoFilter());
+    } else if (queryParams.assignedTo === 'assigned') {
+      query.$and = query.$and || [];
+      query.$and.push(leadAssignedMongoFilter());
     } else {
       const assignee = await TDStaff.findById(queryParams.assignedTo).select('email').lean();
       query.$and = query.$and || [];
@@ -1066,7 +1078,7 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
   if (salesConsultant !== undefined) {
     const consultantRaw = String(salesConsultant || '').trim();
     lead.creSheet = lead.creSheet || {};
-    lead.creSheet.salesConsultantName = consultantRaw || undefined;
+    lead.creSheet.salesConsultantName = consultantRaw || 'Un-assigned';
     const assignee = consultantRaw
       ? await resolveSalesConsultant(null, consultantRaw, admin)
       : null;
@@ -1379,7 +1391,14 @@ exports.getCrmSources = asyncHandler(async (req, res) => {
 exports.getCrmLeadStats = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const query = await buildLeadQuery(req.admin, req.query);
-  const data = await buildCrmLeadStats({ admin: req.admin, leadQuery: query });
+  const baseParams = { ...req.query };
+  delete baseParams.assignedTo;
+  const unassignedQuery = await buildLeadQuery(req.admin, baseParams);
+  const data = await buildCrmLeadStats({
+    admin: req.admin,
+    leadQuery: query,
+    unassignedQuery,
+  });
   return successResponse(res, data);
 });
 
@@ -2513,7 +2532,7 @@ async function importCurrentFormatRows(
       }
       parsed.creSheet = {
         ...(parsed.creSheet || {}),
-        salesConsultantName: consultantRaw || undefined,
+        salesConsultantName: consultantRaw || 'Un-assigned',
       };
 
       let lead = resolved.lead;
