@@ -13,7 +13,6 @@ const {
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const {
-  collectSubtreeStaffIds,
   isTeamScopedUser,
   assignedToStaffFilterAsync,
   isUnrestrictedViewer,
@@ -231,12 +230,39 @@ async function buildDetailedReport({ admin } = {}) {
     tdByStaffAgg.map((r) => [String(r._id), { totalTd: r.totalTd, tdMtd: r.tdMtd }]),
   );
 
-  async function teamTdTotals(staffId) {
-    const ids = await collectSubtreeStaffIds(staffId);
+  /** Direct reports by manager id (active staff only). */
+  const directReportsByManager = new Map();
+  for (const s of staffRows) {
+    if (!s.reportsTo) continue;
+    const parent = String(s.reportsTo);
+    if (!directReportsByManager.has(parent)) directReportsByManager.set(parent, []);
+    directReportsByManager.get(parent).push(s);
+  }
+
+  /**
+   * Excel "TD by team": SM = own TD + direct SE TD; SH = own TD only (not whole branch).
+   */
+  function teamStaffIdsForTdRollup(staff) {
+    const root = String(staff._id);
+    if (staff.designation === 'sales_head') {
+      return [root];
+    }
+    if (MANAGER_DESIGNATIONS.has(staff.designation)) {
+      const direct = directReportsByManager.get(root) || [];
+      const execIds = direct
+        .filter((r) => EXECUTIVE_DESIGNATIONS.has(r.designation))
+        .map((r) => String(r._id));
+      return [root, ...execIds];
+    }
+    return [root];
+  }
+
+  function teamTdTotalsForStaff(staff) {
+    const ids = teamStaffIdsForTdRollup(staff);
     let teamTotal = 0;
     let teamMtd = 0;
     for (const id of ids) {
-      const td = tdByStaff.get(String(id));
+      const td = tdByStaff.get(id);
       if (td) {
         teamTotal += td.totalTd;
         teamMtd += td.tdMtd;
@@ -264,7 +290,7 @@ async function buildDetailedReport({ admin } = {}) {
     };
 
     if (MANAGER_DESIGNATIONS.has(s.designation)) {
-      const team = await teamTdTotals(s._id);
+      const team = teamTdTotalsForStaff(s);
       row.teamTestDrive = team.teamTotal;
       row.teamTestDriveMtd = team.teamMtd;
       managers.push(row);
