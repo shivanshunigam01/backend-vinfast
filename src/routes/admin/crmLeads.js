@@ -24,7 +24,8 @@ function requireCrmLeadExport(req, _res, next) {
   return next(new ApiError(403, 'You do not have permission to download this report'));
 }
 
-router.use(withModuleView('crm'));
+/** Default all leads; use query moduleView=crm|td to match legacy pipeline / TD-only lists. */
+router.use(withModuleView('all'));
 
 router.get('/meta/stages', ctrl.getCrmStages);
 router.get('/meta/sources', ctrl.getCrmSources);
