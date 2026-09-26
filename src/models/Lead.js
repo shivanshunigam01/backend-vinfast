@@ -158,6 +158,8 @@ const leadSchema = new mongoose.Schema(
       monthYear: { type: Date },
       /** Month Year TD column — test-drive month grouping for reports. */
       monthYearTd: { type: Date },
+      /** Master sheet Sl. No. — one row → one lead when importing All Lead Data. */
+      sheetSlNo: { type: Number, index: true, sparse: true },
     },
   },
   { timestamps: true },

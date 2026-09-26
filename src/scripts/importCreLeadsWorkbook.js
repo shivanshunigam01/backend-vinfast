@@ -101,7 +101,10 @@ async function findLeadForParsed(parsed) {
   await connectDB();
   const admin = await getAdmin();
   const wb = XLSX.readFile(filePath, { cellDates: true });
-  const sheetName = wb.SheetNames[0];
+  const sheetName =
+    process.argv[3] ||
+    wb.SheetNames.find((n) => /^mastersheet$/i.test(String(n).trim())) ||
+    wb.SheetNames[0];
   let rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
   if (!rows.length) throw new Error('Sheet is empty');
   if (!isCurrentFormatSheet(rows)) throw new Error('Sheet is not CRE Current Format');
@@ -115,7 +118,11 @@ async function findLeadForParsed(parsed) {
 
   console.log(`\nImporting ${rows.length} row(s) from ${path.basename(filePath)} [${sheetName}] as ${admin.name}…`);
 
-  const results = await importCurrentFormatRows(admin, rows, { dryRun: false, updatesOnly: false });
+  const results = await importCurrentFormatRows(admin, rows, {
+    dryRun: false,
+    updatesOnly: false,
+    oneRowOneLead: true,
+  });
 
   let tdSynced = 0;
   for (const row of rows) {

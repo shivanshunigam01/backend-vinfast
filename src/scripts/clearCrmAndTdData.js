@@ -34,6 +34,8 @@ const VehicleStock = require('../models/VehicleStock');
 const TDBookingDeleteAudit = require('../models/TDBookingDeleteAudit');
 const WhatsappOtpChallenge = require('../models/WhatsappOtpChallenge');
 const Counter = require('../models/Counter');
+const ImportBatch = require('../models/ImportBatch');
+const ImportBatchRow = require('../models/ImportBatchRow');
 const TDVehicle = require('../models/TDVehicle');
 const { cascadeDeleteBookingRelated } = require('../utils/tdBookingCascadeDelete');
 
@@ -113,6 +115,8 @@ async function deleteAll(Model, label) {
     await deleteAll(VehicleOrder, 'Vehicle orders (booking reports)');
     await deleteAll(VehicleAllocation, 'Vehicle allocations (lead-linked)');
     await deleteAll(CustomerComplaint, 'Customer complaints');
+    await deleteAll(ImportBatchRow, 'Import batch rows');
+    await deleteAll(ImportBatch, 'Import batches');
     await deleteAll(Lead, 'CRM leads');
     await deleteAll(Enquiry, 'Website enquiries');
     await deleteAll(TDCustomer, 'TD customers');

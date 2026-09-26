@@ -256,6 +256,12 @@ function parseCurrentFormatRow(row) {
     cellStr(pickFromMap(map, ['follow up', 'follow-up', 'followup', 'lead type'])) || undefined;
   const leadType = followUpVal;
   const salesConsultant = cellStr(pickFromMap(map, ['sales consultant'])) || undefined;
+  const sheetSlNoRaw = pickFromMap(map, ['sl no', 'sl no.']);
+  const sheetSlNoNum = Number(sheetSlNoRaw);
+  const sheetSlNo =
+    sheetSlNoRaw != null && String(sheetSlNoRaw).trim() !== '' && Number.isFinite(sheetSlNoNum)
+      ? sheetSlNoNum
+      : undefined;
 
   const enquiryDate = parseSheetDate(pickFromMap(map, ['enquiry date']));
   const callDate = parseSheetDate(pickFromMap(map, ['call date']));
@@ -382,6 +388,7 @@ function parseCurrentFormatRow(row) {
     initialRemark: initialRemark || undefined,
     monthYear: monthYear || undefined,
     monthYearTd: monthYearTd || undefined,
+    sheetSlNo: sheetSlNo || undefined,
   });
 
   return {

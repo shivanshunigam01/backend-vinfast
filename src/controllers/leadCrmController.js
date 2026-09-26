@@ -2085,6 +2085,13 @@ function importModelsMatch(stored, incomingNorm) {
   return baseProductModel(storedRaw) === baseProductModel(incoming);
 }
 
+function importBatchMapKey({ oneRowOneLead, sheetSlNo, mobile, modelForStorage }) {
+  if (oneRowOneLead && sheetSlNo != null && Number.isFinite(Number(sheetSlNo))) {
+    return `sl:${Number(sheetSlNo)}`;
+  }
+  return importOpportunityKey(mobile, modelForStorage);
+}
+
 function importOpportunityKey(mobile, modelNorm) {
   return `${mobile}|${modelNorm}`;
 }
@@ -2179,7 +2186,7 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
       createdBy: admin._id,
       note,
       scheduledAt: scheduled || undefined,
-      completedAt: isCompleted ? new Date() : undefined,
+      completedAt: isCompleted ? scheduled || new Date() : undefined,
       status: isCompleted ? 'completed' : 'pending',
     });
     results.followUpsCreated += 1;
@@ -2311,10 +2318,33 @@ function applyImportSheetAssignment(lead, { assignedTo, assignedToEmail, consult
   lead.assignedToEmail = undefined;
 }
 
+async function resolveImportForRow({
+  mobile,
+  modelForStorage,
+  batchOpportunityByKey,
+  batchMobiles,
+  sheetSlNo,
+  oneRowOneLead,
+}) {
+  if (oneRowOneLead && sheetSlNo != null && Number.isFinite(Number(sheetSlNo))) {
+    const sl = Number(sheetSlNo);
+    const existing = await Lead.findOne({
+      'creSheet.sheetSlNo': sl,
+      isDuplicate: { $ne: true },
+    });
+    if (existing) {
+      return { lead: existing, mode: 'update', linkedOpportunity: false };
+    }
+    const linkedOpportunity = await mobileHasExistingLeads(mobile, batchMobiles);
+    return { lead: null, mode: linkedOpportunity ? 'create_opportunity' : 'create', linkedOpportunity };
+  }
+  return resolveImportOpportunity(mobile, modelForStorage, batchOpportunityByKey, batchMobiles);
+}
+
 async function importCurrentFormatRows(
   admin,
   leadRows,
-  { dryRun = false, modelCorrections = {}, updatesOnly = false } = {},
+  { dryRun = false, modelCorrections = {}, updatesOnly = false, oneRowOneLead = false } = {},
 ) {
   const results = {
     created: 0,
@@ -2397,12 +2427,14 @@ async function importCurrentFormatRows(
         throw modelErr;
       }
 
-      const resolved = await resolveImportOpportunity(
+      const resolved = await resolveImportForRow({
         mobile,
         modelForStorage,
         batchOpportunityByKey,
         batchMobiles,
-      );
+        sheetSlNo: parsed.creSheet?.sheetSlNo,
+        oneRowOneLead,
+      });
 
       if (updatesOnly && resolved.mode !== 'update') {
         results.skipped += 1;
@@ -2447,7 +2479,15 @@ async function importCurrentFormatRows(
               ? `Will create new linked opportunity for mobile ${mobile} (same customer, new model ${modelForStorage})`
               : 'Will create new lead',
           });
-          batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), `dry:${rowNum}`);
+          batchOpportunityByKey.set(
+            importBatchMapKey({
+              oneRowOneLead,
+              sheetSlNo: parsed.creSheet?.sheetSlNo,
+              mobile,
+              modelForStorage,
+            }),
+            `dry:${rowNum}`,
+          );
         }
         batchMobiles.add(mobile);
         continue;
@@ -2479,6 +2519,12 @@ async function importCurrentFormatRows(
       let lead = resolved.lead;
       const incomingStatus = parsed.derivedStatus || 'Enquiry';
       const isNew = resolved.mode !== 'update';
+      const batchKey = importBatchMapKey({
+        oneRowOneLead,
+        sheetSlNo: parsed.creSheet?.sheetSlNo,
+        mobile,
+        modelForStorage,
+      });
 
       if (isNew) {
         const parent = await ensureParentCustomer({
@@ -2511,7 +2557,7 @@ async function importCurrentFormatRows(
           lastActivityAt: new Date(),
           ...(enquiryAt ? { createdAt: enquiryAt } : {}),
         });
-        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchOpportunityByKey.set(batchKey, lead._id);
         batchMobiles.add(mobile);
         await LeadStageHistory.create({
           leadId: lead._id,
@@ -2539,7 +2585,7 @@ async function importCurrentFormatRows(
             : 'New lead created',
         });
       } else {
-        batchOpportunityByKey.set(importOpportunityKey(mobile, modelForStorage), lead._id);
+        batchOpportunityByKey.set(batchKey, lead._id);
         batchMobiles.add(mobile);
         const prevStage = lead.status;
         const nextStage = await pickForwardStage(prevStage, incomingStatus);

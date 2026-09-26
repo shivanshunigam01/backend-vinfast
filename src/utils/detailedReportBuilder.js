@@ -2,7 +2,14 @@ const Lead = require('../models/Lead');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const TDBooking = require('../models/TDBooking');
 const TDStaff = require('../models/TDStaff');
-const { WALK_IN_SOURCES, isWalkInSource } = require('./crmConversion');
+const { isWalkInSource } = require('./crmConversion');
+const {
+  sheetWalkInQuery,
+  sheetDigitalQuery,
+  sheetTdTillDateQuery,
+  sheetTdDoneQuery,
+  sheetBookingCountQuery,
+} = require('./sheetCalculationLogic');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const {
@@ -52,14 +59,6 @@ function dateRange(from, to) {
   return { $gte: from, $lte: to };
 }
 
-function walkInQuery() {
-  return { source: { $in: [...WALK_IN_SOURCES] } };
-}
-
-function digitalQuery() {
-  return { source: { $nin: [...WALK_IN_SOURCES] } };
-}
-
 async function buildLeadScope(admin) {
   const scope = { isDuplicate: { $ne: true } };
   if (admin && isTeamScopedUser(admin) && !isUnrestrictedViewer(admin)) {
@@ -85,12 +84,14 @@ async function buildDetailedReport({ admin } = {}) {
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const mtdStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  const mtdMonthEnd = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   const yearStart = startOfDay(new Date(now.getFullYear(), 0, 1));
 
   const leadScope = await buildLeadScope(admin);
   const scopedLeadIds = await Lead.find(leadScope).distinct('_id');
   const todayRange = { from: todayStart, to: todayEnd };
   const mtdRange = { from: mtdStart, to: todayEnd };
+  const walkInMtdRange = { from: mtdStart, to: mtdMonthEnd };
 
   const [
     totalLeadsAll,
@@ -117,40 +118,31 @@ async function buildDetailedReport({ admin } = {}) {
     countLeads(leadScope),
     countLeads(leadScope, {}, mtdRange),
     countLeads(leadScope, {}, todayRange),
-    countLeads(leadScope, walkInQuery()),
-    countLeads(leadScope, walkInQuery(), mtdRange),
-    countLeads(leadScope, walkInQuery(), todayRange),
-    countLeads(leadScope, digitalQuery()),
-    countLeads(leadScope, digitalQuery(), mtdRange),
-    countLeads(leadScope, digitalQuery(), todayRange),
-    Lead.countDocuments({
-      ...leadScope,
-      $or: [
-        { 'creSheet.bookingDone': true },
-        { status: { $in: ['Booking', 'Booked', 'Delivered'] } },
-      ],
-    }),
+    countLeads(leadScope, sheetWalkInQuery()),
+    countLeads(leadScope, sheetWalkInQuery(), walkInMtdRange),
+    countLeads(leadScope, sheetWalkInQuery(), todayRange),
+    countLeads(leadScope, sheetDigitalQuery()),
+    countLeads(leadScope, sheetDigitalQuery(), mtdRange),
+    countLeads(leadScope, sheetDigitalQuery(), todayRange),
+    Lead.countDocuments({ ...leadScope, ...sheetBookingCountQuery() }),
     scopedLeadIds.length
       ? LeadFollowUp.countDocuments({
           leadId: { $in: scopedLeadIds },
           $or: [
             { completedAt: dateRange(todayStart, todayEnd) },
-            { createdAt: dateRange(todayStart, todayEnd) },
+            { scheduledAt: dateRange(todayStart, todayEnd), status: 'pending' },
           ],
         })
       : Promise.resolve(0),
-    Lead.countDocuments({ ...leadScope, 'creSheet.tdDone': true }),
+    Lead.countDocuments({ ...leadScope, ...sheetTdTillDateQuery() }),
     Lead.countDocuments({
       ...leadScope,
-      'creSheet.tdDone': true,
-      $or: [
-        { 'creSheet.monthYearTd': dateRange(mtdStart, todayEnd) },
-        { 'creSheet.tdDate': dateRange(mtdStart, todayEnd) },
-      ],
+      ...sheetTdDoneQuery(),
+      'creSheet.tdDate': dateRange(mtdStart, mtdMonthEnd),
     }),
     Lead.countDocuments({
       ...leadScope,
-      'creSheet.tdDone': true,
+      ...sheetTdDoneQuery(),
       'creSheet.tdDate': dateRange(todayStart, todayEnd),
     }),
     Lead.aggregate([
@@ -160,7 +152,20 @@ async function buildDetailedReport({ admin } = {}) {
           _id: { $ifNull: ['$source', 'Unknown'] },
           count: { $sum: 1 },
           assignedCount: {
-            $sum: { $cond: [{ $ifNull: ['$assignedTo', false] }, 1, 0] },
+            $sum: {
+              $cond: [
+                {
+                  $not: {
+                    $regexMatch: {
+                      input: { $ifNull: ['$creSheet.salesConsultantName', ''] },
+                      regex: /^un-assigned$/i,
+                    },
+                  },
+                },
+                1,
+                0,
+              ],
+            },
           },
         },
       },
@@ -183,7 +188,7 @@ async function buildDetailedReport({ admin } = {}) {
       {
         $match: {
           ...leadScope,
-          'creSheet.tdDone': true,
+          ...sheetTdDoneQuery(),
           assignedTo: { $exists: true, $ne: null },
         },
       },
@@ -195,19 +200,9 @@ async function buildDetailedReport({ admin } = {}) {
             $sum: {
               $cond: [
                 {
-                  $or: [
-                    {
-                      $and: [
-                        { $gte: ['$creSheet.monthYearTd', mtdStart] },
-                        { $lte: ['$creSheet.monthYearTd', todayEnd] },
-                      ],
-                    },
-                    {
-                      $and: [
-                        { $gte: ['$creSheet.tdDate', mtdStart] },
-                        { $lte: ['$creSheet.tdDate', todayEnd] },
-                      ],
-                    },
+                  $and: [
+                    { $gte: ['$creSheet.tdDate', mtdStart] },
+                    { $lte: ['$creSheet.tdDate', todayEnd] },
                   ],
                 },
                 1,
@@ -222,19 +217,11 @@ async function buildDetailedReport({ admin } = {}) {
       {
         $match: {
           ...leadScope,
-          'creSheet.tdDone': true,
-          $or: [
-            { 'creSheet.monthYearTd': dateRange(yearStart, todayEnd) },
-            { 'creSheet.tdDate': dateRange(yearStart, todayEnd) },
-          ],
+          ...sheetTdDoneQuery(),
+          'creSheet.tdDate': dateRange(yearStart, todayEnd),
         },
       },
-      {
-        $addFields: {
-          tdMonthDate: { $ifNull: ['$creSheet.monthYearTd', '$creSheet.tdDate'] },
-        },
-      },
-      { $group: { _id: { $month: '$tdMonthDate' }, count: { $sum: 1 } } },
+      { $group: { _id: { $month: '$creSheet.tdDate' }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]),
   ]);
