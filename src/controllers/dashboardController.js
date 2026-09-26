@@ -3,6 +3,8 @@ const TestDrive = require('../models/TestDrive');
 const Enquiry = require('../models/Enquiry');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
+const { appendLeadDateFilter } = require('../utils/leadDateFilter');
+const { toDateKey } = require('../utils/reportPeriod');
 
 function aggregateToRecord(rows) {
   const out = {};
@@ -16,6 +18,13 @@ function aggregateToRecord(rows) {
 exports.getStats = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
+  const todayKey = toDateKey(startOfDay);
+  const newLeadsTodayQuery = { isDuplicate: { $ne: true } };
+  appendLeadDateFilter(newLeadsTodayQuery, {
+    from: todayKey,
+    to: todayKey,
+    dateField: 'enquiry',
+  });
 
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
@@ -37,7 +46,7 @@ exports.getStats = asyncHandler(async (req, res) => {
     testDrivesByStatusAgg,
   ] = await Promise.all([
     Lead.countDocuments(),
-    Lead.countDocuments({ createdAt: { $gte: startOfDay } }),
+    Lead.countDocuments(newLeadsTodayQuery),
     TestDrive.countDocuments(),
     TestDrive.countDocuments({ createdAt: { $gte: weekStart } }),
     Enquiry.countDocuments(),

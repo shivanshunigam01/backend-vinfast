@@ -9,6 +9,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { isoDateOnly } = require('../utils/tdSlotUtils');
+const { buildLeadEnquiryDateClause, leadEffectiveDate } = require('../utils/leadDateFilter');
 const { normalizeSlotTime } = require('../utils/tdBookingSync');
 const {
   isTeamScopedUser,
@@ -167,8 +168,12 @@ function formatLeadEvent(lead) {
   };
 }
 
+function leadReceivedDate(lead) {
+  return leadEffectiveDate(lead) || (lead?.createdAt ? new Date(lead.createdAt) : null);
+}
+
 function formatNewLeadEvent(lead) {
-  const range = allDayRange(lead.createdAt);
+  const range = allDayRange(leadReceivedDate(lead));
   if (!range) return null;
   const assignee = lead.assignedTo;
   return {
@@ -671,17 +676,14 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
   }
 
   if (wantType(types, 'new_lead')) {
-    const query = applyLeadScope(
-      { createdAt: { $gte: start, $lte: end } },
-      leadScope,
-      assigneeLeadFilter,
-    );
+    const enquiryClause = buildLeadEnquiryDateClause(isoDateOnly(start), isoDateOnly(end));
+    const query = applyLeadScope(enquiryClause ? { ...enquiryClause } : {}, leadScope, assigneeLeadFilter);
     if (statusFilter) query.status = statusFilter;
     if (modelFilter) query.model = new RegExp(modelFilter, 'i');
 
     const leads = await Lead.find(query)
       .populate(LEAD_POPULATE)
-      .select('name mobile model status createdAt remarks assignedTo')
+      .select('name mobile model status createdAt creSheet.enquiryDate remarks assignedTo')
       .limit(QUERY_LIMIT)
       .lean();
 

@@ -20,7 +20,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
-const { dateKeyRange, dateKeyDayBounds, parseSlotDate } = require('../utils/reportPeriod');
+const { dateKeyRange, dateKeyDayBounds, parseSlotDate, parseDateKey } = require('../utils/reportPeriod');
 const { applyLeadModuleViewFilter } = require('../utils/leadModuleFilters');
 const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('../utils/leadUnassigned');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
@@ -990,6 +990,11 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
 function parseCreSheetDateField(v) {
   if (v == null || v === '') return undefined;
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const local = parseDateKey(s);
+    return Number.isNaN(local.getTime()) ? undefined : local;
+  }
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d;
 }

@@ -51,8 +51,15 @@ function appendLeadDateFilter(query, { from, to, dateField = 'enquiry' } = {}) {
   return query;
 }
 
+/** Mongo filter: leads received in range (enquiry date, else createdAt). */
+function leadEnquiryReceivedFilter(from, to) {
+  const clause = buildLeadEnquiryDateClause(from, to);
+  return clause || {};
+}
+
 module.exports = {
   leadEffectiveDate,
   buildLeadEnquiryDateClause,
   appendLeadDateFilter,
+  leadEnquiryReceivedFilter,
 };

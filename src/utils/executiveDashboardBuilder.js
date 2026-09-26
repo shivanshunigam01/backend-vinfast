@@ -33,6 +33,7 @@ function isDeliveredStatus(status) {
 }
 
 const { dateKeyRange } = require('./reportPeriod');
+const { leadEnquiryReceivedFilter } = require('./leadDateFilter');
 
 function slotDateFilter(from, to) {
   if (!from && !to) return {};
@@ -42,6 +43,11 @@ function slotDateFilter(from, to) {
 function createdAtFilter(from, to) {
   if (!from && !to) return {};
   return { createdAt: dateKeyRange(from, to) };
+}
+
+/** Lead received date (enquiry date, else createdAt) — matches CRM / Detailed Report. */
+function leadReceivedFilter(from, to) {
+  return leadEnquiryReceivedFilter(from, to);
 }
 
 async function buildExecutiveTdStats({ executiveId, from, to }) {
@@ -117,8 +123,14 @@ async function buildMonthlyBreakdown(executiveId, year) {
 
   const [leadMonths, tdMonths] = await Promise.all([
     Lead.aggregate([
-      { $match: { ...assignFilter, createdAt: { $gte: start, $lte: end } } },
-      { $group: { _id: { $month: '$createdAt' }, count: { $sum: 1 } } },
+      { $match: assignFilter },
+      {
+        $addFields: {
+          effectiveLeadDate: { $ifNull: ['$creSheet.enquiryDate', '$createdAt'] },
+        },
+      },
+      { $match: { effectiveLeadDate: { $gte: start, $lte: end } } },
+      { $group: { _id: { $month: '$effectiveLeadDate' }, count: { $sum: 1 } } },
     ]),
     execId
       ? TDBooking.aggregate([
@@ -202,14 +214,14 @@ async function buildExecutiveDashboard({ executiveId, year, period, from, to, st
     Lead.countDocuments({
       isDuplicate: { $ne: true },
       ...assignedToStaffFilter(executiveId),
-      ...createdAtFilter(range.from, range.to),
+      ...leadReceivedFilter(range.from, range.to),
       ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),
       ...(source && String(source).toLowerCase() !== 'all' ? { source: String(source).trim() } : {}),
     }),
     Lead.countDocuments({
       isDuplicate: { $ne: true },
       ...assignedToStaffFilter(executiveId),
-      ...createdAtFilter(previous.from, previous.to),
+      ...leadReceivedFilter(previous.from, previous.to),
       ...(status && String(status).toLowerCase() !== 'all' ? { status: String(status).trim() } : {}),
       ...(source && String(source).toLowerCase() !== 'all' ? { source: String(source).trim() } : {}),
     }),
@@ -326,7 +338,7 @@ async function buildManagerTeamDashboard({ admin, year, period, from, to, status
     : [];
   const teamEmails = await resolveStaffEmailsForIds(teamIds, admin.email);
 
-  const leadDateFilter = createdAtFilter(range.from, range.to);
+  const leadDateFilter = leadReceivedFilter(range.from, range.to);
   const tdDateFilter = slotDateFilter(range.from, range.to);
 
   const mineLeadFilter = { ...assignedToIdsFilter(mineIds, admin.email, mineEmails), ...leadDateFilter };
