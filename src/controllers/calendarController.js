@@ -9,7 +9,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { isoDateOnly } = require('../utils/tdSlotUtils');
-const { buildLeadEnquiryDateClause, leadEffectiveDate } = require('../utils/leadDateFilter');
+const { buildLeadEnquiryDateClause, leadEffectiveDate, leadUnassignedMongoFilter } = require('../utils/leadDateFilter');
+const { parseDateKey, toDateKey, startOfDay, endOfDay } = require('../utils/reportPeriod');
 const { normalizeSlotTime } = require('../utils/tdBookingSync');
 const {
   isTeamScopedUser,
@@ -27,12 +28,27 @@ const QUERY_LIMIT = 2500;
 const CLOSED_LEAD_STATUSES = ['Lost', 'Delivered', 'Not Interested'];
 
 function dayBounds(from, to) {
-  const start = from ? new Date(from) : new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = to ? new Date(to) : new Date(start);
-  if (!to) end.setDate(end.getDate() + 30);
-  end.setHours(23, 59, 59, 999);
+  const start = from
+    ? startOfDay(parseDateKey(String(from).trim().slice(0, 10)))
+    : startOfDay(new Date());
+  const end = to
+    ? endOfDay(parseDateKey(String(to).trim().slice(0, 10)))
+    : endOfDay(new Date(start.getFullYear(), start.getMonth() + 1, 0));
+  if (!to) {
+    const fallback = new Date(start);
+    fallback.setDate(fallback.getDate() + 30);
+    return { start, end: endOfDay(fallback) };
+  }
   return { start, end };
+}
+
+function leadCalendarDateKey(d) {
+  if (d == null) return null;
+  const raw = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  return toDateKey(dt);
 }
 
 function parseTypes(raw) {
@@ -173,7 +189,9 @@ function leadReceivedDate(lead) {
 }
 
 function formatNewLeadEvent(lead) {
-  const range = allDayRange(leadReceivedDate(lead));
+  const dateKey = leadCalendarDateKey(leadReceivedDate(lead));
+  if (!dateKey) return null;
+  const range = allDayRange(parseDateKey(dateKey));
   if (!range) return null;
   const assignee = lead.assignedTo;
   return {
@@ -183,7 +201,7 @@ function formatNewLeadEvent(lead) {
     start: range.start.toISOString(),
     end: range.end.toISOString(),
     allDay: true,
-    date: isoDateOnly(range.start),
+    date: dateKey,
     time: null,
     status: lead.status,
     customerName: lead.name || '',
@@ -677,13 +695,22 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
 
   if (wantType(types, 'new_lead')) {
     const enquiryClause = buildLeadEnquiryDateClause(isoDateOnly(start), isoDateOnly(end));
-    const query = applyLeadScope(enquiryClause ? { ...enquiryClause } : {}, leadScope, assigneeLeadFilter);
+    const base = {
+      isDuplicate: { $ne: true },
+      ...(enquiryClause || {}),
+    };
+    let scopeForNewLeads = leadScope;
+    if (teamScoped && leadScope) {
+      scopeForNewLeads = { $or: [leadScope, leadUnassignedMongoFilter()] };
+    }
+    const query = applyLeadScope(base, scopeForNewLeads, assigneeLeadFilter);
     if (statusFilter) query.status = statusFilter;
     if (modelFilter) query.model = new RegExp(modelFilter, 'i');
 
     const leads = await Lead.find(query)
       .populate(LEAD_POPULATE)
       .select('name mobile model status createdAt creSheet.enquiryDate remarks assignedTo')
+      .sort({ 'creSheet.enquiryDate': 1, createdAt: 1, _id: 1 })
       .limit(QUERY_LIMIT)
       .lean();
 
