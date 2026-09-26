@@ -38,7 +38,7 @@ function canAccessModule(user, moduleKey) {
  * @param {string} moduleKey
  * @param {string} action - e.g. 'view' | 'delete'
  */
-function canPerformAction(user, moduleKey, action) {
+function canPerformActionStrict(user, moduleKey, action) {
   if (!user) return false;
   if (user.userType && user.userType !== 'tdstaff') return true;
   if (!ADMIN_MODULE_KEYS.includes(moduleKey)) return false;
@@ -54,6 +54,35 @@ function canPerformAction(user, moduleKey, action) {
   if (!hasCustomActionAcl(user)) return true;
 
   return user.allowedActions.includes(actionToken(moduleKey, action));
+}
+
+/** Calendar is shared by CRM / bookings staff who may lack an explicit calendar module grant. */
+function canUseCalendarViaRelatedModules(user, action) {
+  if (!user || (user.userType && user.userType !== 'tdstaff')) return true;
+  if (!hasCustomModuleAcl(user)) return true;
+
+  const viewPairs = [
+    ['crm_leads', 'view'],
+    ['my_dashboard', 'view'],
+    ['td_my_bookings', 'view'],
+    ['td_bookings', 'view'],
+    ['dashboard', 'view'],
+  ];
+  const updatePairs = [
+    ['crm_leads', 'update'],
+    ['td_my_bookings', 'update'],
+    ['td_bookings', 'update'],
+  ];
+  const pairs = action === 'view' ? viewPairs : updatePairs;
+  return pairs.some(([mod, act]) => canPerformActionStrict(user, mod, act));
+}
+
+function canPerformAction(user, moduleKey, action) {
+  if (canPerformActionStrict(user, moduleKey, action)) return true;
+  if (moduleKey === 'calendar' && (action === 'view' || action === 'update')) {
+    return canUseCalendarViaRelatedModules(user, action);
+  }
+  return false;
 }
 
 /** Keeps only recognised module keys (deduped). Undefined when not provided. */

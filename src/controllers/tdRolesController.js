@@ -103,6 +103,25 @@ async function ensureDefaultRoles() {
     },
   ];
 
+  const TDStaff = require('../models/TDStaff');
+
+  function unionList(a, b) {
+    return [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])])];
+  }
+
+  async function pushRoleAclToAssignedUsers(roleDoc) {
+    await TDStaff.updateMany(
+      { staffRoleId: roleDoc._id },
+      {
+        $set: {
+          allowedModules: roleDoc.allowedModules,
+          allowedActions: roleDoc.allowedActions,
+          role: roleDoc.authRole,
+        },
+      },
+    );
+  }
+
   for (const row of defaults) {
     const exists = await StaffRole.findOne({ name: row.name });
     if (!exists) {
@@ -111,13 +130,29 @@ async function ensureDefaultRoles() {
     }
     // Seed legacy rows that were created empty — never overwrite admin-edited templates.
     const modulesMissing = !Array.isArray(exists.allowedModules) || exists.allowedModules.length === 0;
+    let roleChanged = false;
     if ((row.name === 'CRE' || row.name === 'CRM') && modulesMissing) {
       exists.description = row.description;
       exists.authRole = row.authRole;
       exists.allowedModules = row.allowedModules;
       exists.allowedActions = row.allowedActions;
       exists.active = true;
+      roleChanged = true;
+    } else if (row.name === 'CRE' || row.name === 'CRM') {
+      const modules = unionList(exists.allowedModules, row.allowedModules);
+      const actions = unionList(exists.allowedActions, row.allowedActions);
+      if (
+        modules.length !== (exists.allowedModules || []).length ||
+        actions.length !== (exists.allowedActions || []).length
+      ) {
+        exists.allowedModules = modules;
+        exists.allowedActions = actions;
+        roleChanged = true;
+      }
+    }
+    if (roleChanged) {
       await exists.save();
+      await pushRoleAclToAssignedUsers(exists);
     }
   }
 }

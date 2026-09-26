@@ -7,7 +7,7 @@
  * any extra modules they already have (complaints, booking reports, …).
  */
 
-const CRE_MODULES = ['my_dashboard', 'crm_leads', 'td_lead_reports'];
+const CRE_MODULES = ['my_dashboard', 'crm_leads', 'calendar', 'td_lead_reports'];
 const CRE_ACTIONS = [
   'my_dashboard:view',
   'crm_leads:view',
@@ -16,6 +16,8 @@ const CRE_ACTIONS = [
   'crm_leads:delete',
   'crm_leads:assign',
   'crm_leads:export',
+  'calendar:view',
+  'calendar:update',
   'td_lead_reports:view',
   'td_lead_reports:export',
 ];
