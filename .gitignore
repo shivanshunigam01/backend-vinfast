@@ -9,3 +9,8 @@ career-section-nanak/
 
 # Local backup of old nested frontend git history
 .career-section-nanak.git.backup/
+
+# Local docx extraction scratch (import logic reference)
+_docx_tmp/
+_calc.zip
+_calc_logic.txt
