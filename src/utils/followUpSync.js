@@ -63,10 +63,73 @@ function followUpHighlight(nextFollowUp, now = new Date()) {
   return 'future';
 }
 
+function followUpEffectiveDate(fu) {
+  if (!fu) return null;
+  const raw = fu.completedAt || fu.scheduledAt || fu.createdAt;
+  if (!raw) return null;
+  const d = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function stripStructuredFollowUpPrefix(note) {
+  return String(note || '')
+    .replace(/^(CRE|Sales)\s#\d+:\s*/i, '')
+    .trim();
+}
+
+/** Most recent follow-up by call date (completed → scheduled → logged). */
+function pickLatestFollowUp(followUps = []) {
+  if (!Array.isArray(followUps) || !followUps.length) return null;
+  return [...followUps].sort((a, b) => {
+    const ta = followUpEffectiveDate(a)?.getTime() ?? 0;
+    const tb = followUpEffectiveDate(b)?.getTime() ?? 0;
+    if (tb !== ta) return tb - ta;
+    const ca = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const cb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return cb - ca;
+  })[0];
+}
+
+function displayLabelFromFollowUp(fu) {
+  if (!fu) return undefined;
+  const outcome = String(fu.outcome || '').trim();
+  if (outcome) return outcome;
+  const note = stripStructuredFollowUpPrefix(fu.note);
+  return note || undefined;
+}
+
+/**
+ * Keep Excel FOLLOW-UP / leadType aligned with the latest follow-up (not the first import).
+ */
+async function refreshLeadFollowUpDisplayFields(lead, { followUps: preloaded } = {}) {
+  if (!lead?._id) return { latest: null, changed: false };
+  const rows =
+    preloaded ||
+    (await LeadFollowUp.find({ leadId: lead._id })
+      .select('note outcome scheduledAt completedAt createdAt status')
+      .lean());
+  const latest = pickLatestFollowUp(rows);
+  const label = displayLabelFromFollowUp(latest);
+  if (!label) return { latest, changed: false };
+
+  const prev = String(lead.leadType || lead.creSheet?.followUp || '').trim();
+  if (prev === label) return { latest, changed: false };
+
+  lead.leadType = label;
+  lead.creSheet = lead.creSheet || {};
+  lead.creSheet.followUp = label;
+  await lead.save();
+  return { latest, changed: true };
+}
+
 module.exports = {
   normalizeInterestLevel,
   syncLeadNextFollowUp,
   ensureNextPendingFollowUp,
   stampFirstResponse,
   followUpHighlight,
+  followUpEffectiveDate,
+  pickLatestFollowUp,
+  displayLabelFromFollowUp,
+  refreshLeadFollowUpDisplayFields,
 };

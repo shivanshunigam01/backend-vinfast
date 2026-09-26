@@ -281,7 +281,7 @@ function formatFollowUpEvent(f) {
       : null,
     leadId,
     followUpId: String(f._id),
-    remarks: f.note || '',
+    remarks: f.outcome || f.note || '',
     href: leadHref(leadId),
     color: colorForEvent('lead_follow_up', f.status),
   };
@@ -622,7 +622,7 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
         select: 'name mobile model status assignedTo assignedToEmail',
         populate: { path: 'assignedTo', select: 'name email designation' },
       })
-      .select('leadId scheduledAt status note')
+      .select('leadId scheduledAt status note outcome')
       .limit(QUERY_LIMIT)
       .lean()
       .catch(() => []);

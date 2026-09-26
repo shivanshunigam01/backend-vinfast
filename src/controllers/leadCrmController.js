@@ -67,6 +67,9 @@ const {
   stampFirstResponse,
   followUpHighlight,
   normalizeInterestLevel,
+  pickLatestFollowUp,
+  displayLabelFromFollowUp,
+  refreshLeadFollowUpDisplayFields,
 } = require('../utils/followUpSync');
 const { leadAgeInDays } = require('../utils/crmConversion');
 const { emitStaffNotification, notifyLeadAssignees, leadHref, displayLeadName } = require('../utils/staffNotifications');
@@ -704,7 +707,10 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   await assertLeadReadable(lead, req.admin);
   await ensureLeadIds(lead);
 
-  const followUpSort = String(req.query.followUpSort || 'asc').toLowerCase() === 'desc' ? { createdAt: -1 } : { createdAt: 1 };
+  const followUpSort =
+    String(req.query.followUpSort || 'desc').toLowerCase() === 'asc'
+      ? { completedAt: 1, scheduledAt: 1, createdAt: 1 }
+      : { completedAt: -1, scheduledAt: -1, createdAt: -1 };
   const [history, followUps, followUpCount, siblingLeads, testDriveState, fav] = await Promise.all([
     LeadStageHistory.find({ leadId: lead._id })
       .populate('changedBy', 'name email')
@@ -724,6 +730,10 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
     LeadFavourite.findOne({ leadId: lead._id, staffId: req.admin._id }).select('_id').lean(),
   ]);
 
+  await refreshLeadFollowUpDisplayFields(lead, { followUps });
+  await lead.populate(LEAD_POPULATE);
+
+  const latestFollowUp = pickLatestFollowUp(followUps);
   const stages = await getActiveStageLabels();
   const isAdmin = isCrmManagerLike(req.admin);
   return successResponse(res, {
@@ -731,6 +741,18 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
     history,
     followUps,
     followUpCount,
+    latestFollowUp: latestFollowUp
+      ? {
+          note: latestFollowUp.note,
+          outcome: latestFollowUp.outcome,
+          status: latestFollowUp.status,
+          at:
+            latestFollowUp.completedAt ||
+            latestFollowUp.scheduledAt ||
+            latestFollowUp.createdAt,
+          displayLabel: displayLabelFromFollowUp(latestFollowUp),
+        }
+      : null,
     siblingLeads,
     stages,
     // Drives "Book Test Drive" / "Test Drive Done" button visibility in the UI:
@@ -1102,6 +1124,7 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
 
   touchLeadActivity(lead);
   await lead.save();
+  await refreshLeadFollowUpDisplayFields(lead);
 
   if (lead.creSheet?.tdDone === true) {
     await syncTestDriveBookingFromCreSheet(lead, { assigneeId: lead.assignedTo });
@@ -1139,12 +1162,24 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
   }
 
   await lead.populate(LEAD_POPULATE);
-  const followUps = await LeadFollowUp.find({ leadId: lead._id }).sort({ createdAt: 1 }).lean();
+  const followUps = await LeadFollowUp.find({ leadId: lead._id })
+    .sort({ completedAt: -1, scheduledAt: -1, createdAt: -1 })
+    .lean();
   return successResponse(
     res,
     {
       lead: formatCrmLead(lead),
       followUpSlots: extractFollowUpSlots(followUps),
+      latestFollowUp: (() => {
+        const latest = pickLatestFollowUp(followUps);
+        return latest
+          ? {
+              note: latest.note,
+              outcome: latest.outcome,
+              displayLabel: displayLabelFromFollowUp(latest),
+            }
+          : null;
+      })(),
     },
     'CRE sheet saved',
   );
@@ -1218,6 +1253,7 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
   await syncLeadNextFollowUp(lead);
   touchLeadActivity(lead);
   await lead.save();
+  await refreshLeadFollowUpDisplayFields(lead);
 
   await followUp.populate('createdBy', 'name email');
   await notifyLeadAssignees(lead, {
@@ -1237,11 +1273,11 @@ exports.listLeadFollowUps = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
   const { page, limit, skip } = buildPagination(req);
-  const sortDir = String(req.query.sort || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+  const sortDir = String(req.query.sort || 'desc').toLowerCase() === 'asc' ? 1 : -1;
   const [rows, total] = await Promise.all([
     LeadFollowUp.find({ leadId: lead._id })
       .populate('createdBy', 'name email')
-      .sort({ createdAt: sortDir })
+      .sort({ completedAt: sortDir, scheduledAt: sortDir, createdAt: sortDir })
       .skip(skip)
       .limit(limit),
     LeadFollowUp.countDocuments({ leadId: lead._id }),
@@ -1293,6 +1329,7 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
   await syncLeadNextFollowUp(lead);
   touchLeadActivity(lead);
   await lead.save();
+  await refreshLeadFollowUpDisplayFields(lead);
   await followUp.populate('createdBy', 'name email');
 
   await notifyLeadAssignees(lead, {
@@ -2223,6 +2260,7 @@ async function syncImportFollowUps(lead, followUps, admin, results) {
   if (nextPending) {
     lead.nextFollowUp = nextPending;
   }
+  await refreshLeadFollowUpDisplayFields(lead);
 }
 
 /**
