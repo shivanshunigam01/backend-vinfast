@@ -29,6 +29,25 @@ function staffLoginPayload(staff) {
   return withDeskAccess(base);
 }
 
+/** Refresh CRE/CRM role templates (incl. calendar) and reload ACL from DB when role-linked. */
+async function prepareStaffSessionUser(staff) {
+  let doc = staff;
+  const { ensureDefaultRoles } = require('./tdRolesController');
+  await ensureDefaultRoles();
+
+  if (!doc.staffRoleId) {
+    if (isCreDesignation(doc.designation) && applyCreAccessInPlace(doc)) {
+      await doc.save();
+    } else if (isCrmDeskDesignation(doc.designation) && applyCrmDeskAccessInPlace(doc)) {
+      await doc.save();
+    }
+  } else {
+    const fresh = await TDStaff.findById(doc._id);
+    if (fresh) doc = fresh;
+  }
+  return staffLoginPayload(doc);
+}
+
 function adminLoginPayload(admin) {
   return {
     _id: admin._id,
@@ -103,19 +122,11 @@ exports.staffLogin = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'This account is deactivated. Ask an admin to activate it.');
   }
 
-  if (!staff.staffRoleId) {
-    if (isCreDesignation(staff.designation) && applyCreAccessInPlace(staff)) {
-      await staff.save();
-    } else if (isCrmDeskDesignation(staff.designation) && applyCrmDeskAccessInPlace(staff)) {
-      await staff.save();
-    }
-  }
-
   const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });
   return res.status(200).json({
     success: true,
     token,
-    admin: staffLoginPayload(staff),
+    admin: await prepareStaffSessionUser(staff),
   });
 });
 
@@ -147,7 +158,7 @@ exports.login = asyncHandler(async (req, res) => {
 
   if (isFieldExecutive) {
     const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });
-    return res.status(200).json({ success: true, token, admin: staffLoginPayload(staff) });
+    return res.status(200).json({ success: true, token, admin: await prepareStaffSessionUser(staff) });
   }
 
   if (adminOk) {
@@ -160,7 +171,7 @@ exports.login = asyncHandler(async (req, res) => {
   }
 
   const token = signToken({ id: staff._id, role: staff.role, userType: 'tdstaff' });
-  return res.status(200).json({ success: true, token, admin: staffLoginPayload(staff) });
+  return res.status(200).json({ success: true, token, admin: await prepareStaffSessionUser(staff) });
 });
 
 exports.me = asyncHandler(async (req, res) => successResponse(res, req.admin));

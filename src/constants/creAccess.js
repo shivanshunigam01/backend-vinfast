@@ -205,11 +205,34 @@ function withCrmDeskAccess(payload) {
   };
 }
 
+const CALENDAR_SESSION_ACTIONS = ['calendar:view', 'calendar:update'];
+
+/** Staff who work leads/bookings should always see the shared calendar in session + API. */
+function staffShouldHaveCalendar(payload) {
+  if (!payload) return false;
+  if (isCreOrCrmDeskUser(payload)) return true;
+  const mods = Array.isArray(payload.allowedModules) ? payload.allowedModules : [];
+  return mods.some((m) =>
+    ['crm_leads', 'my_dashboard', 'td_my_bookings', 'td_bookings', 'dashboard'].includes(m),
+  );
+}
+
+function unionCalendarIntoSession(payload) {
+  if (!payload || payload.userType === 'admin') return payload;
+  if (!staffShouldHaveCalendar(payload)) return payload;
+  return {
+    ...payload,
+    allowedModules: unionStringList(payload.allowedModules, ['calendar']),
+    allowedActions: unionStringList(payload.allowedActions, CALENDAR_SESSION_ACTIONS),
+  };
+}
+
 /** Session payload: CRE stamp, or CRM desk union. */
 function withDeskAccess(payload) {
-  if (isCreUser(payload)) return withCreAccess(payload);
-  if (isCrmDeskUser(payload)) return withCrmDeskAccess(payload);
-  return payload;
+  let next = payload;
+  if (isCreUser(payload)) next = withCreAccess(payload);
+  else if (isCrmDeskUser(payload)) next = withCrmDeskAccess(payload);
+  return unionCalendarIntoSession(next);
 }
 
 async function syncAllCreStaffAccess(TDStaff) {
@@ -258,6 +281,8 @@ module.exports = {
   withCreAccess,
   withCrmDeskAccess,
   withDeskAccess,
+  unionCalendarIntoSession,
+  staffShouldHaveCalendar,
   syncAllCreStaffAccess,
   syncAllCrmDeskAccess,
 };
