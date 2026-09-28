@@ -21,6 +21,8 @@ const {
   bookingAssignedToStaff,
   touchLeadActivity,
   normalizeEmail,
+  repairExecutiveLeadAssignments,
+  repairExecutiveBookingAssignments,
 } = require('../utils/leadAssignment');
 
 const TD_DURATION_MS = 60 * 60 * 1000;
@@ -473,6 +475,55 @@ function applyLeadScope(query, leadScope, assigneeLeadFilter) {
   return query;
 }
 
+const SCOPED_LEAD_ID_LIMIT = 15000;
+
+/** Lead ids this user may see on the calendar (assignment + team tree). */
+async function resolveCalendarScopedLeadIds(leadScope, assigneeLeadFilter) {
+  const query = applyLeadScope({ isDuplicate: { $ne: true } }, leadScope, assigneeLeadFilter);
+  const rows = await Lead.find(query).select('_id').limit(SCOPED_LEAD_ID_LIMIT).lean();
+  return rows.map((r) => r._id);
+}
+
+/**
+ * TD bookings visible to team users: assigned executive OR linked lead in their CRM scope.
+ */
+function buildTdBookingScopeFilter(teamScoped, tdScope, scopedLeadIds) {
+  if (!teamScoped) return null;
+  const or = [];
+  if (tdScope) or.push(tdScope);
+  if (scopedLeadIds?.length) or.push({ leadId: { $in: scopedLeadIds } });
+  if (!or.length) return { _id: null };
+  return or.length === 1 ? or[0] : { $or: or };
+}
+
+function formatTdEventFromLead(lead) {
+  const cs = lead.creSheet || {};
+  const tdDate = cs.tdDate;
+  if (!tdDate) return null;
+  const start = combineDateTime(tdDate, '10:00') || new Date(tdDate);
+  const end = new Date(start.getTime() + TD_DURATION_MS);
+  const assignee = lead.assignedTo;
+  return {
+    id: `tdl-${lead._id}`,
+    type: 'test_drive',
+    title: `TD · ${lead.name || 'Customer'}`,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    allDay: false,
+    date: isoDateOnly(tdDate),
+    time: '10:00',
+    status: cs.tdDone === true ? 'COMPLETED' : 'CONFIRMED',
+    customerName: lead.name || '',
+    mobile: lead.mobile || '',
+    vehicle: lead.model || '',
+    ...assigneeBlock(assignee),
+    leadId: String(lead._id),
+    remarks: cs.afterTdRemark || cs.tdNotDoneWhy || lead.remarks || '',
+    href: leadHref(lead._id),
+    color: colorForEvent('test_drive', cs.tdDone === true ? 'COMPLETED' : 'CONFIRMED'),
+  };
+}
+
 function leadMatchesAssignee(lead, admin, assigneeParam) {
   if (!assigneeParam || assigneeParam === 'all') return true;
   const assigned = lead?.assignedTo?._id || lead?.assignedTo;
@@ -521,6 +572,11 @@ async function assertCanEditCalendarRecord(admin, kind, doc) {
     const assigned = doc?.assignedExecutive?._id || doc?.assignedExecutive;
     if (assigned && staffIds.includes(String(assigned))) return;
     if (bookingAssignedToStaff(doc, admin._id, admin.email)) return;
+    const leadRef = doc?.leadId?._id || doc?.leadId;
+    if (leadRef) {
+      const lead = await Lead.findById(leadRef).select('assignedTo assignedToEmail').lean();
+      if (lead && (await leadReadableByAdmin(lead, admin))) return;
+    }
     throw new ApiError(403, 'You cannot edit this test drive');
   }
 }
@@ -544,8 +600,14 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
   const events = [];
   const teamScoped = isTeamScopedUser(req.admin);
 
+  if (teamScoped) {
+    await repairExecutiveLeadAssignments(req.admin);
+    await repairExecutiveBookingAssignments(req.admin);
+  }
+
   let leadScope = null;
   let tdScope = null;
+  let scopedLeadIds = null;
   if (teamScoped) {
     leadScope = await assignedToStaffFilterAsync(req.admin);
     tdScope = await assignedExecutiveFilterAsync(req.admin);
@@ -581,6 +643,11 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
     }
   }
 
+  if (teamScoped) {
+    scopedLeadIds = await resolveCalendarScopedLeadIds(leadScope, assigneeLeadFilter);
+  }
+  const tdBookingScope = buildTdBookingScopeFilter(teamScoped, tdScope, scopedLeadIds);
+
   if (wantType(types, 'test_drive')) {
     const query = {
       slotDate: { $gte: start, $lte: end },
@@ -590,7 +657,7 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
     if (modelFilter) query.preferredModel = new RegExp(modelFilter, 'i');
 
     const and = [];
-    if (tdScope) and.push(tdScope);
+    if (tdBookingScope) and.push(tdBookingScope);
     if (assigneeTdFilter) and.push(assigneeTdFilter);
     if (and.length) query.$and = and;
 
@@ -607,7 +674,41 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       .limit(QUERY_LIMIT)
       .lean();
 
-    for (const b of bookings) events.push(formatTdEvent(b));
+    const tdLeadKeys = new Set();
+    for (const b of bookings) {
+      events.push(formatTdEvent(b));
+      if (b.leadId) tdLeadKeys.add(String(b.leadId));
+    }
+
+    // Sheet TD dates on assigned leads (when booking row missing or unlinked).
+    const tdLeadQuery = applyLeadScope(
+      {
+        'creSheet.tdDate': { $gte: start, $lte: end },
+        $or: [{ 'creSheet.tdDone': true }, { tdBookingId: { $exists: true, $ne: null } }],
+      },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (modelFilter) tdLeadQuery.model = new RegExp(modelFilter, 'i');
+    if (statusFilter && statusFilter.toUpperCase() === 'COMPLETED') {
+      tdLeadQuery['creSheet.tdDone'] = true;
+    }
+
+    const tdLeads = await Lead.find(tdLeadQuery)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status remarks assignedTo creSheet tdBookingId')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of tdLeads) {
+      const id = String(lead._id);
+      if (tdLeadKeys.has(id)) continue;
+      const ev = formatTdEventFromLead(lead);
+      if (ev) {
+        events.push(ev);
+        tdLeadKeys.add(id);
+      }
+    }
   }
 
   // Follow-up docs first (needed for nextFollowUp lead dedupe)
@@ -615,6 +716,9 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
   if (wantType(types, 'lead_follow_up') || wantType(types, 'follow_up')) {
     const fuQuery = { scheduledAt: { $gte: start, $lte: end } };
     if (statusFilter) fuQuery.status = statusFilter.toLowerCase();
+    if (teamScoped) {
+      fuQuery.leadId = scopedLeadIds?.length ? { $in: scopedLeadIds } : { $in: [] };
+    }
 
     let followUps = await LeadFollowUp.find(fuQuery)
       .populate({
@@ -790,6 +894,33 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       }
     }
 
+    const sheetBookingQuery = applyLeadScope(
+      {
+        'creSheet.bookingDone': true,
+        'creSheet.bookingDate': { $gte: start, $lte: end },
+      },
+      leadScope,
+      assigneeLeadFilter,
+    );
+    if (modelFilter) sheetBookingQuery.model = new RegExp(modelFilter, 'i');
+
+    const sheetBookingLeads = await Lead.find(sheetBookingQuery)
+      .populate(LEAD_POPULATE)
+      .select('name mobile model status convertedAt updatedAt remarks assignedTo creSheet')
+      .limit(QUERY_LIMIT)
+      .lean();
+
+    for (const lead of sheetBookingLeads) {
+      const id = String(lead._id);
+      if (seen.has(id)) continue;
+      const dateVal = lead.creSheet?.bookingDate || lead.updatedAt;
+      const ev = formatBookingUpdateEvent(lead, dateVal);
+      if (ev) {
+        seen.add(id);
+        events.push(ev);
+      }
+    }
+
     // Stage history transitions into Booking
     let bookingHistories = await LeadStageHistory.find({
       toStage: 'Booking',
@@ -934,7 +1065,7 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       approvalStatus: 'PENDING',
       createdAt: { $gte: start, $lte: end },
     };
-    if (tdScope) apQuery.$and = [tdScope];
+    if (tdBookingScope) apQuery.$and = [tdBookingScope];
 
     const approvals = await TDBooking.find(apQuery)
       .select('bookingId customerName createdAt assignedExecutive')
@@ -978,8 +1109,8 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       const tdQuery = { $or: [] };
       if (codes.length) tdQuery.$or.push({ bookingId: { $in: codes } });
       if (bookingIds.length) tdQuery.$or.push({ _id: { $in: bookingIds } });
-      if (tdQuery.$or.length && tdScope) {
-        tdQuery.$and = [tdScope];
+      if (tdQuery.$or.length && tdBookingScope) {
+        tdQuery.$and = [tdBookingScope];
         const scopedBookings = await TDBooking.find(tdQuery).select('_id bookingId').lean();
         const allowedCodes = new Set(scopedBookings.map((b) => b.bookingId).filter(Boolean));
         const allowedIds = new Set(scopedBookings.map((b) => String(b._id)));
