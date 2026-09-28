@@ -9,7 +9,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { isoDateOnly } = require('../utils/tdSlotUtils');
-const { buildLeadEnquiryDateClause, leadEffectiveDate, leadUnassignedMongoFilter } = require('../utils/leadDateFilter');
+const { buildLeadEnquiryDateClause, leadEffectiveDate } = require('../utils/leadDateFilter');
+const { leadUnassignedMongoFilter } = require('../utils/leadUnassigned');
 const { parseDateKey, toDateKey, startOfDay, endOfDay } = require('../utils/reportPeriod');
 const { normalizeSlotTime } = require('../utils/tdBookingSync');
 const {
