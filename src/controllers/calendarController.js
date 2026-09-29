@@ -13,6 +13,7 @@ const { buildLeadEnquiryDateClause, leadEffectiveDate } = require('../utils/lead
 const { leadUnassignedMongoFilter } = require('../utils/leadUnassigned');
 const { parseDateKey, toDateKey, startOfDay, endOfDay } = require('../utils/reportPeriod');
 const { normalizeSlotTime } = require('../utils/tdBookingSync');
+const { parseUserDateTimeInput, formatWallClockIndia } = require('../utils/indiaDateTime');
 const {
   isTeamScopedUser,
   assignedToStaffFilterAsync,
@@ -92,12 +93,13 @@ function wantType(types, key) {
 }
 
 function combineDateTime(dateVal, timeStr) {
-  const d = dateVal instanceof Date ? new Date(dateVal) : new Date(dateVal);
-  if (Number.isNaN(d.getTime())) return null;
+  const dateKey =
+    typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal)
+      ? String(dateVal).trim().slice(0, 10)
+      : isoDateOnly(dateVal);
+  if (!dateKey) return null;
   const t = normalizeSlotTime(timeStr || '10:00');
-  const [hh, mm] = t.split(':').map((n) => parseInt(n, 10));
-  d.setHours(hh || 0, mm || 0, 0, 0);
-  return d;
+  return parseUserDateTimeInput(`${dateKey}T${t}:00`);
 }
 
 function leadHref(id) {
@@ -176,7 +178,7 @@ function formatLeadEvent(lead) {
     end: end.toISOString(),
     allDay,
     date: isoDateOnly(start),
-    time: allDay ? null : `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    time: allDay ? null : formatWallClockIndia(start),
     status: lead.status,
     customerName: lead.name || '',
     mobile: lead.mobile || '',
@@ -272,7 +274,7 @@ function formatFollowUpEvent(f) {
     end: end.toISOString(),
     allDay: false,
     date: isoDateOnly(start),
-    time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    time: formatWallClockIndia(start),
     status: f.status || 'pending',
     customerName: lead?.name || '',
     mobile: lead?.mobile || '',
@@ -308,7 +310,7 @@ function formatStageActivityEvent(h) {
     end: end.toISOString(),
     allDay: false,
     date: isoDateOnly(start),
-    time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    time: formatWallClockIndia(start),
     status: to,
     customerName: lead?.name || '',
     mobile: lead?.mobile || '',
@@ -384,7 +386,7 @@ function formatSalesActivityEvent(source, kind) {
       end: end.toISOString(),
       allDay: false,
       date: isoDateOnly(start),
-      time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+      time: formatWallClockIndia(start),
       status: source.toStage || 'Assignment',
       customerName: lead?.name || '',
       mobile: lead?.mobile || '',
@@ -1198,7 +1200,7 @@ exports.patchCalendarEvent = asyncHandler(async (req, res) => {
   const mongoId = m[2];
 
   const body = req.body || {};
-  let startDate = body.start ? new Date(body.start) : null;
+  let startDate = body.start ? parseUserDateTimeInput(body.start) : null;
   if ((!startDate || Number.isNaN(startDate.getTime())) && body.date) {
     startDate = combineDateTime(body.date, body.time || '10:00');
   }
@@ -1214,10 +1216,7 @@ exports.patchCalendarEvent = asyncHandler(async (req, res) => {
     const slotDate = new Date(startDate);
     slotDate.setHours(0, 0, 0, 0);
     doc.slotDate = slotDate;
-    doc.slotTime = normalizeSlotTime(
-      body.time ||
-        `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
-    );
+    doc.slotTime = normalizeSlotTime(body.time || formatWallClockIndia(startDate) || '10:00');
     await doc.save();
     await doc.populate({
       path: 'assignedExecutive',

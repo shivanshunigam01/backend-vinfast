@@ -4,6 +4,7 @@ const TDBooking = require('../models/TDBooking');
 const { upsertTDCustomer } = require('./tdCustomerResolver');
 const { nextBookingId, resolveBranch, normalizeSlotTime } = require('./tdBookingSync');
 const { touchLeadActivity } = require('./leadAssignment');
+const { parseUserDateTimeInput } = require('./indiaDateTime');
 
 /** CRE Current Format follow-up column pairs → note prefixes used at import. */
 const FOLLOW_UP_SLOT_DEFS = [
@@ -34,10 +35,7 @@ const FOLLOW_UP_SLOT_DEFS = [
 ];
 
 function parseDateInput(v) {
-  if (v == null || v === '') return null;
-  if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseUserDateTimeInput(v);
 }
 
 function followUpRowKey(note, scheduledAt) {

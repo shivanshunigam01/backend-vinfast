@@ -48,6 +48,7 @@ const {
   CRM_LEAD_LIST_SORT,
 } = require('../utils/leadAssignment');
 const TDBooking = require('../models/TDBooking');
+const { parseUserDateTimeInput } = require('../utils/indiaDateTime');
 const { nextBookingId, resolveBranch, normalizeSlotTime } = require('../utils/tdBookingSync');
 const {
   extractFollowUpSlots,
@@ -361,7 +362,7 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
       if (!note) continue;
       let scheduled = null;
       if (fu.scheduledAt) {
-        const d = new Date(fu.scheduledAt);
+        const d = parseUserDateTimeInput(fu.scheduledAt);
         if (!Number.isNaN(d.getTime())) scheduled = d;
       }
       const isCompleted = !scheduled || scheduled <= new Date();
@@ -1234,8 +1235,12 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
   await assertLeadReadable(lead, req.admin);
 
   const interest = normalizeInterestLevel(interestLevel);
-  const nextAt = nextFollowUpAt ? new Date(nextFollowUpAt) : null;
-  const scheduled = scheduledAt ? new Date(scheduledAt) : (nextAt && !markCompleted ? nextAt : null);
+  const nextAt = nextFollowUpAt ? parseUserDateTimeInput(nextFollowUpAt) : null;
+  const scheduled = scheduledAt
+    ? parseUserDateTimeInput(scheduledAt)
+    : nextAt && !markCompleted
+      ? nextAt
+      : null;
   const isCompleted = Boolean(markCompleted) || !scheduled || scheduled <= new Date();
 
   if (Boolean(markCompleted) && (!outcome || !String(outcome).trim())) {
@@ -1310,10 +1315,12 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
 
   const { note, scheduledAt, outcome, status, nextAction, nextFollowUpAt, interestLevel } = req.body;
   if (note != null) followUp.note = String(note).trim();
-  if (scheduledAt != null) followUp.scheduledAt = scheduledAt ? new Date(scheduledAt) : undefined;
+  if (scheduledAt != null) followUp.scheduledAt = scheduledAt ? parseUserDateTimeInput(scheduledAt) : undefined;
   if (outcome != null) followUp.outcome = String(outcome).trim();
   if (nextAction != null) followUp.nextAction = String(nextAction).trim();
-  if (nextFollowUpAt != null) followUp.nextFollowUpAt = nextFollowUpAt ? new Date(nextFollowUpAt) : undefined;
+  if (nextFollowUpAt != null) {
+    followUp.nextFollowUpAt = nextFollowUpAt ? parseUserDateTimeInput(nextFollowUpAt) : undefined;
+  }
   const interest = normalizeInterestLevel(interestLevel);
   if (interest) followUp.interestLevel = interest;
 
