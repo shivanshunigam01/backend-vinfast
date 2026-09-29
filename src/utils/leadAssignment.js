@@ -22,6 +22,18 @@ function normalizeEmail(email) {
 /** Designations that CRE may assign leads / TD bookings to. */
 const CRE_ASSIGNABLE_DESIGNATIONS = new Set(['sales_executive', 'sales_manager']);
 
+/** Sales team anchor in User Master (SM / BM). SEs under the same anchor share lead visibility. */
+const SALES_TEAM_ANCHOR_DESIGNATIONS = new Set(['sales_manager', 'branch_manager']);
+
+function isSalesTeamAnchorDesignation(designation) {
+  const d = String(designation || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  if (SALES_TEAM_ANCHOR_DESIGNATIONS.has(d)) return true;
+  return d.includes('sales_manager') || d.includes('branch_manager');
+}
+
 const { isCreDesignation, isCrmDeskDesignation, isCreOrCrmDeskUser } = require('../constants/creAccess');
 
 function isCreUser(admin) {
@@ -158,32 +170,59 @@ async function collectSubtreeStaffIds(rootId) {
 }
 
 /**
+ * Nearest sales-team anchor (Sales Manager / Branch Manager) for a staff row.
+ * Walks up reportsTo so SE + SM under the same manager share one team id.
+ */
+async function resolveSalesTeamRootId(staffRef) {
+  let cur = toObjectId(staffRef?._id || staffRef);
+  if (!cur) return null;
+  let fallback = String(cur);
+
+  for (let depth = 0; depth < 40; depth += 1) {
+    const row = await TDStaff.findById(cur).select('_id reportsTo designation').lean();
+    if (!row) return fallback;
+    fallback = String(row._id);
+    if (isSalesTeamAnchorDesignation(row.designation)) return String(row._id);
+    if (!row.reportsTo) return String(row._id);
+    cur = row.reportsTo;
+  }
+  return fallback;
+}
+
+/**
+ * All active staff in the viewer's sales team (SM/BM root + reporting subtree).
+ */
+async function resolveSalesTeamStaffIds(admin) {
+  const selfIds = await resolveSelfStaffIds(admin);
+  const teamIds = new Set();
+  for (const sid of selfIds) {
+    const root = await resolveSalesTeamRootId(sid);
+    if (!root) continue;
+    const subtree = await collectSubtreeStaffIds(root);
+    for (const id of subtree) teamIds.add(id);
+  }
+  if (!teamIds.size && admin?._id) teamIds.add(String(admin._id));
+  return [...teamIds];
+}
+
+/**
  * Resolve which staff IDs this user may view assignments for.
  * - Unrestricted: caller should not use this filter (sees all)
- * - Team-scoped: self + all descendants via reportsTo
+ * - Team-scoped: everyone under the same Sales Manager / Branch Manager anchor
  * - Also merges duplicate TDStaff rows sharing the same email
  */
 async function resolveStaffIdsForUser(admin) {
+  if (isTeamScopedUser(admin)) {
+    return await resolveSalesTeamStaffIds(admin);
+  }
+
   const ids = new Set();
   if (admin?._id) ids.add(String(admin._id));
-
   const email = normalizeEmail(admin?.email);
   if (email) {
     const rows = await TDStaff.find({ email }).select('_id').lean();
     for (const row of rows) ids.add(String(row._id));
   }
-
-  // Expand to reporting subtree for managers / heads (SE has no children → unchanged).
-  if (isTeamScopedUser(admin) && !isExecutiveScopedUser(admin)) {
-    const roots = [...ids];
-    for (const rootId of roots) {
-      const subtree = await collectSubtreeStaffIds(rootId);
-      for (const id of subtree) ids.add(id);
-    }
-  } else if (isExecutiveScopedUser(admin)) {
-    // Leaf executives: own ids only (already in set).
-  }
-
   return [...ids];
 }
 
@@ -235,8 +274,8 @@ async function resolveStaffEmailsForIds(staffIds, viewerEmail) {
 
 async function assignedToStaffFilterAsync(admin) {
   const staffIds = await resolveStaffIdsForUser(admin);
-  const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
-  return assignedToIdsFilter(staffIds, admin?.email, emails);
+  const emails = await resolveStaffEmailsForIds(staffIds, null);
+  return assignedToIdsFilter(staffIds, null, emails);
 }
 
 function leadAssignedToStaff(lead, staffId, staffEmail) {
@@ -249,14 +288,25 @@ function leadAssignedToStaff(lead, staffId, staffEmail) {
 }
 
 async function leadReadableByAdmin(lead, admin) {
+  if (!lead) return false;
   if (!isTeamScopedUser(admin)) return true;
-  const staffIds = await resolveStaffIdsForUser(admin);
+
   const assigned = lead?.assignedTo?._id || lead?.assignedTo;
-  if (assigned && staffIds.includes(String(assigned))) return true;
   const leadEmail = normalizeEmail(lead?.assignedToEmail);
-  if (!leadEmail) return false;
-  const teamEmails = await resolveStaffEmailsForIds(staffIds, admin?.email);
-  return teamEmails.includes(leadEmail);
+
+  if (!assigned && !leadEmail) {
+    return isCreUser(admin) || isCrmDeskUser(admin);
+  }
+
+  const teamIds = await resolveSalesTeamStaffIds(admin);
+  if (assigned && teamIds.includes(String(assigned))) return true;
+
+  if (leadEmail) {
+    const teamEmails = await resolveStaffEmailsForIds(teamIds, null);
+    if (teamEmails.includes(leadEmail)) return true;
+  }
+
+  return false;
 }
 
 function applyLeadAssignment(lead, assignee) {
@@ -330,8 +380,8 @@ function assignedExecutiveIdsFilter(staffIds, staffEmail, extraEmails = []) {
 
 async function assignedExecutiveFilterAsync(admin) {
   const staffIds = await resolveStaffIdsForUser(admin);
-  const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
-  return assignedExecutiveIdsFilter(staffIds, admin?.email, emails);
+  const emails = await resolveStaffEmailsForIds(staffIds, null);
+  return assignedExecutiveIdsFilter(staffIds, null, emails);
 }
 
 function bookingAssignedToStaff(booking, staffId, staffEmail) {
@@ -405,6 +455,9 @@ module.exports = {
   isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
+  isSalesTeamAnchorDesignation,
+  resolveSalesTeamRootId,
+  resolveSalesTeamStaffIds,
   collectSubtreeStaffIds,
   resolveStaffIdsForUser,
   resolveSelfStaffIds,

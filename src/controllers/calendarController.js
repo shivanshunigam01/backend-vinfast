@@ -24,6 +24,8 @@ const {
   normalizeEmail,
   repairExecutiveLeadAssignments,
   repairExecutiveBookingAssignments,
+  isCreUser,
+  isCrmDeskUser,
 } = require('../utils/leadAssignment');
 
 const TD_DURATION_MS = 60 * 60 * 1000;
@@ -491,10 +493,46 @@ async function resolveCalendarScopedLeadIds(leadScope, assigneeLeadFilter) {
 function buildTdBookingScopeFilter(teamScoped, tdScope, scopedLeadIds) {
   if (!teamScoped) return null;
   const or = [];
-  if (tdScope) or.push(tdScope);
+  const leadInTeam =
+    scopedLeadIds?.length
+      ? {
+          $or: [{ leadId: { $exists: false } }, { leadId: null }, { leadId: { $in: scopedLeadIds } }],
+        }
+      : null;
+  if (tdScope) {
+    or.push(leadInTeam ? { $and: [tdScope, leadInTeam] } : tdScope);
+  }
   if (scopedLeadIds?.length) or.push({ leadId: { $in: scopedLeadIds } });
   if (!or.length) return { _id: null };
   return or.length === 1 ? or[0] : { $or: or };
+}
+
+/** Drop CRM links for leads outside the viewer's sales team; keep TD-only events when applicable. */
+async function filterCalendarEventsForTeamAccess(events, admin) {
+  if (!isTeamScopedUser(admin) || !events?.length) return events || [];
+  const out = [];
+  for (const ev of events) {
+    if (!ev.leadId) {
+      out.push(ev);
+      continue;
+    }
+    const lead = await Lead.findById(ev.leadId)
+      .select('assignedTo assignedToEmail')
+      .populate({ path: 'assignedTo', select: 'email' })
+      .lean();
+    if (!lead || !(await leadReadableByAdmin(lead, admin))) {
+      if (ev.bookingId) {
+        out.push({
+          ...ev,
+          leadId: null,
+          href: `/admin/td/bookings?highlight=${ev.bookingId}`,
+        });
+      }
+      continue;
+    }
+    out.push(ev);
+  }
+  return out;
 }
 
 function formatTdEventFromLead(lead) {
@@ -536,22 +574,15 @@ function leadMatchesAssignee(lead, admin, assigneeParam) {
 async function filterHistoryByLeadScope(histories, teamScoped, admin, assigneeParam) {
   const list = histories || [];
   if (!list.length) return [];
-  let allowed = null;
-  if (teamScoped) allowed = new Set(await resolveStaffIdsForUser(admin));
-  const email = normalizeEmail(admin.email);
-  return list.filter((h) => {
+  const filtered = [];
+  for (const h of list) {
     const lead = h.leadId;
-    if (!lead) return false;
-    if (allowed) {
-      const assigned = lead.assignedTo?._id || lead.assignedTo;
-      const ok =
-        (assigned && allowed.has(String(assigned))) ||
-        (email && normalizeEmail(lead.assignedToEmail) === email) ||
-        (email && normalizeEmail(lead.assignedTo?.email) === email);
-      if (!ok) return false;
-    }
-    return leadMatchesAssignee(lead, admin, assigneeParam);
-  });
+    if (!lead) continue;
+    if (teamScoped && !(await leadReadableByAdmin(lead, admin))) continue;
+    if (!leadMatchesAssignee(lead, admin, assigneeParam)) continue;
+    filtered.push(h);
+  }
+  return filtered;
 }
 
 async function assertCanEditCalendarRecord(admin, kind, doc) {
@@ -733,17 +764,13 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       .catch(() => []);
 
     if (teamScoped && followUps?.length) {
-      const allowedIds = new Set(await resolveStaffIdsForUser(req.admin));
-      const email = normalizeEmail(req.admin.email);
-      followUps = followUps.filter((f) => {
+      const kept = [];
+      for (const f of followUps) {
         const lead = f.leadId;
-        if (!lead) return false;
-        const assigned = lead.assignedTo?._id || lead.assignedTo;
-        if (assigned && allowedIds.has(String(assigned))) return true;
-        if (email && normalizeEmail(lead.assignedToEmail) === email) return true;
-        if (email && normalizeEmail(lead.assignedTo?.email) === email) return true;
-        return false;
-      });
+        if (!lead) continue;
+        if (await leadReadableByAdmin(lead, req.admin)) kept.push(f);
+      }
+      followUps = kept;
     }
 
     if (assigneeParam && assigneeParam !== 'all' && assigneeParam !== 'unassigned') {
@@ -805,7 +832,9 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
       ...(enquiryClause || {}),
     };
     let scopeForNewLeads = leadScope;
-    if (teamScoped && leadScope) {
+    const canSeeUnassignedPool =
+      !teamScoped || isCreUser(req.admin) || isCrmDeskUser(req.admin);
+    if (teamScoped && leadScope && canSeeUnassignedPool) {
       scopeForNewLeads = { $or: [leadScope, leadUnassignedMongoFilter()] };
     }
     const query = applyLeadScope(base, scopeForNewLeads, assigneeLeadFilter);
@@ -1143,12 +1172,17 @@ exports.getCalendarEvents = asyncHandler(async (req, res) => {
     }
   }
 
-  events.sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
+  let visibleEvents = events;
+  if (teamScoped) {
+    visibleEvents = await filterCalendarEventsForTeamAccess(events, req.admin);
+  }
 
-  return successResponse(res, events, undefined, 200, {
+  visibleEvents.sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
+
+  return successResponse(res, visibleEvents, undefined, 200, {
     from: isoDateOnly(start),
     to: isoDateOnly(end),
-    count: events.length,
+    count: visibleEvents.length,
   });
 });
 

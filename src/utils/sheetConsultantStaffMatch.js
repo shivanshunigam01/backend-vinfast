@@ -42,20 +42,21 @@ function resolveSheetConsultantToStaff(consultantRaw, staffRows) {
   let hit = staffRows.find((s) => normalizeSheetConsultantKey(s.name) === key);
   if (hit) return hit;
 
-  hit = staffRows.find((s) => {
+  const partial = staffRows.filter((s) => {
     const n = normalizeSheetConsultantKey(s.name);
     return n.includes(key) || key.includes(n);
   });
-  if (hit) return hit;
+  if (partial.length === 1) return partial[0];
 
   const firstToken = key.split(/\s+/)[0];
   if (firstToken && firstToken.length >= 3) {
-    hit = staffRows.find((s) => {
+    const byFirst = staffRows.filter((s) => {
       const n = normalizeSheetConsultantKey(s.name);
       return n === firstToken || n.startsWith(`${firstToken} `);
     });
+    if (byFirst.length === 1) return byFirst[0];
   }
-  return hit || null;
+  return null;
 }
 
 /**

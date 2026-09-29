@@ -153,29 +153,31 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
     return exact;
   }
 
-  const partial = staff.find((s) => {
+  const partial = staff.filter((s) => {
     const n = normalizeConsultantName(s.name);
     return n.includes(needle) || needle.includes(n);
   });
-  if (partial) {
-    if (isCreUser(viewer) && !isCreAssignableDesignation(partial.designation)) {
+  if (partial.length === 1) {
+    const hit = partial[0];
+    if (isCreUser(viewer) && !isCreAssignableDesignation(hit.designation)) {
       throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
     }
-    return partial;
+    return hit;
   }
 
   // Excel labels like "Saurav 1 (SM)" → match staff "Saurav Kumar" by first name token.
   const firstToken = needle.replace(/\s+\d+$/, '').split(/\s+/)[0];
   if (firstToken && firstToken.length >= 3) {
-    const byFirst = staff.find((s) => {
+    const byFirst = staff.filter((s) => {
       const n = normalizeConsultantName(s.name);
       return n === firstToken || n.startsWith(`${firstToken} `);
     });
-    if (byFirst) {
-      if (isCreUser(viewer) && !isCreAssignableDesignation(byFirst.designation)) {
+    if (byFirst.length === 1) {
+      const hit = byFirst[0];
+      if (isCreUser(viewer) && !isCreAssignableDesignation(hit.designation)) {
         throw new ApiError(403, 'CRE can only assign leads to Sales Executives or Sales Managers');
       }
-      return byFirst;
+      return hit;
     }
   }
 
@@ -733,6 +735,19 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   await refreshLeadFollowUpDisplayFields(lead, { followUps });
   await lead.populate(LEAD_POPULATE);
 
+  let scopedSiblingLeads = siblingLeads;
+  if (isTeamScopedUser(req.admin) && scopedSiblingLeads?.length) {
+    const kept = [];
+    for (const row of scopedSiblingLeads) {
+      const full = await Lead.findById(row._id)
+        .select('assignedTo assignedToEmail')
+        .populate({ path: 'assignedTo', select: 'email' })
+        .lean();
+      if (full && (await leadReadableByAdmin(full, req.admin))) kept.push(row);
+    }
+    scopedSiblingLeads = kept;
+  }
+
   const latestFollowUp = pickLatestFollowUp(followUps);
   const stages = await getActiveStageLabels();
   const isAdmin = isCrmManagerLike(req.admin);
@@ -753,7 +768,7 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
           displayLabel: displayLabelFromFollowUp(latestFollowUp),
         }
       : null,
-    siblingLeads,
+    siblingLeads: scopedSiblingLeads,
     stages,
     // Drives "Book Test Drive" / "Test Drive Done" button visibility in the UI:
     // once a test drive is completed, only admins can book a repeat drive
