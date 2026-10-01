@@ -49,8 +49,30 @@ function formatWallClockIndia(date) {
   return `${hh}:${mm}`;
 }
 
+/** YYYY-MM-DD in India (for report month buckets). */
+function indiaDateKey(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: INDIA_TZ }).format(d);
+}
+
+/** Start/end of calendar month in India (IST wall clock). */
+function monthBoundsIndia(now = new Date()) {
+  const key = indiaDateKey(now);
+  const [y, m] = key.split('-');
+  const year = Number(y);
+  const month = Number(m);
+  const mtdStart = new Date(`${y}-${m}-01T00:00:00+05:30`);
+  const nextMonth = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+  const nextStart = new Date(
+    `${nextMonth.year}-${String(nextMonth.month).padStart(2, '0')}-01T00:00:00+05:30`,
+  );
+  const mtdMonthEnd = new Date(nextStart.getTime() - 1);
+  return { mtdStart, mtdMonthEnd };
+}
+
 module.exports = {
   INDIA_TZ,
   parseUserDateTimeInput,
   formatWallClockIndia,
+  indiaDateKey,
+  monthBoundsIndia,
 };

@@ -11,6 +11,7 @@ const {
   sheetBookingCountQuery,
 } = require('./sheetCalculationLogic');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
+const { monthBoundsIndia } = require('./indiaDateTime');
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
 const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
@@ -85,8 +86,9 @@ async function buildDetailedReport({ admin } = {}) {
   const now = new Date();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
-  const mtdStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
-  const mtdMonthEnd = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const { mtdStart: mtdStartIndia, mtdMonthEnd: mtdMonthEndIndia } = monthBoundsIndia(now);
+  const mtdStart = mtdStartIndia;
+  const mtdMonthEnd = mtdMonthEndIndia;
   const yearStart = startOfDay(new Date(now.getFullYear(), 0, 1));
 
   const leadScope = await buildLeadScope(admin);
@@ -171,7 +173,10 @@ async function buildDetailedReport({ admin } = {}) {
       .sort({ designation: 1, name: 1 })
       .lean(),
     Lead.find(leadScope)
-      .select('source creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone')
+      .select(
+        'source assignedTo assignedToEmail creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone creSheet.monthYearTd',
+      )
+      .populate({ path: 'assignedTo', select: 'name email' })
       .lean(),
     Lead.aggregate([
       {
@@ -400,7 +405,7 @@ function buildTeamMatrix({ staffRows, leadByStaff, matrixAgg, leadSources, now }
 async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
   const now = new Date();
   const todayEnd = endOfDay(now);
-  const mtdStart = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  const { mtdStart, mtdMonthEnd } = monthBoundsIndia(now);
   const leadScope = await buildLeadScope(admin);
 
   const [sourceAgg, staffRows, sheetAttributionLeads] = await Promise.all([
@@ -418,10 +423,14 @@ async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
       .select('name designation reportsTo email')
       .sort({ designation: 1, name: 1 })
       .lean(),
-    Lead.find(leadScope).select('source creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone').lean(),
+    Lead.find(leadScope)
+      .select(
+        'source assignedTo assignedToEmail creSheet.salesConsultantName creSheet.tdDate creSheet.tdDone creSheet.monthYearTd',
+      )
+      .populate({ path: 'assignedTo', select: 'name email' })
+      .lean(),
   ]);
 
-  const mtdMonthEnd = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   const { leadByStaff, matrixAgg } = attributeLeadsBySheetConsultant(sheetAttributionLeads, staffRows, {
     mtdStart,
     mtdMonthEnd,

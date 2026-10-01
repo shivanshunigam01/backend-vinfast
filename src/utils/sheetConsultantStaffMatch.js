@@ -1,4 +1,5 @@
 const { isUnassignedConsultantName } = require('./leadUnassigned');
+const { parseUserDateTimeInput } = require('./indiaDateTime');
 
 /** Normalized key from Excel SALES CONSULTANT (strips (SM)/(SE) suffix labels). */
 function normalizeSheetConsultantKey(raw) {
@@ -59,8 +60,44 @@ function resolveSheetConsultantToStaff(consultantRaw, staffRows) {
   return null;
 }
 
+function normalizeEmail(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+/** Sheet SALES CONSULTANT first; fall back to CRM assignee when sheet is blank / Un-assigned. */
+function resolveAttributionStaff(lead, staffRows) {
+  const fromSheet = resolveSheetConsultantToStaff(lead.creSheet?.salesConsultantName, staffRows);
+  if (fromSheet) return fromSheet;
+
+  const assignedId = lead.assignedTo?._id || lead.assignedTo;
+  if (assignedId) {
+    const hit = staffRows.find((s) => String(s._id) === String(assignedId));
+    if (hit) return hit;
+  }
+  const email = normalizeEmail(lead.assignedToEmail || lead.assignedTo?.email);
+  if (email) {
+    const hit = staffRows.find((s) => normalizeEmail(s.email) === email);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function effectiveSheetTdDate(lead) {
+  const raw = lead.creSheet?.tdDate || lead.creSheet?.monthYearTd;
+  if (!raw) return null;
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw;
+  }
+  return parseUserDateTimeInput(raw) || (Number.isNaN(new Date(raw).getTime()) ? null : new Date(raw));
+}
+
+function isSheetTdCompleted(lead) {
+  if (lead.creSheet?.tdDone !== true) return false;
+  return Boolean(effectiveSheetTdDate(lead));
+}
+
 /**
- * Attribute leads/TDs by sheet consultant (not CRM assignedTo).
+ * Attribute leads/TDs by sheet consultant (falls back to CRM assignee for attribution).
  */
 function attributeLeadsBySheetConsultant(
   leads,
@@ -73,7 +110,7 @@ function attributeLeadsBySheetConsultant(
   const unassigned = { totalLeads: 0, totalTestDrive: 0, totalTestDriveMtd: 0 };
 
   for (const lead of leads) {
-    const staff = resolveSheetConsultantToStaff(lead.creSheet?.salesConsultantName, staffRows);
+    const staff = resolveAttributionStaff(lead, staffRows);
     const staffId = staff ? String(staff._id) : null;
 
     if (!staffId) {
@@ -85,12 +122,10 @@ function attributeLeadsBySheetConsultant(
       matrixCounts.set(matrixKey, (matrixCounts.get(matrixKey) || 0) + 1);
     }
 
-    const tdDateRaw = lead.creSheet?.tdDate;
-    const tdDone = lead.creSheet?.tdDone === true && tdDateRaw;
-    if (!tdDone) continue;
+    if (!isSheetTdCompleted(lead)) continue;
 
-    const tdDate = tdDateRaw instanceof Date ? tdDateRaw : new Date(tdDateRaw);
-    if (Number.isNaN(tdDate.getTime())) continue;
+    const tdDate = effectiveSheetTdDate(lead);
+    if (!tdDate) continue;
 
     const inMtd = tdDate >= mtdStart && tdDate <= mtdMonthEnd;
 
@@ -120,5 +155,6 @@ module.exports = {
   normalizeSheetConsultantKey,
   CONSULTANT_ALIASES,
   resolveSheetConsultantToStaff,
+  resolveAttributionStaff,
   attributeLeadsBySheetConsultant,
 };
