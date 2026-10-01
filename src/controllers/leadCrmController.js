@@ -23,6 +23,7 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { dateKeyRange, dateKeyDayBounds, parseSlotDate, parseDateKey } = require('../utils/reportPeriod');
 const { applyLeadModuleViewFilter } = require('../utils/leadModuleFilters');
 const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('../utils/leadUnassigned');
+const { reconcileLeadAssignmentsFromSheet } = require('../utils/leadAssignmentReconcile');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
 const {
   getActiveStageLabels,
@@ -33,6 +34,7 @@ const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
   isCreUser,
+  isCrmDeskUser,
   isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
@@ -468,6 +470,12 @@ function formatCrmLead(doc, extras = {}) {
   };
 }
 
+function canViewUnassignedLeadPool(admin) {
+  if (!admin) return false;
+  if (admin.userType === 'admin' || admin.role === 'superadmin') return true;
+  return isCreUser(admin) || isCrmDeskUser(admin);
+}
+
 async function buildLeadQuery(admin, queryParams = {}) {
   const query = { isDuplicate: { $ne: true } };
   // MoM #12: SE/SM/SH/BM see own + reporting subtree; MD/CEO/GM/superadmin see all.
@@ -475,8 +483,11 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (isTeamScopedUser(admin)) {
     query.$and = query.$and || [];
     if (queryParams.assignedTo === 'unassigned') {
-      // Dealership pool — not limited to reporting tree (no owner yet).
-      query.$and.push(leadUnassignedMongoFilter());
+      if (!canViewUnassignedLeadPool(admin)) {
+        query.$and.push({ _id: null });
+      } else {
+        query.$and.push(leadUnassignedMongoFilter());
+      }
     } else if (queryParams.assignedTo === 'assigned') {
       query.$and.push(leadAssignedMongoFilter());
       query.$and.push(await assignedToStaffFilterAsync(admin));
@@ -502,7 +513,11 @@ async function buildLeadQuery(admin, queryParams = {}) {
   } else if (queryParams.assignedTo) {
     if (queryParams.assignedTo === 'unassigned') {
       query.$and = query.$and || [];
-      query.$and.push(leadUnassignedMongoFilter());
+      if (!canViewUnassignedLeadPool(admin)) {
+        query.$and.push({ _id: null });
+      } else {
+        query.$and.push(leadUnassignedMongoFilter());
+      }
     } else if (queryParams.assignedTo === 'assigned') {
       query.$and = query.$and || [];
       query.$and.push(leadAssignedMongoFilter());
@@ -666,6 +681,12 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
   // Backfill missing assignedToEmail for this user only (safe for SM + SE).
   if (isTeamScopedUser(req.admin)) {
     await repairExecutiveLeadAssignments(req.admin);
+  }
+  if (
+    canViewUnassignedLeadPool(req.admin)
+    && (req.query.assignedTo === 'unassigned' || req.query.reconcileAssignments === 'true')
+  ) {
+    await reconcileLeadAssignmentsFromSheet();
   }
   const { page, limit, skip } = buildPagination(req);
   const query = await buildLeadQuery(req.admin, req.query);
@@ -1399,8 +1420,13 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
   if (executiveId) {
     applyLeadAssignment(lead, assignee);
+    lead.creSheet = lead.creSheet || {};
+    lead.creSheet.salesConsultantName = assignee.name;
   } else {
     applyLeadAssignment(lead, null);
+    if (lead.creSheet) {
+      lead.creSheet.salesConsultantName = 'Un-assigned';
+    }
   }
   touchLeadActivity(lead);
   await lead.save();
@@ -1454,6 +1480,9 @@ exports.getCrmSources = asyncHandler(async (req, res) => {
 
 exports.getCrmLeadStats = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
+  if (canViewUnassignedLeadPool(req.admin)) {
+    await reconcileLeadAssignmentsFromSheet();
+  }
   const query = await buildLeadQuery(req.admin, req.query);
   const baseParams = { ...req.query };
   delete baseParams.assignedTo;

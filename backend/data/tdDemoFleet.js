@@ -8,7 +8,8 @@ const WEBSITE_COLORS = [
   'Jet Black',
   'Desert Silver',
   'Zenith Grey',
-  'Urban Mint'
+  'Moonlit Ocean',
+  'Ivy Green',
 ];
 
 const { generateSlotTimesFromRules } = require('../utils/slotSchedule');
@@ -70,7 +71,7 @@ function buildDemoFleet(branchId) {
       variant: 'Wind Infinity',
       registrationNo: 'BR01EF1234',
       vinNo: 'VIN6WINF003PAT',
-      color: 'Urban Mint',
+      color: 'Moonlit Ocean',
       batteryPercent: 60,
       currentOdometer: 2100,
       branchId,

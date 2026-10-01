@@ -568,7 +568,7 @@ async function seedPoOnlyScenarios() {
   rows.push(await createPo({
     poNumber: `${DEMO_PO_PREFIX}DRAFT`,
     status: 'DRAFT',
-    line: { model: 'VF 7', variant: 'Earth', colour: 'Urban Mint' },
+    line: { model: 'VF 7', variant: 'Earth', colour: 'Moonlit Ocean' },
   }));
   rows.push(await createPo({
     poNumber: `${DEMO_PO_PREFIX}SUBMIT`,
@@ -613,14 +613,14 @@ async function main() {
 
   const vehiclePlans = [
     { index: 1, label: 'Dispatch queue', targetStage: 'IN_TRANSIT', line: { model: 'VF 7', variant: 'Sky Infinity', colour: 'Infinity Blanc' } },
-    { index: 2, label: 'Gate → GRN queue (Arrived)', targetStage: 'ARRIVED', line: { model: 'VF 7', variant: 'Earth', colour: 'Urban Mint' } },
+    { index: 2, label: 'Gate → GRN queue (Arrived)', targetStage: 'ARRIVED', line: { model: 'VF 7', variant: 'Earth', colour: 'Moonlit Ocean' } },
     { index: 3, label: 'Receipt queue (Received)', targetStage: 'RECEIVED', line: { model: 'VF 7', variant: 'Wind', colour: 'Desat Silver' } },
     { index: 4, label: 'GRN exception', targetStage: 'RECEIVED', line: { model: 'VF 7', variant: 'Sky', colour: 'Jet Black' }, exception: true },
     { index: 5, label: 'Pre-Stock PDI queue', targetStage: 'PDI_PENDING', line: { model: 'VF 7', variant: 'Wind Infinity', colour: 'Zenith Grey' } },
     { index: 6, label: 'Available stock', targetStage: 'AVAILABLE', line: { model: 'VF 7', variant: 'Sky Infinity', colour: 'Infinity Blanc' } },
     { index: 7, label: 'Allocated / Reserved', targetStage: 'RESERVED', line: { model: 'VF 7', variant: 'Earth', colour: 'Infinity Blanc' }, withOrder: true },
     { index: 8, label: 'Retail / Invoiced', targetStage: 'INVOICED', line: { model: 'VF 7', variant: 'Wind', colour: 'Desat Silver' }, withOrder: true },
-    { index: 9, label: 'Delivery ready', targetStage: 'DELIVERY_READY', line: { model: 'VF 6', variant: 'Earth', colour: 'Urban Mint' }, withOrder: true },
+    { index: 9, label: 'Delivery ready', targetStage: 'DELIVERY_READY', line: { model: 'VF 6', variant: 'Earth', colour: 'Moonlit Ocean' }, withOrder: true },
     { index: 10, label: 'Delivered (full flow)', targetStage: 'DELIVERED', line: { model: 'VF 7', variant: 'Sky Infinity', colour: 'Crimson Red' }, withOrder: true },
   ];
 

@@ -10,14 +10,10 @@ function isUnassignedConsultantName(value) {
   return !name || UNASSIGNED_CONSULTANT_RX.test(name);
 }
 
-/**
- * Mongo match: lead has no CRM owner or sheet consultant is blank / Un-assigned.
- */
-function leadUnassignedMongoFilter() {
+/** CRE sheet SALES CONSULTANT blank or explicit Un-assigned. */
+function sheetConsultantUnassignedMongoFilter() {
   return {
     $or: [
-      { assignedTo: { $exists: false } },
-      { assignedTo: null },
       { 'creSheet.salesConsultantName': { $exists: false } },
       { 'creSheet.salesConsultantName': null },
       { 'creSheet.salesConsultantName': '' },
@@ -26,9 +22,45 @@ function leadUnassignedMongoFilter() {
   };
 }
 
-/** Inverse of {@link leadUnassignedMongoFilter} — has owner + sheet consultant set. */
+/** CRE sheet has a named sales consultant (import / MIS). */
+function sheetConsultantAssignedMongoFilter() {
+  return {
+    $and: [
+      { 'creSheet.salesConsultantName': { $exists: true, $nin: [null, ''] } },
+      { 'creSheet.salesConsultantName': { $not: { $regex: /^un-assigned$/i } } },
+    ],
+  };
+}
+
+/**
+ * Mongo match: genuinely unassigned — no CRM owner and no named sheet consultant.
+ * (Leads with only a sheet name are excluded until reconciled onto assignedTo.)
+ */
+function leadUnassignedMongoFilter() {
+  return {
+    $and: [
+      { $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }] },
+      {
+        $or: [
+          { assignedToEmail: { $exists: false } },
+          { assignedToEmail: null },
+          { assignedToEmail: '' },
+        ],
+      },
+      sheetConsultantUnassignedMongoFilter(),
+    ],
+  };
+}
+
+/** Has a CRM owner or a named sheet sales consultant. */
 function leadAssignedMongoFilter() {
-  return { $nor: [leadUnassignedMongoFilter()] };
+  return {
+    $or: [
+      { assignedTo: { $exists: true, $ne: null } },
+      { assignedToEmail: { $exists: true, $nin: [null, ''] } },
+      sheetConsultantAssignedMongoFilter(),
+    ],
+  };
 }
 
 /** $expr for aggregations: true when sheet consultant is assigned (non-blank, not Un-assigned). */
@@ -55,5 +87,7 @@ module.exports = {
   isUnassignedConsultantName,
   leadUnassignedMongoFilter,
   leadAssignedMongoFilter,
+  sheetConsultantUnassignedMongoFilter,
+  sheetConsultantAssignedMongoFilter,
   sheetConsultantAssignedExpr,
 };

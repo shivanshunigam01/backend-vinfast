@@ -14,6 +14,7 @@ const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
 const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
+const { bucketLeadTypeAggRows } = require('./leadTypeReport');
 const {
   isTeamScopedUser,
   assignedToStaffFilterAsync,
@@ -276,10 +277,7 @@ async function buildDetailedReport({ admin } = {}) {
     isWalkIn: isWalkInSource(r._id),
   }));
 
-  const leadTypes = leadTypeAgg.map((r) => ({
-    leadType: r._id || 'Unknown',
-    count: r.count,
-  }));
+  const leadTypes = bucketLeadTypeAggRows(leadTypeAgg);
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const monthlyTestDrives = monthlyTdAgg.map((r) => ({
