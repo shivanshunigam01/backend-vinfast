@@ -61,12 +61,13 @@ function sheetBookingCountQuery() {
 }
 
 function sheetTdMonthRange(from, to) {
+  const range = { $gte: from, $lte: to };
   return {
     $or: [
-      { 'creSheet.tdDate': { $gte: from, $lte: to } },
+      { 'creSheet.tdDate': range },
       {
-        'creSheet.tdDate': { $exists: false },
-        'creSheet.monthYearTd': { $gte: from, $lte: to },
+        $or: [{ 'creSheet.tdDate': { $exists: false } }, { 'creSheet.tdDate': null }],
+        'creSheet.monthYearTd': range,
       },
     ],
   };

@@ -8,6 +8,7 @@ const {
   sheetDigitalQuery,
   sheetTdTillDateQuery,
   sheetTdDoneQuery,
+  sheetTdMonthRange,
   sheetBookingCountQuery,
 } = require('./sheetCalculationLogic');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
@@ -141,12 +142,12 @@ async function buildDetailedReport({ admin } = {}) {
     Lead.countDocuments({
       ...leadScope,
       ...sheetTdDoneQuery(),
-      'creSheet.tdDate': dateRange(mtdStart, mtdMonthEnd),
+      ...sheetTdMonthRange(mtdStart, mtdMonthEnd),
     }),
     Lead.countDocuments({
       ...leadScope,
       ...sheetTdDoneQuery(),
-      'creSheet.tdDate': dateRange(todayStart, todayEnd),
+      ...sheetTdMonthRange(todayStart, todayEnd),
     }),
     Lead.aggregate([
       { $match: leadScope },
@@ -321,7 +322,7 @@ async function buildDetailedReport({ admin } = {}) {
     monthlyTestDrivesTotal: monthlyTdTotal,
     unassignedSheet,
     attributionNote:
-      'Staff lead and TD counts follow Excel SALES CONSULTANT on each lead (not CRM assignedTo). Unassigned = blank, Un-assigned, or consultant not matched to User Master.',
+      'Staff lead and TD counts use SALES CONSULTANT on the CRE sheet (with CRM assignee fallback). TD = sheet TD DONE Yes + TD date (or Month Year TD) in range. TD MTD = current calendar month (India). Unassigned = no matching consultant.',
   };
 }
 
