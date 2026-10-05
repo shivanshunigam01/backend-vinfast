@@ -3,7 +3,10 @@
  * VF6 Wind Infinity: ₹19,19,000* (compareCatalog id "infinity"; seed id windInfinity).
  */
 
-const FALLBACK_MPV7_PRICE = '₹19.99 Lakh*';
+const FALLBACK_MPV7_LIST = '₹24,49,000*';
+const FALLBACK_MPV7_OFFER = '₹20,39,000*';
+const FALLBACK_LIMO_LIST = '₹22,99,000*';
+const FALLBACK_LIMO_OFFER = '₹18,59,000*';
 
 /** Static defaults; mpv7.priceFrom may be overridden from SiteConfig at ensure time. */
 const VEHICLE_PRICING_DEFAULTS = [
@@ -36,18 +39,20 @@ const VEHICLE_PRICING_DEFAULTS = [
   {
     slug: 'mpv7',
     name: 'VF MPV 7',
-    priceFrom: FALLBACK_MPV7_PRICE,
+    listPrice: FALLBACK_MPV7_LIST,
+    priceFrom: FALLBACK_MPV7_OFFER,
     range: '517 km (ARAI)',
     active: true,
-    variants: [{ id: 'base', label: 'Base', price: FALLBACK_MPV7_PRICE, order: 0, active: true }],
+    variants: [{ id: 'base', label: 'Base', price: FALLBACK_MPV7_OFFER, order: 0, active: true }],
   },
   {
     slug: 'limo-green',
     name: 'Limo Green',
-    priceFrom: '₹22.99 Lakh*',
+    listPrice: FALLBACK_LIMO_LIST,
+    priceFrom: FALLBACK_LIMO_OFFER,
     range: '450 km',
     active: true,
-    variants: [{ id: 'base', label: 'Base', price: '₹22.99 Lakh*', order: 0, active: true }],
+    variants: [{ id: 'base', label: 'Base', price: FALLBACK_LIMO_OFFER, order: 0, active: true }],
   },
 ];
 
@@ -57,24 +62,38 @@ const SLUG_ORDER = VEHICLE_PRICING_DEFAULTS.map((d) => d.slug);
  * @param {{ mpv7Price?: string } | null | undefined} siteConfig
  */
 function buildDefaultPricingDocs(siteConfig) {
-  const mpv7FromConfig = String(siteConfig?.mpv7Price || '').trim();
-  const mpv7Price = mpv7FromConfig || FALLBACK_MPV7_PRICE;
+  const mpv7Offer = String(siteConfig?.mpv7Price || '').trim() || FALLBACK_MPV7_OFFER;
+  const mpv7List = String(siteConfig?.mpv7ListPrice || '').trim() || FALLBACK_MPV7_LIST;
+  const limoOffer = String(siteConfig?.limoGreenPrice || '').trim() || FALLBACK_LIMO_OFFER;
+  const limoList = String(siteConfig?.limoGreenListPrice || '').trim() || FALLBACK_LIMO_LIST;
 
   return VEHICLE_PRICING_DEFAULTS.map((doc) => {
-    if (doc.slug !== 'mpv7') return { ...doc, variants: doc.variants.map((v) => ({ ...v })) };
-    return {
-      ...doc,
-      priceFrom: mpv7Price,
-      variants: doc.variants.map((v) => ({
-        ...v,
-        price: v.id === 'base' ? mpv7Price : v.price,
-      })),
-    };
+    const variants = doc.variants.map((v) => ({ ...v }));
+    if (doc.slug === 'mpv7') {
+      return {
+        ...doc,
+        listPrice: mpv7List,
+        priceFrom: mpv7Offer,
+        variants: variants.map((v) => (v.id === 'base' ? { ...v, price: mpv7Offer } : v)),
+      };
+    }
+    if (doc.slug === 'limo-green') {
+      return {
+        ...doc,
+        listPrice: limoList,
+        priceFrom: limoOffer,
+        variants: variants.map((v) => (v.id === 'base' ? { ...v, price: limoOffer } : v)),
+      };
+    }
+    return { ...doc, variants };
   });
 }
 
 module.exports = {
-  FALLBACK_MPV7_PRICE,
+  FALLBACK_MPV7_LIST,
+  FALLBACK_MPV7_OFFER,
+  FALLBACK_LIMO_LIST,
+  FALLBACK_LIMO_OFFER,
   VEHICLE_PRICING_DEFAULTS,
   SLUG_ORDER,
   buildDefaultPricingDocs,

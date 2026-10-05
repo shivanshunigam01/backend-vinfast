@@ -25,6 +25,8 @@ const vehiclePricingSchema = new mongoose.Schema(
     },
     name: { type: String, trim: true, default: '' },
     priceFrom: { type: String, trim: true, default: '' },
+    /** Pre-offer ex-showroom (shown struck through when festive pricing applies). */
+    listPrice: { type: String, trim: true, default: '' },
     range: { type: String, trim: true, default: '' },
     variants: { type: [variantSchema], default: [] },
     active: { type: Boolean, default: true },

@@ -12,8 +12,8 @@ const SiteConfig = require('../models/SiteConfig');
 const DEFAULT_PRICES = {
   vf6: '₹18.19L*',
   vf7: '₹22.99L*',
-  mpv7: '₹24.49L*',
-  'limo-green': '₹22.99L*',
+  mpv7: '₹20,39,000*',
+  'limo-green': '₹18,59,000*',
 };
 
 const HOMEPAGE_PRODUCTS = [

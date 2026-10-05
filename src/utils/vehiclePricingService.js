@@ -6,8 +6,8 @@ const { buildDefaultPricingDocs, SLUG_ORDER } = require('./vehiclePricingDefault
 const SITE_CONFIG_FIELD_BY_SLUG = {
   vf6: { price: 'vf6Price', range: 'vf6Range' },
   vf7: { price: 'vf7Price', range: 'vf7Range' },
-  mpv7: { price: 'mpv7Price', range: 'mpv7Range' },
-  'limo-green': { price: 'limoGreenPrice', range: 'limoGreenRange' },
+  mpv7: { price: 'mpv7Price', listPrice: 'mpv7ListPrice', range: 'mpv7Range' },
+  'limo-green': { price: 'limoGreenPrice', listPrice: 'limoGreenListPrice', range: 'limoGreenRange' },
 };
 
 /** Product slug aliases that should receive priceFrom when a pricing slug is updated. */
@@ -57,6 +57,22 @@ async function ensureDefaultPricing() {
         { $set: { range: def.range } },
       );
     }
+    if (def.slug === 'mpv7' || def.slug === 'limo-green') {
+      await VehiclePricing.updateOne(
+        {
+          slug: def.slug,
+          $or: [{ listPrice: '' }, { listPrice: null }, { listPrice: { $exists: false } }],
+        },
+        {
+          $set: {
+            listPrice: def.listPrice,
+            priceFrom: def.priceFrom,
+            range: def.range,
+            variants: def.variants,
+          },
+        },
+      );
+    }
   }
 }
 
@@ -84,6 +100,9 @@ async function syncSiteConfigAndProducts(doc) {
     const $set = {};
     if (fields.price && doc.priceFrom !== undefined && doc.priceFrom !== null) {
       $set[fields.price] = String(doc.priceFrom);
+    }
+    if (fields.listPrice && doc.listPrice !== undefined && doc.listPrice !== null && String(doc.listPrice).trim()) {
+      $set[fields.listPrice] = String(doc.listPrice);
     }
     if (fields.range && doc.range !== undefined && doc.range !== null) {
       $set[fields.range] = String(doc.range);
@@ -121,6 +140,7 @@ async function updatePricing(slug, body = {}) {
 
   if (body.name !== undefined) doc.name = String(body.name).trim();
   if (body.priceFrom !== undefined) doc.priceFrom = String(body.priceFrom).trim();
+  if (body.listPrice !== undefined) doc.listPrice = String(body.listPrice).trim();
   if (body.range !== undefined) doc.range = String(body.range).trim();
   if (body.active !== undefined) doc.active = Boolean(body.active);
 

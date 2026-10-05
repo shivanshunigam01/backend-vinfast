@@ -18,8 +18,10 @@ const defaultSiteConfig = {
   leadStripSubtitle: 'Leave your details and our EV advisor will reach out in 10 minutes.',
   vf7Price: '₹22.99L*',
   vf6Price: '₹18.19L*',
-  mpv7Price: '₹24.49L*',
-  limoGreenPrice: '₹22.99L*',
+  mpv7Price: '₹20,39,000*',
+  mpv7ListPrice: '₹24,49,000*',
+  limoGreenPrice: '₹18,59,000*',
+  limoGreenListPrice: '₹22,99,000*',
   vf7Range: '532 km',
   vf6Range: '468 km',
   mpv7Range: '517 km (ARAI)',
@@ -90,9 +92,13 @@ exports.getProductBySlug = asyncHandler(async (req, res) => {
 });
 
 exports.getOffers = asyncHandler(async (req, res) => {
-  const query = { active: true };
+  const now = new Date();
+  const query = {
+    active: true,
+    $or: [{ validTill: { $exists: false } }, { validTill: null }, { validTill: { $gte: now } }],
+  };
   if (req.query.model) query.model = req.query.model;
-  const data = await Offer.find(query).sort({ validTill: 1, createdAt: -1 });
+  const data = await Offer.find(query).sort({ displayOrder: 1, createdAt: -1 });
   return successResponse(res, data);
 });
 
