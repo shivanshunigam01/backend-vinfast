@@ -58,14 +58,40 @@ const VEHICLE_PRICING_DEFAULTS = [
 
 const SLUG_ORDER = VEHICLE_PRICING_DEFAULTS.map((d) => d.slug);
 
+function compactPrice(s) {
+  return String(s || '').replace(/\s/g, '').toLowerCase();
+}
+
+function pickFestiveOffer(slug, raw) {
+  const p = compactPrice(raw);
+  if (!p) return slug === 'mpv7' ? FALLBACK_MPV7_OFFER : FALLBACK_LIMO_OFFER;
+  if (slug === 'mpv7') {
+    if (/20[,.]?39/.test(p)) return String(raw).trim();
+    return FALLBACK_MPV7_OFFER;
+  }
+  if (/18[,.]?59/.test(p)) return String(raw).trim();
+  return FALLBACK_LIMO_OFFER;
+}
+
+function pickFestiveList(slug, raw) {
+  const p = compactPrice(raw);
+  if (!p) return slug === 'mpv7' ? FALLBACK_MPV7_LIST : FALLBACK_LIMO_LIST;
+  if (slug === 'mpv7') {
+    if (/24[,.]?49/.test(p)) return String(raw).trim();
+    return FALLBACK_MPV7_LIST;
+  }
+  if (/22[,.]?99/.test(p)) return String(raw).trim();
+  return FALLBACK_LIMO_LIST;
+}
+
 /**
- * @param {{ mpv7Price?: string } | null | undefined} siteConfig
+ * @param {{ mpv7Price?: string, mpv7ListPrice?: string, limoGreenPrice?: string, limoGreenListPrice?: string } | null | undefined} siteConfig
  */
 function buildDefaultPricingDocs(siteConfig) {
-  const mpv7Offer = String(siteConfig?.mpv7Price || '').trim() || FALLBACK_MPV7_OFFER;
-  const mpv7List = String(siteConfig?.mpv7ListPrice || '').trim() || FALLBACK_MPV7_LIST;
-  const limoOffer = String(siteConfig?.limoGreenPrice || '').trim() || FALLBACK_LIMO_OFFER;
-  const limoList = String(siteConfig?.limoGreenListPrice || '').trim() || FALLBACK_LIMO_LIST;
+  const mpv7Offer = pickFestiveOffer('mpv7', siteConfig?.mpv7Price);
+  const mpv7List = pickFestiveList('mpv7', siteConfig?.mpv7ListPrice);
+  const limoOffer = pickFestiveOffer('limo-green', siteConfig?.limoGreenPrice);
+  const limoList = pickFestiveList('limo-green', siteConfig?.limoGreenListPrice);
 
   return VEHICLE_PRICING_DEFAULTS.map((doc) => {
     const variants = doc.variants.map((v) => ({ ...v }));
