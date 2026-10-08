@@ -9,6 +9,7 @@ const DealerSettings = require('../models/DealerSettings');
 const ApiError = require('../utils/apiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
+const { pickFestiveOffer, pickFestiveList } = require('../utils/vehiclePricingDefaults');
 
 const defaultSiteConfig = {
   whatsappNumber: '919231445060',
@@ -58,9 +59,29 @@ exports.getSiteConfig = asyncHandler(async (req, res) => {
       await doc.save();
     }
   }
+  const mpv7Price = pickFestiveOffer('mpv7', doc.mpv7Price);
+  const mpv7ListPrice = pickFestiveList('mpv7', doc.mpv7ListPrice);
+  const limoGreenPrice = pickFestiveOffer('limo-green', doc.limoGreenPrice);
+  const limoGreenListPrice = pickFestiveList('limo-green', doc.limoGreenListPrice);
+  const festivePatch = {};
+  if (String(doc.mpv7Price || '') !== mpv7Price) festivePatch.mpv7Price = mpv7Price;
+  if (String(doc.mpv7ListPrice || '') !== mpv7ListPrice) festivePatch.mpv7ListPrice = mpv7ListPrice;
+  if (String(doc.limoGreenPrice || '') !== limoGreenPrice) festivePatch.limoGreenPrice = limoGreenPrice;
+  if (String(doc.limoGreenListPrice || '') !== limoGreenListPrice) {
+    festivePatch.limoGreenListPrice = limoGreenListPrice;
+  }
+  if (Object.keys(festivePatch).length) {
+    Object.assign(doc, festivePatch);
+    await doc.save();
+  }
+
   const data = doc.toObject ? doc.toObject() : doc;
   return successResponse(res, {
     ...data,
+    mpv7Price,
+    mpv7ListPrice,
+    limoGreenPrice,
+    limoGreenListPrice,
     features: {
       whatsappOtp: process.env.WHATSAPP_OTP_ENABLED === 'true',
     },

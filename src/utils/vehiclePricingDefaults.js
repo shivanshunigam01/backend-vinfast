@@ -123,4 +123,6 @@ module.exports = {
   VEHICLE_PRICING_DEFAULTS,
   SLUG_ORDER,
   buildDefaultPricingDocs,
+  pickFestiveOffer,
+  pickFestiveList,
 };
