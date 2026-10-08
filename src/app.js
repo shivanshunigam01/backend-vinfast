@@ -16,22 +16,53 @@ const customerBookingsRoutes = require('./routes/customerBookings');
 
 const app = express();
 
+/** Always allow these in production even if CLIENT_URL is missing after a deploy. */
+const BUILTIN_CORS_ORIGINS = [
+  'https://patliputravinfast.in',
+  'https://www.patliputravinfast.in',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
 /** Comma-separated origins, no trailing slash. Browsers send exact Origin (e.g. https://patliputravinfast.in). */
 function corsAllowedOrigins() {
   const raw = process.env.CLIENT_URL || '';
-  return raw
+  const fromEnv = raw
     .split(',')
     .map((s) => s.trim().replace(/\/$/, ''))
     .filter(Boolean);
+  return [...new Set([...BUILTIN_CORS_ORIGINS, ...fromEnv])];
+}
+
+function isPatliputraVinfastOrigin(origin) {
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== 'https:' && protocol !== 'http:') return false;
+    if (hostname === 'localhost') return true;
+    return (
+      hostname === 'patliputravinfast.in' ||
+      hostname === 'www.patliputravinfast.in' ||
+      hostname.endsWith('.patliputravinfast.in')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function corsOriginAllowed(origin) {
+  if (!origin) return true;
+  const list = corsAllowedOrigins();
+  if (list.includes(origin)) return true;
+  return isPatliputraVinfastOrigin(origin);
 }
 
 app.use(
   cors({
     origin(origin, callback) {
-      const list = corsAllowedOrigins();
-      if (!origin) return callback(null, true);
-      if (list.length === 0) return callback(null, true);
-      if (list.includes(origin)) return callback(null, true);
+      if (corsOriginAllowed(origin)) return callback(null, true);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[CORS] blocked origin:', origin);
+      }
       callback(null, false);
     },
     credentials: true,
