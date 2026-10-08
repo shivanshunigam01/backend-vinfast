@@ -14,6 +14,8 @@
  *   APPLY=1 node src/scripts/restoreMissingLeadFollowUps.js
  */
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 const connectDB = require('../config/db');
 const Lead = require('../models/Lead');
@@ -38,6 +40,10 @@ async function resolveFallbackActorId() {
   return admin?._id;
 }
 
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function leadHasNote(leadId, note) {
   const n = normalizeNote(note);
   if (!n) return true;
@@ -45,11 +51,29 @@ async function leadHasNote(leadId, note) {
   if (hit) return true;
   const fuzzy = await LeadFollowUp.findOne({
     leadId,
-    $or: [{ note: new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }, { outcome: n }],
+    $or: [{ note: new RegExp(escapeRe(n.slice(0, 120))) }, { outcome: n }],
   })
     .select('_id')
     .lean();
   return Boolean(fuzzy);
+}
+
+async function remarksCoveredByTimeline(leadId, remarks) {
+  const n = normalizeNote(remarks);
+  if (!n) return true;
+  const rows = await LeadFollowUp.find({ leadId }).select('note outcome').lean();
+  if (!rows.length) return false;
+  const probe = n.slice(0, 60).toLowerCase();
+  return rows.some((r) => {
+    const blob = `${r.note || ''} ${r.outcome || ''}`.toLowerCase();
+    return blob.includes(probe) || probe.includes(blob.slice(0, 60));
+  });
+}
+
+function skipRemarksText(note) {
+  if (!note) return true;
+  if (/merged duplicate of/i.test(note)) return true;
+  return false;
 }
 
 async function createFollowUp({ leadId, createdBy, note, status, at, outcome, touchedLeadIds }) {
@@ -162,10 +186,14 @@ async function restoreFromLeadSheetLabels(apply, fallbackActorId, touchedLeadIds
   return { candidates, restored };
 }
 
-/** One-off note from lead.remarks when timeline is empty (accidental wipe). */
-async function restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds) {
-  const leads = await Lead.find({ remarks: { $exists: true, $nin: [null, ''] } })
-    .select('_id remarks assignedTo createdAt')
+/** Remarks when timeline is completely empty (all executives). */
+async function restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds, reportRows) {
+  const leads = await Lead.find({
+    isDuplicate: { $ne: true },
+    remarks: { $exists: true, $nin: [null, ''] },
+  })
+    .select('_id name mobile remarks assignedTo createdAt')
+    .populate({ path: 'assignedTo', select: 'name' })
     .lean();
 
   let restored = 0;
@@ -173,15 +201,56 @@ async function restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds) {
     const count = await LeadFollowUp.countDocuments({ leadId: lead._id });
     if (count > 0) continue;
     const note = normalizeNote(lead.remarks);
-    if (note.length < 8) continue;
-    if (/^excel model:/i.test(note)) continue;
-    if (/merged duplicate of/i.test(note)) continue;
+    if (note.length < 3 || skipRemarksText(note)) continue;
     if (!apply) {
-      console.log(`[dry-run] remarks → lead ${lead._id}: ${note.slice(0, 80)}`);
       restored += 1;
       continue;
     }
-    const actor = lead.assignedTo || fallbackActorId;
+    const actor = lead.assignedTo?._id || lead.assignedTo || fallbackActorId;
+    const displayNote = note.length < 8 ? note : `[Restored from remarks] ${note}`;
+    const ok = await createFollowUp({
+      leadId: lead._id,
+      createdBy: actor,
+      note: displayNote,
+      status: 'completed',
+      at: lead.createdAt,
+      touchedLeadIds,
+    });
+    if (ok) {
+      restored += 1;
+      reportRows.push({
+        executive: lead.assignedTo?.name || 'Unassigned',
+        customer: lead.name,
+        mobile: lead.mobile,
+        source: 'remarks_empty_timeline',
+        message: note.slice(0, 200),
+      });
+    }
+  }
+  return restored;
+}
+
+/** Remarks saved on lead but not reflected in any follow-up row (any executive). */
+async function restoreRemarksNotOnTimeline(apply, fallbackActorId, touchedLeadIds, reportRows) {
+  const leads = await Lead.find({
+    isDuplicate: { $ne: true },
+    remarks: { $exists: true, $nin: [null, ''] },
+  })
+    .select('_id name mobile remarks assignedTo createdAt')
+    .populate({ path: 'assignedTo', select: 'name' })
+    .lean();
+
+  let restored = 0;
+  for (const lead of leads) {
+    const note = normalizeNote(lead.remarks);
+    if (note.length < 8 || skipRemarksText(note)) continue;
+    if (await leadHasNote(lead._id, note)) continue;
+    if (await remarksCoveredByTimeline(lead._id, note)) continue;
+    if (!apply) {
+      restored += 1;
+      continue;
+    }
+    const actor = lead.assignedTo?._id || lead.assignedTo || fallbackActorId;
     const ok = await createFollowUp({
       leadId: lead._id,
       createdBy: actor,
@@ -190,9 +259,82 @@ async function restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds) {
       at: lead.createdAt,
       touchedLeadIds,
     });
-    if (ok) restored += 1;
+    if (ok) {
+      restored += 1;
+      reportRows.push({
+        executive: lead.assignedTo?.name || 'Unassigned',
+        customer: lead.name,
+        mobile: lead.mobile,
+        source: 'remarks_not_on_timeline',
+        message: note.slice(0, 200),
+      });
+    }
   }
   return restored;
+}
+
+/** CRE sheet text columns → follow-up rows when missing (import / sheet edits). */
+async function restoreFromCreSheetRemarkFields(apply, fallbackActorId, touchedLeadIds, reportRows) {
+  const fields = [
+    ['initialRemark', 'Initial: '],
+    ['salesPersonRemark', 'Sales: '],
+    ['afterTdRemark', 'After TD: '],
+    ['tdNotDoneWhy', 'TD not done: '],
+  ];
+  const leads = await Lead.find({ isDuplicate: { $ne: true }, creSheet: { $exists: true } })
+    .select('_id name mobile creSheet assignedTo createdAt')
+    .populate({ path: 'assignedTo', select: 'name' })
+    .lean();
+
+  let restored = 0;
+  for (const lead of leads) {
+    const cs = lead.creSheet || {};
+    for (const [key, prefix] of fields) {
+      const raw = normalizeNote(cs[key]);
+      if (!raw || raw.length < 3) continue;
+      const note = `${prefix}${raw}`;
+      if (await leadHasNote(lead._id, note) || await leadHasNote(lead._id, raw)) continue;
+      if (!apply) {
+        restored += 1;
+        continue;
+      }
+      const actor = lead.assignedTo?._id || lead.assignedTo || fallbackActorId;
+      const ok = await createFollowUp({
+        leadId: lead._id,
+        createdBy: actor,
+        note,
+        status: 'completed',
+        at: cs.callDate || lead.createdAt,
+        touchedLeadIds,
+      });
+      if (ok) {
+        restored += 1;
+        reportRows.push({
+          executive: lead.assignedTo?.name || 'Unassigned',
+          customer: lead.name,
+          mobile: lead.mobile,
+          source: `creSheet.${key}`,
+          message: note.slice(0, 200),
+        });
+      }
+    }
+  }
+  return restored;
+}
+
+function writeReportCsv(reportRows, filePath) {
+  if (!reportRows.length) return;
+  const header = 'assignedExecutive,customerName,mobile,restoreSource,message\n';
+  const lines = reportRows.map((r) =>
+    [
+      `"${String(r.executive).replace(/"/g, '""')}"`,
+      `"${String(r.customer || '').replace(/"/g, '""')}"`,
+      r.mobile || '',
+      r.source,
+      `"${String(r.message).replace(/"/g, '""')}"`,
+    ].join(','),
+  );
+  fs.writeFileSync(filePath, header + lines.join('\n'), 'utf8');
 }
 
 /** Re-link orphaned prefixed notes from duplicate leads (same mobile). */
@@ -248,6 +390,7 @@ async function refreshAffectedLeads(leadIds) {
     console.log(apply ? 'APPLY=1 — writing to database\n' : 'Dry-run — no writes (use APPLY=1 to apply)\n');
 
     const touchedLeadIds = new Set();
+    const reportRows = [];
 
     const n = await restoreFromNotifications(apply, fallbackActorId, touchedLeadIds);
     console.log(`Notifications: ${n.restored} restorable (${n.candidates} checked)`);
@@ -255,11 +398,26 @@ async function refreshAffectedLeads(leadIds) {
     const s = await restoreFromLeadSheetLabels(apply, fallbackActorId, touchedLeadIds);
     console.log(`Sheet free-text follow-up: ${s.restored} restorable (${s.candidates} checked)`);
 
-    const remarksN = await restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds);
-    console.log(`From lead remarks (empty timeline): ${remarksN} restorable`);
+    const creN = await restoreFromCreSheetRemarkFields(apply, fallbackActorId, touchedLeadIds, reportRows);
+    console.log(`CRE sheet remark fields: ${creN} restorable`);
+
+    const remarksN = await restoreFromLeadRemarks(apply, fallbackActorId, touchedLeadIds, reportRows);
+    console.log(`Lead remarks (empty timeline): ${remarksN} restorable`);
+
+    const remarksGap = await restoreRemarksNotOnTimeline(apply, fallbackActorId, touchedLeadIds, reportRows);
+    console.log(`Lead remarks (not on timeline): ${remarksGap} restorable`);
 
     const moved = await relinkOrphanPrefixedFollowUps(apply);
     console.log(`Orphan prefixed on duplicate leads: ${moved} to relink`);
+
+    const reportPath = path.join(
+      process.cwd(),
+      process.env.RESTORE_REPORT_CSV || 'follow-up-restore-by-executive.csv',
+    );
+    if (apply && reportRows.length) {
+      writeReportCsv(reportRows, reportPath);
+      console.log(`Report: ${reportPath} (${reportRows.length} rows)`);
+    }
 
     if (apply && touchedLeadIds.size) {
       await refreshAffectedLeads([...touchedLeadIds]);
