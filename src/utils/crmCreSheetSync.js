@@ -62,7 +62,27 @@ function extractFollowUpSlots(followUps = []) {
 async function upsertPrefixedFollowUp({ leadId, adminId, prefix, remark, dateVal, existingId }) {
   const text = String(remark || '').trim();
   if (!text) {
-    if (existingId) await LeadFollowUp.deleteOne({ _id: existingId, leadId });
+    // Do not delete slot follow-ups when the CRE sheet save sends empty remarks
+    // (e.g. form loaded before detail API). Preserves history; use timeline to edit.
+    if (existingId) {
+      if (dateVal) {
+        const scheduled = parseDateInput(dateVal);
+        if (scheduled && !Number.isNaN(scheduled.getTime())) {
+          const isCompleted = scheduled <= new Date();
+          await LeadFollowUp.updateOne(
+            { _id: existingId, leadId },
+            {
+              $set: {
+                scheduledAt: scheduled,
+                completedAt: isCompleted ? scheduled : undefined,
+                status: isCompleted ? 'completed' : 'pending',
+              },
+            },
+          );
+        }
+      }
+      return existingId;
+    }
     return null;
   }
   const note = `${prefix}${text}`;
