@@ -571,22 +571,41 @@ async function buildLeadQuery(admin, queryParams = {}) {
     }
   }
   if (queryParams.search) {
-    const regex = new RegExp(queryParams.search.trim(), 'i');
+    const term = String(queryParams.search).trim();
+    const regex = new RegExp(term, 'i');
+    const or = [
+      { name: regex },
+      { mobile: regex },
+      { email: regex },
+      { city: regex },
+      { area: regex },
+      { address: regex },
+      { leadType: regex },
+      { remarks: regex },
+      { leadId: regex },
+      { opportunityId: regex },
+    ];
+    const mobileNorm = term.replace(/\D/g, '').slice(-10);
+    if (/^[6-9]\d{9}$/.test(mobileNorm)) {
+      or.push({ mobile: mobileNorm });
+      const customer = await PVCustomer.findOne({
+        mobile: mobileNorm,
+        isSubCustomer: { $ne: true },
+      })
+        .select('_id')
+        .lean();
+      if (customer) or.push({ pvCustomerId: customer._id });
+    }
+    if (/^pvcust/i.test(term)) {
+      const customer = await PVCustomer.findOne({
+        customerId: new RegExp(`^${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+      })
+        .select('_id')
+        .lean();
+      if (customer) or.push({ pvCustomerId: customer._id });
+    }
     query.$and = query.$and || [];
-    query.$and.push({
-      $or: [
-        { name: regex },
-        { mobile: regex },
-        { email: regex },
-        { city: regex },
-        { area: regex },
-        { address: regex },
-        { leadType: regex },
-        { remarks: regex },
-        { leadId: regex },
-        { opportunityId: regex },
-      ],
-    });
+    query.$and.push({ $or: or });
   }
   if (queryParams.followUpDue === 'true') {
     query.nextFollowUp = { $lte: new Date() };
