@@ -11,6 +11,18 @@ function tdCoordinatorEmail() {
   return normalizeEmail(process.env.TD_COORDINATOR_EMAIL || DEFAULT_TD_COORDINATOR_EMAIL);
 }
 
+/** Logged-in user is the TD coordinator (full staff list for TD assignment). */
+function isTdCoordinatorUser(admin) {
+  if (!admin) return false;
+  const target = tdCoordinatorEmail();
+  if (target && normalizeEmail(admin.email) === target) return true;
+  const d = String(admin.designation || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  return d.includes('td_coordinator') || d.includes('test_drive_coordinator');
+}
+
 let cachedCoordinator = null;
 let cacheExpiresAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -144,6 +156,7 @@ function scheduleRepairUnassignedTestDriveBookings(options = {}) {
 
 module.exports = {
   tdCoordinatorEmail,
+  isTdCoordinatorUser,
   findTdCoordinatorStaff,
   isTdBookingUnassigned,
   assignNewBookingToTdCoordinator,

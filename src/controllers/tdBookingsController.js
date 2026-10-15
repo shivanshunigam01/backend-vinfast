@@ -695,7 +695,12 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   const staff = await TDStaff.findById(executiveId);
   if (!staff || !staff.active) throw new ApiError(404, 'Executive not found');
-  if (isCreUser(req.admin) && !isCreAssignableDesignation(staff.designation)) {
+  const { isTdCoordinatorUser } = require('../utils/tdCoordinatorAssignment');
+  if (
+    isCreUser(req.admin) &&
+    !isTdCoordinatorUser(req.admin) &&
+    !isCreAssignableDesignation(staff.designation)
+  ) {
     throw new ApiError(403, 'CRE can only assign test drives to Sales Executives or Sales Managers');
   }
 

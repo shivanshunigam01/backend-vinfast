@@ -11,6 +11,7 @@ const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 const { isTeamScopedUser, resolveStaffIdsForUser, isCreUser, isCreAssignableDesignation } = require('../utils/leadAssignment');
+const { isTdCoordinatorUser } = require('../utils/tdCoordinatorAssignment');
 const { isCreDesignation, isCrmDeskDesignation, applyCreAccessInPlace, applyCrmDeskAccessInPlace } = require('../constants/creAccess');
 
 const PASSWORD_ALPHABET =
@@ -458,8 +459,10 @@ async function listAssignableStaff(viewer) {
 
   let filtered = docs;
 
-  // CRE assigns to Sales Executives and Sales Managers.
-  if (viewer && isCreUser(viewer)) {
+  // TD coordinator (and managers) assign test drives to any active staff member.
+  if (viewer && isTdCoordinatorUser(viewer)) {
+    filtered = docs;
+  } else if (viewer && isCreUser(viewer)) {
     filtered = docs.filter((row) => isCreAssignableDesignation(row.designation));
   } else if (viewer && isTeamScopedUser(viewer)) {
     const allowed = new Set(await resolveStaffIdsForUser(viewer));
