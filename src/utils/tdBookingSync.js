@@ -5,6 +5,7 @@ const TDBranch = require('../models/TDBranch');
 const TestDrive = require('../models/TestDrive');
 const { upsertTDCustomer } = require('./tdCustomerResolver');
 const { normalizeModel } = require('./tdVehicleLegacyImport');
+const { assignNewBookingToTdCoordinator } = require('./tdCoordinatorAssignment');
 
 function normalizeSlotTime(raw) {
   if (!raw) return '10:00';
@@ -83,7 +84,7 @@ async function syncTestDriveToTdBooking(testDrive) {
   const slotDate = parseSlotDate(testDrive.preferredDate);
   const slotTime = normalizeSlotTime(testDrive.preferredTime);
 
-  return TDBooking.create({
+  const booking = await TDBooking.create({
     bookingId: nextBookingId(),
     bookingStatus: 'CONFIRMED',
     slotDate,
@@ -99,6 +100,9 @@ async function syncTestDriveToTdBooking(testDrive) {
     customerEmail: testDrive.email,
     customerCity: testDrive.city,
   });
+
+  await assignNewBookingToTdCoordinator(booking, { notify: true });
+  return booking;
 }
 
 async function syncAllLegacyTestDrives() {

@@ -44,7 +44,6 @@ const {
   leadAssignedToStaff,
   leadReadableByAdmin,
   applyLeadAssignment,
-  applyBookingExecutiveAssignment,
   repairExecutiveLeadAssignments,
   touchLeadActivity,
   CRM_LEAD_LIST_SORT,
@@ -1666,13 +1665,6 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   });
   const branchDoc = await resolveBranch(branch);
 
-  // Assign the lead's executive to the booking (or the requesting executive).
-  let executive = null;
-  const executiveRef = lead.assignedTo || (isExecutiveScopedUser(req.admin) ? req.admin._id : null);
-  if (executiveRef) {
-    executive = await TDStaff.findById(executiveRef).select('name email');
-  }
-
   const booking = await TDBooking.create({
     bookingId: nextBookingId(),
     bookingStatus: approvalStatus === 'PENDING' ? 'PENDING' : 'CONFIRMED',
@@ -1696,12 +1688,14 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
     customerCity: lead.city,
   });
 
-  if (executive) {
-    applyBookingExecutiveAssignment(booking, executive);
-    await booking.save();
-  }
-
   const pendingApproval = approvalStatus === 'PENDING';
+  if (!pendingApproval) {
+    const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+    await assignNewBookingToTdCoordinator(booking, {
+      notify: true,
+      actorId: req.admin._id,
+    });
+  }
   if (!pendingApproval) {
     // Move the pipeline forward only for confirmed bookings.
     const prevStage = lead.status;

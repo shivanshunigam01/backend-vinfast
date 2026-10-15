@@ -870,6 +870,8 @@ exports.decideRepeatApproval = asyncHandler(async (req, res) => {
 
   if (normalized === 'APPROVED') {
     if (doc.bookingStatus === 'PENDING') doc.bookingStatus = 'CONFIRMED';
+    const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+    await assignNewBookingToTdCoordinator(doc, { notify: true, actorId: req.admin._id, save: false });
   } else {
     doc.bookingStatus = 'CANCELLED';
     doc.cancellationReason = doc.approvalNote || 'Repeat test drive request rejected';
