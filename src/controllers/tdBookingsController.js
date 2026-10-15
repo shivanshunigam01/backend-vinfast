@@ -130,6 +130,9 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
     createdByAdmin: req.admin._id,
   });
 
+  const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+  await assignNewBookingToTdCoordinator(booking, { notify: true, actorId: req.admin._id });
+
   // Link the CRM side: update the source lead when given, otherwise run the standard intake.
   let lead = null;
   if (body.leadId) {
@@ -227,6 +230,9 @@ function assertAdminEditRights(admin) {
 }
 
 exports.listBookings = asyncHandler(async (req, res) => {
+  const { scheduleRepairUnassignedTestDriveBookings } = require('../utils/tdCoordinatorAssignment');
+  scheduleRepairUnassignedTestDriveBookings();
+
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
   const andClauses = [];
@@ -780,6 +786,9 @@ exports.rejectAssignment = asyncHandler(async (req, res) => {
   doc.assignmentRejectReason = reason;
   if (doc.bookingStatus === 'CONFIRMED') doc.bookingStatus = 'PENDING';
   await doc.save();
+
+  const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+  await assignNewBookingToTdCoordinator(doc, { notify: true, actorId: req.admin._id });
 
   const { notifyAssignmentRejected } = require('../utils/notifications');
   const TDStaffModel = require('../models/TDStaff');

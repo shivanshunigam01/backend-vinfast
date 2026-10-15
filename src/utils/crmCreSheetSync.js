@@ -230,6 +230,11 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
     });
   }
 
+  if (!assigneeId && bookingStatus !== 'COMPLETED') {
+    const { assignNewBookingToTdCoordinator } = require('./tdCoordinatorAssignment');
+    await assignNewBookingToTdCoordinator(booking, { notify: true });
+  }
+
   row.tdBookingId = booking._id;
   touchLeadActivity(row);
   await row.save();

@@ -12,6 +12,7 @@ const TDBooking = require('../models/TDBooking');
 const TestDrive = require('../models/TestDrive');
 const { importLegacyTdVehiclesIfEmpty, normalizeModel } = require('./tdVehicleLegacyImport');
 const { syncTestDriveToTdBooking, syncAllLegacyTestDrives } = require('./tdBookingSync');
+const { repairUnassignedActiveTestDriveBookings } = require('./tdCoordinatorAssignment');
 
 const DEFAULT_STAFF_PASSWORD = process.env.SEED_TD_STAFF_PASSWORD || 'ChangeMe123!';
 
@@ -350,12 +351,15 @@ async function ensureTdModuleReady() {
       fleetCreated: await ensureTdFleet(branch._id),
       staffCreated: await ensureTdStaff(),
       bookingsSynced: await syncAllLegacyTestDrives(),
+      unassignedRepaired: (await repairUnassignedActiveTestDriveBookings({ limit: 500, notify: false }))
+        .repaired,
     };
 
     const anyWork =
       results.fleetCreated > 0 ||
       results.staffCreated > 0 ||
-      results.bookingsSynced > 0;
+      results.bookingsSynced > 0 ||
+      results.unassignedRepaired > 0;
 
     if (anyWork) {
       console.log('[TD bootstrap]', JSON.stringify(results));
