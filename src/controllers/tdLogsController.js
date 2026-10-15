@@ -162,22 +162,21 @@ exports.endTestDrive = asyncHandler(async (req, res) => {
     log.vehiclePhotoPublicId = uploaded.public_id;
   }
 
-  // Completion geolocation (Google-pinned location from the executive's device / map).
+  // Completion geolocation is optional (lat/lng from device or Google Maps pin).
   const lat = Number(endLat);
   const lng = Number(endLng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    throw new ApiError(400, 'Completion location (lat/lng) is required — pin the test drive location on the map');
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      throw new ApiError(400, 'Invalid completion location coordinates');
+    }
+    log.endLocation = {
+      lat,
+      lng,
+      accuracy: Number.isFinite(Number(endAccuracy)) ? Number(endAccuracy) : undefined,
+      capturedAt: new Date(),
+    };
+    log.gpsRoute.push({ lat, lng, timestamp: new Date() });
   }
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    throw new ApiError(400, 'Invalid completion location coordinates');
-  }
-  log.endLocation = {
-    lat,
-    lng,
-    accuracy: Number.isFinite(Number(endAccuracy)) ? Number(endAccuracy) : undefined,
-    capturedAt: new Date(),
-  };
-  log.gpsRoute.push({ lat, lng, timestamp: new Date() });
 
   // Snapshot the driving licence data onto the completion record.
   log.dlNumber = booking.dlNumber || undefined;
