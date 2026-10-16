@@ -13,6 +13,11 @@ const {
 } = require('./sheetCalculationLogic');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { monthBoundsIndia } = require('./indiaDateTime');
+
+/** TD module bookings (includes VinFast CRM MTD imports). */
+const ACTIVE_TD_BOOKING_FILTER = {
+  bookingStatus: { $nin: ['CANCELLED', 'MISSED'] },
+};
 const { appendLeadDateFilter } = require('./leadDateFilter');
 const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
 const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
@@ -113,6 +118,9 @@ async function buildDetailedReport({ admin } = {}) {
     tdAll,
     tdMtd,
     tdDoneToday,
+    tdBookingsAll,
+    tdBookingsMtd,
+    tdBookingsDoneToday,
     sourceAgg,
     leadTypeAgg,
     staffRows,
@@ -149,6 +157,16 @@ async function buildDetailedReport({ admin } = {}) {
       ...sheetTdDoneQuery(),
       ...sheetTdMonthRange(todayStart, todayEnd),
     }),
+    TDBooking.countDocuments(ACTIVE_TD_BOOKING_FILTER),
+    TDBooking.countDocuments({
+      ...ACTIVE_TD_BOOKING_FILTER,
+      slotDate: dateRange(mtdStart, mtdMonthEnd),
+    }),
+    TDBooking.countDocuments({
+      ...ACTIVE_TD_BOOKING_FILTER,
+      bookingStatus: 'COMPLETED',
+      slotDate: dateRange(todayStart, todayEnd),
+    }),
     Lead.aggregate([
       { $match: leadScope },
       {
@@ -179,15 +197,23 @@ async function buildDetailedReport({ admin } = {}) {
       )
       .populate({ path: 'assignedTo', select: 'name email' })
       .lean(),
-    Lead.aggregate([
+    TDBooking.aggregate([
       {
         $match: {
-          ...leadScope,
-          ...sheetTdDoneQuery(),
-          'creSheet.tdDate': dateRange(yearStart, todayEnd),
+          ...ACTIVE_TD_BOOKING_FILTER,
+          slotDate: dateRange(yearStart, todayEnd),
         },
       },
-      { $group: { _id: { $month: '$creSheet.tdDate' }, count: { $sum: 1 } } },
+      {
+        $group: {
+          _id: {
+            $toInt: {
+              $dateToString: { format: '%m', date: '$slotDate', timezone: 'Asia/Kolkata' },
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
       { $sort: { _id: 1 } },
     ]),
   ]);
@@ -305,7 +331,14 @@ async function buildDetailedReport({ admin } = {}) {
       totalLeads: { all: totalLeadsAll, mtd: totalLeadsMtd, today: totalLeadsToday },
       walkIn: { all: walkInAll, mtd: walkInMtd, today: walkInToday },
       digital: { all: digitalAll, mtd: digitalMtd, today: digitalToday },
-      testDrives: { all: tdAll, mtd: tdMtd, doneToday: tdDoneToday },
+      testDrives: {
+        all: tdBookingsAll,
+        mtd: tdBookingsMtd,
+        doneToday: tdBookingsDoneToday,
+        sheetAll: tdAll,
+        sheetMtd: tdMtd,
+        sheetDoneToday: tdDoneToday,
+      },
       bookingCount,
       callsMadeToday: callsToday,
     },
@@ -322,7 +355,7 @@ async function buildDetailedReport({ admin } = {}) {
     monthlyTestDrivesTotal: monthlyTdTotal,
     unassignedSheet,
     attributionNote:
-      'Staff lead and TD counts use SALES CONSULTANT on the CRE sheet (with CRM assignee fallback). TD = sheet TD DONE Yes + TD date (or Month Year TD) in range. TD MTD = current calendar month (India). Unassigned = no matching consultant.',
+      'Summary test drive totals use the Test Drive module (TDBooking slot dates, India timezone). Staff TD columns still use CRE sheet consultant + TD DONE. TD MTD = slot date in current calendar month. Unassigned = no matching consultant on sheet.',
   };
 }
 
