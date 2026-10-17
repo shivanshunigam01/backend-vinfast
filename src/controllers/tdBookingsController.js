@@ -27,6 +27,7 @@ const {
   resolveStaffIdsForUser,
   isCreUser,
   isCreAssignableDesignation,
+  isSalesExecutiveDesignation,
 } = require('../utils/leadAssignment');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { getActiveModelNames } = require('../utils/vehicleCatalog');
@@ -318,7 +319,14 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
 
 exports.listExecutives = asyncHandler(async (req, res) => {
   const { listAssignableStaff } = require('./tdUsersController');
-  const staff = await listAssignableStaff(req.admin);
+  const { isTdCoordinatorUser } = require('../utils/tdCoordinatorAssignment');
+  const forceExecutivesOnly = ['1', 'true', 'yes'].includes(
+    String(req.query.executivesOnly || req.query.delegate || '').toLowerCase(),
+  );
+  const executivesOnly =
+    forceExecutivesOnly ||
+    (isTeamScopedUser(req.admin) && !isTdCoordinatorUser(req.admin));
+  const staff = await listAssignableStaff(req.admin, { executivesOnly });
 
   const data = staff.map((s) => ({
     _id: s._id,
@@ -693,12 +701,23 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   if (!executiveId) throw new ApiError(400, 'executiveId is required');
 
   const doc = await findBookingById(req.params.id);
+  await assertBookingReadable(doc, req.admin);
+
   const staff = await TDStaff.findById(executiveId);
   if (!staff || !staff.active) throw new ApiError(404, 'Executive not found');
   const { isTdCoordinatorUser } = require('../utils/tdCoordinatorAssignment');
-  if (
+  if (isTdCoordinatorUser(req.admin)) {
+    // Full staff list (managers, executives, etc.)
+  } else if (isTeamScopedUser(req.admin)) {
+    const allowed = await resolveStaffIdsForUser(req.admin);
+    if (!allowed.includes(String(executiveId))) {
+      throw new ApiError(403, 'You can only assign test drives to staff on your team');
+    }
+    if (!isSalesExecutiveDesignation(staff.designation)) {
+      throw new ApiError(403, 'Assign this test drive to a sales executive on your team');
+    }
+  } else if (
     isCreUser(req.admin) &&
-    !isTdCoordinatorUser(req.admin) &&
     !isCreAssignableDesignation(staff.designation)
   ) {
     throw new ApiError(403, 'CRE can only assign test drives to Sales Executives or Sales Managers');

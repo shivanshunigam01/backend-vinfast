@@ -10,7 +10,13 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
 const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
-const { isTeamScopedUser, resolveStaffIdsForUser, isCreUser, isCreAssignableDesignation } = require('../utils/leadAssignment');
+const {
+  isTeamScopedUser,
+  resolveStaffIdsForUser,
+  isCreUser,
+  isCreAssignableDesignation,
+  isSalesExecutiveDesignation,
+} = require('../utils/leadAssignment');
 const { isTdCoordinatorUser } = require('../utils/tdCoordinatorAssignment');
 const { isCreDesignation, isCrmDeskDesignation, applyCreAccessInPlace, applyCrmDeskAccessInPlace } = require('../constants/creAccess');
 
@@ -450,7 +456,7 @@ exports.deleteUser = asyncHandler(async (req, res) => {
   );
 });
 
-async function listAssignableStaff(viewer) {
+async function listAssignableStaff(viewer, { executivesOnly = false } = {}) {
   // Include custom positions added via User Master, not just the fixed hierarchy.
   const docs = await TDStaff.find({ active: true })
     .select('name email role designation reportsTo active')
@@ -459,7 +465,7 @@ async function listAssignableStaff(viewer) {
 
   let filtered = docs;
 
-  // TD coordinator (and managers) assign test drives to any active staff member.
+  // TD coordinator assigns test drives to any active staff member (including managers).
   if (viewer && isTdCoordinatorUser(viewer)) {
     filtered = docs;
   } else if (viewer && isCreUser(viewer)) {
@@ -467,6 +473,10 @@ async function listAssignableStaff(viewer) {
   } else if (viewer && isTeamScopedUser(viewer)) {
     const allowed = new Set(await resolveStaffIdsForUser(viewer));
     filtered = docs.filter((row) => allowed.has(String(row._id)));
+  }
+
+  if (executivesOnly) {
+    filtered = filtered.filter((row) => isSalesExecutiveDesignation(row.designation));
   }
 
   return filtered.map((row) => ({

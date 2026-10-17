@@ -101,7 +101,10 @@ router.patch(
   '/:id/assign-executive',
   mongoIdParam,
   validate,
-  requireModuleAction('td_bookings', 'assign'),
+  requireAnyModuleAction([
+    ['td_bookings', 'assign'],
+    ['td_my_bookings', 'reassign'],
+  ]),
   tdBookingsController.assignExecutive,
 );
 router.patch(

@@ -44,6 +44,15 @@ function isCrmDeskUser(admin) {
   return isCrmDeskDesignation(admin?.designation);
 }
 
+function isSalesExecutiveDesignation(designation) {
+  const d = String(designation || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  if (d === 'sales_executive') return true;
+  return d.includes('sales_executive') && !d.includes('sales_manager');
+}
+
 function isCreAssignableDesignation(designation) {
   const d = String(designation || '')
     .toLowerCase()
@@ -453,6 +462,7 @@ module.exports = {
   isCreUser,
   isCrmDeskUser,
   isCreAssignableDesignation,
+  isSalesExecutiveDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
   isSalesTeamAnchorDesignation,
