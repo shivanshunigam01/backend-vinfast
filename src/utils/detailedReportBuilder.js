@@ -27,6 +27,7 @@ const {
   assignedToStaffFilterAsync,
   isUnrestrictedViewer,
 } = require('./leadAssignment');
+const { buildDetailedReportLeadDetails } = require('./detailedReportLeadDetails');
 
 const MANAGER_DESIGNATIONS = new Set(['sales_manager', 'sales_head', 'branch_manager']);
 const EXECUTIVE_DESIGNATIONS = new Set(['sales_executive']);
@@ -319,6 +320,17 @@ async function buildDetailedReport({ admin } = {}) {
   }));
   const monthlyTdTotal = monthlyTestDrives.reduce((s, r) => s + r.count, 0);
 
+  const drillDown = await buildDetailedReportLeadDetails({
+    leadScope,
+    scopedLeadIds,
+    mtdStart,
+    mtdMonthEnd,
+    todayStart,
+    todayEnd,
+    yearStart,
+    activeTdBookingFilter: ACTIVE_TD_BOOKING_FILTER,
+  });
+
   return {
     generatedAt: now.toISOString(),
     period: {
@@ -356,6 +368,7 @@ async function buildDetailedReport({ admin } = {}) {
     unassignedSheet,
     attributionNote:
       'Summary test drive totals use the Test Drive module (TDBooking slot dates, India timezone). Staff TD columns still use CRE sheet consultant + TD DONE. TD MTD = slot date in current calendar month. Unassigned = no matching consultant on sheet.',
+    ...drillDown,
   };
 }
 

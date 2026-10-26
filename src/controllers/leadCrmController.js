@@ -1098,12 +1098,16 @@ async function applyCreSheetPayloadToLead(lead, admin, payload = {}) {
   const changes = [];
 
   if (followUpLabel !== undefined) {
-    const next = String(followUpLabel || '').trim() || undefined;
-    if ((lead.leadType || '') !== (next || '') || (lead.creSheet?.followUp || '') !== (next || '')) {
-      lead.leadType = next;
-      lead.creSheet = lead.creSheet || {};
-      lead.creSheet.followUp = next;
-      changes.push('FOLLOW-UP');
+    const next = String(followUpLabel || '').trim();
+    // Never wipe FOLLOW-UP / leadType when the CRE sheet sends a blank value (form default).
+    // Timeline follow-ups stay visible; use the Follow-ups tab or a non-empty sheet value to change.
+    if (next) {
+      if ((lead.leadType || '') !== next || (lead.creSheet?.followUp || '') !== next) {
+        lead.leadType = next;
+        lead.creSheet = lead.creSheet || {};
+        lead.creSheet.followUp = next;
+        changes.push('FOLLOW-UP');
+      }
     }
   }
 

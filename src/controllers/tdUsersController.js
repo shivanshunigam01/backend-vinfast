@@ -424,6 +424,14 @@ exports.deleteUser = asyncHandler(async (req, res) => {
 
   const Lead = require('../models/Lead');
   const TDBooking = require('../models/TDBooking');
+  const { normalizeTransferTarget, resolveLeadTransferAssignee } = require('../utils/staffLeadTransfer');
+
+  const transferTarget = normalizeTransferTarget(
+    req.query.leadTransferTo || req.body?.leadTransferTo,
+  );
+  const assignee =
+    transferTarget === 'unassigned' ? null : await resolveLeadTransferAssignee(doc, transferTarget);
+
   const email = doc.email ? String(doc.email).trim().toLowerCase() : null;
 
   const leadFilter = {
@@ -433,25 +441,61 @@ exports.deleteUser = asyncHandler(async (req, res) => {
     $or: [{ assignedExecutive: doc._id }, ...(email ? [{ assignedExecutiveEmail: email }] : [])],
   };
 
-  const [leadResult, bookingResult] = await Promise.all([
-    Lead.updateMany(leadFilter, { $unset: { assignedTo: 1, assignedToEmail: 1 } }),
-    TDBooking.updateMany(bookingFilter, {
-      $unset: { assignedExecutive: 1, assignedExecutiveEmail: 1 },
-    }),
-  ]);
+  let transferredLeads = 0;
+  let transferredBookings = 0;
+
+  if (assignee) {
+    const assigneeEmail = assignee.email ? String(assignee.email).trim().toLowerCase() : null;
+    const [leadResult, bookingResult] = await Promise.all([
+      Lead.updateMany(leadFilter, {
+        $set: {
+          assignedTo: assignee._id,
+          ...(assigneeEmail ? { assignedToEmail: assigneeEmail } : {}),
+        },
+      }),
+      TDBooking.updateMany(bookingFilter, {
+        $set: {
+          assignedExecutive: assignee._id,
+          ...(assigneeEmail ? { assignedExecutiveEmail: assigneeEmail } : {}),
+        },
+      }),
+    ]);
+    transferredLeads = leadResult.modifiedCount || 0;
+    transferredBookings = bookingResult.modifiedCount || 0;
+  } else {
+    const [leadResult, bookingResult] = await Promise.all([
+      Lead.updateMany(leadFilter, { $unset: { assignedTo: 1, assignedToEmail: 1 } }),
+      TDBooking.updateMany(bookingFilter, {
+        $unset: { assignedExecutive: 1, assignedExecutiveEmail: 1 },
+      }),
+    ]);
+    transferredLeads = leadResult.modifiedCount || 0;
+    transferredBookings = bookingResult.modifiedCount || 0;
+  }
 
   await doc.deleteOne();
 
-  const unassignedLeads = leadResult.modifiedCount || 0;
-  const unassignedBookings = bookingResult.modifiedCount || 0;
+  const transferLabel = assignee
+    ? `${assignee.name} (${assignee.designation || 'staff'})`
+    : 'Unassigned';
   const detail =
-    unassignedLeads > 0 || unassignedBookings > 0
-      ? ` — ${unassignedLeads} lead(s) and ${unassignedBookings} test drive booking(s) moved to Unassigned`
+    transferredLeads > 0 || transferredBookings > 0
+      ? ` — ${transferredLeads} lead(s) and ${transferredBookings} test drive booking(s) transferred to ${transferLabel}`
       : '';
 
   return successResponse(
     res,
-    { _id: doc._id, unassignedLeads, unassignedBookings },
+    {
+      _id: doc._id,
+      unassignedLeads: assignee ? 0 : transferredLeads,
+      unassignedBookings: assignee ? 0 : transferredBookings,
+      transferredLeads: assignee ? transferredLeads : 0,
+      transferredBookings: assignee ? transferredBookings : 0,
+      transferTarget,
+      transferredTo: assignee
+        ? { _id: assignee._id, name: assignee.name, email: assignee.email, designation: assignee.designation }
+        : null,
+    },
     `User ${doc.name} deleted${detail}`,
   );
 });
