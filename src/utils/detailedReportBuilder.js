@@ -500,4 +500,9 @@ async function buildTeamWiseAssignedLeadsReport({ admin } = {}) {
   };
 }
 
-module.exports = { buildDetailedReport, buildTeamWiseAssignedLeadsReport };
+module.exports = {
+  buildDetailedReport,
+  buildTeamWiseAssignedLeadsReport,
+  buildLeadScope,
+  ACTIVE_TD_BOOKING_FILTER,
+};

@@ -198,6 +198,11 @@ router.get(
   leadReportController.getBookingReport,
 );
 router.get(
+  '/reports/detailed/kpi-records',
+  requireModuleAction('detailed_reports', 'view'),
+  leadReportController.getDetailedReportKpiRecords,
+);
+router.get(
   '/reports/detailed',
   requireModuleAction('detailed_reports', 'view'),
   leadReportController.getDetailedReport,

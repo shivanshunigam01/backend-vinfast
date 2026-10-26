@@ -10,6 +10,7 @@ const {
 const { buildDeliveryReport } = require('../utils/deliveryReportBuilder');
 const { buildBookingReport } = require('../utils/bookingReportBuilder');
 const { buildDetailedReport, buildTeamWiseAssignedLeadsReport } = require('../utils/detailedReportBuilder');
+const { fetchDetailedKpiRecords } = require('../utils/detailedReportKpiRecords');
 const { buildCreReport } = require('../utils/creReportBuilder');
 const { isCrmStaffRole } = require('../constants/leadStages');
 const { isCreUser, isCrmDeskUser } = require('../utils/leadAssignment');
@@ -87,6 +88,14 @@ exports.getBookingReport = asyncHandler(async (req, res) => {
 
 exports.getDetailedReport = asyncHandler(async (req, res) => {
   const data = await buildDetailedReport({ admin: req.admin });
+  return successResponse(res, data);
+});
+
+exports.getDetailedReportKpiRecords = asyncHandler(async (req, res) => {
+  const data = await fetchDetailedKpiRecords(req.admin, {
+    kpi: req.query.kpi,
+    scope: req.query.scope,
+  });
   return successResponse(res, data);
 });
 
