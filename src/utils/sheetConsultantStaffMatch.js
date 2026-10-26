@@ -157,4 +157,6 @@ module.exports = {
   resolveSheetConsultantToStaff,
   resolveAttributionStaff,
   attributeLeadsBySheetConsultant,
+  effectiveSheetTdDate,
+  isSheetTdCompleted,
 };

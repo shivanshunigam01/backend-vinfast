@@ -92,10 +92,7 @@ exports.getDetailedReport = asyncHandler(async (req, res) => {
 });
 
 exports.getDetailedReportKpiRecords = asyncHandler(async (req, res) => {
-  const data = await fetchDetailedKpiRecords(req.admin, {
-    kpi: req.query.kpi,
-    scope: req.query.scope,
-  });
+  const data = await fetchDetailedKpiRecords(req.admin, req.query);
   return successResponse(res, data);
 });
 
