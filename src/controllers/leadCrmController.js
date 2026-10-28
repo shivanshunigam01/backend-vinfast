@@ -460,6 +460,10 @@ function formatCrmLead(doc, extras = {}) {
     vehicleRegistration: plain.vehicleRegistration || subCustomer?.vehicleRegistration || null,
     buyerType: plain.buyerType || '',
     interestLevel: plain.interestLevel || '',
+    leadFlag: (() => {
+      const { resolveLeadInterestLevel } = require('../utils/leadInterestLevel');
+      return resolveLeadInterestLevel(plain) || '';
+    })(),
     firstRespondedAt: plain.firstRespondedAt || null,
     enquiryDate: enquiryDate || null,
     leadAgeDays: leadAgeInDays(enquiryDate),
@@ -541,7 +545,10 @@ async function buildLeadQuery(admin, queryParams = {}) {
   }
   if (queryParams.leadType) query.leadType = new RegExp(String(queryParams.leadType).trim(), 'i');
   if (queryParams.buyerType) query.buyerType = String(queryParams.buyerType).trim();
-  if (queryParams.interestLevel) query.interestLevel = String(queryParams.interestLevel).trim().toUpperCase();
+  if (queryParams.interestLevel) {
+    const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
+    Object.assign(query, appendInterestLevelFilter(query, queryParams.interestLevel));
+  }
   if (queryParams.address) query.address = new RegExp(String(queryParams.address).trim(), 'i');
   if (queryParams.createdBy) query.createdBy = queryParams.createdBy;
   if (queryParams.from || queryParams.to) {

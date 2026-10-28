@@ -5,6 +5,7 @@ const LeadFavourite = require('../models/LeadFavourite');
 const { normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { startOfDay, endOfDay } = require('./crmConversion');
+const { appendInterestLevelFilter } = require('./leadInterestLevel');
 
 /** Map raw DB status into an active pipeline stage bucket (legacy + import aliases). */
 function bucketPipelineStage(rawStatus, stages) {
@@ -60,6 +61,9 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     followUpDueToday,
     followUpOverdue,
     newEnquiries,
+    hotCount,
+    warmCount,
+    coldCount,
   ] = await Promise.all([
     Lead.countDocuments(leadQuery),
     Lead.countDocuments({ ...unassignedScope, ...leadUnassignedMongoFilter() }),
@@ -80,6 +84,9 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
       status: { $in: ['Enquiry', 'New Lead', 'Contact Attempted'] },
       $or: [{ firstRespondedAt: { $exists: false } }, { firstRespondedAt: null }],
     }),
+    Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'HOT')),
+    Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'WARM')),
+    Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'COLD')),
   ]);
 
   const scopedLeadIds = await Lead.distinct('_id', openQuery);
@@ -102,6 +109,9 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     followUpOverdue,
     newEnquiries,
     pendingFollowUps,
+    hotCount,
+    warmCount,
+    coldCount,
   };
 }
 
