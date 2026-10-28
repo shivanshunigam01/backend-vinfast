@@ -26,6 +26,27 @@ Production-ready Express + MongoDB backend scaffold aligned to the API documenta
    npm run dev
    ```
 
+## Deploy vs seeds (live server)
+
+**Do not** enable startup seeds on production. After `git pull`, only restart the API (`npm start`).  
+Live pricing, CRM, TD fleet, and SEO pages are managed in admin — they must not be overwritten on deploy.
+
+| Purpose | Command (run manually on staging/dev only) |
+|--------|---------------------------------------------|
+| First admin | `npm run seed:admin` |
+| Org / TD team | `npm run seed:td-team` |
+| Full TD demo data | `SEED_TD_MODULE_CONFIRM=yes npm run seed:td-module` |
+| Vehicle pricing rows (insert missing only) | `npm run seed:pricing` |
+| CRM pipeline stages (empty DB only) | `npm run seed:lead-stages` |
+| Homepage products | `npm run seed:homepage-products` |
+| Stock demo pipeline | `npm run seed:stock-pipeline-demo` |
+
+Optional `.env` flags (all default **off**; set to `true` only for empty local DB):
+
+- `SEO_AUTO_BOOTSTRAP` — district SEO page generator on server start  
+- `TD_AUTO_BOOTSTRAP` — TD branch/slots; demo fleet/staff only with `TD_DEMO_SEED=true`  
+- `STOCK_AUTO_BOOTSTRAP` — default stock config if none exists  
+
 ## Base URLs
 - Public: `/api/v1`
 - Admin: `/api/v1/admin`

@@ -24,6 +24,8 @@ const TDBooking = require('../models/TDBooking');
       process.exit(1);
     }
 
+    process.env.TD_DEMO_SEED = 'true';
+    process.env.TD_SYNC_LEGACY = process.env.TD_SYNC_LEGACY || 'true';
     await connectDB();
     const results = await ensureTdModuleReady();
 

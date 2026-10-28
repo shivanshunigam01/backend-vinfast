@@ -8,7 +8,6 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { DESIGNATION_LABELS } = require('../utils/tdBookingFormatter');
-const { ensureTdStaff } = require('../utils/tdBootstrap');
 const { sanitizeModules, sanitizeActions } = require('../utils/modulePermissions');
 const {
   isTeamScopedUser,
@@ -142,23 +141,6 @@ exports.listUsers = asyncHandler(async (req, res) => {
       .limit(limit),
     TDStaff.countDocuments(query),
   ]);
-
-  if (
-    total === 0 &&
-    page === 1 &&
-    (!req.query.designation || req.query.designation === 'all')
-  ) {
-    await ensureTdStaff();
-    [docs, total] = await Promise.all([
-      TDStaff.find(query)
-        .populate('reportsTo', 'name email designation')
-        .populate('staffRoleId', 'name authRole')
-        .sort({ designation: 1, name: 1 })
-        .skip(skip)
-        .limit(limit),
-      TDStaff.countDocuments(query),
-    ]);
-  }
 
   return successResponse(res, docs.map(formatStaff), undefined, 200, { page, limit, total });
 });

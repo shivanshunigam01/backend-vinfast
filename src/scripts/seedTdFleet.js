@@ -17,6 +17,7 @@ const { ensureTdBranch, ensureTdFleet, FLEET_SEED } = require('../utils/tdBootst
       process.exit(1);
     }
 
+    process.env.TD_DEMO_SEED = 'true';
     await connectDB();
     const branch = await ensureTdBranch();
     const before = await TDVehicle.countDocuments();

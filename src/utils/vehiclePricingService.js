@@ -57,23 +57,6 @@ async function ensureDefaultPricing() {
         { $set: { range: def.range } },
       );
     }
-    if (def.slug === 'mpv7' || def.slug === 'limo-green') {
-      const synced = await VehiclePricing.findOneAndUpdate(
-        { slug: def.slug },
-        {
-          $set: {
-            listPrice: def.listPrice,
-            priceFrom: def.priceFrom,
-            range: def.range,
-            variants: def.variants,
-          },
-        },
-        { new: true },
-      );
-      if (synced) {
-        await syncSiteConfigAndProducts(synced.toObject());
-      }
-    }
   }
 }
 

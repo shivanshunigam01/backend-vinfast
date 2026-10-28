@@ -1,6 +1,7 @@
 require('dotenv').config();
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
+const { envBootstrapEnabled } = require('./src/utils/bootstrapPolicy');
 
 const PORT = process.env.PORT || 2000;
 
@@ -8,31 +9,37 @@ const PORT = process.env.PORT || 2000;
   try {
     await connectDB();
 
-    if (process.env.TD_AUTO_BOOTSTRAP !== 'false') {
+    if (envBootstrapEnabled('TD_AUTO_BOOTSTRAP')) {
       try {
         const { ensureTdModuleReady } = require('./src/utils/tdBootstrap');
         await ensureTdModuleReady();
       } catch (bootstrapErr) {
         console.error('[TD bootstrap] startup seed skipped:', bootstrapErr.message);
       }
+    } else {
+      console.log('[TD bootstrap] disabled (set TD_AUTO_BOOTSTRAP=true to run on startup)');
     }
 
-    if (process.env.SEO_AUTO_BOOTSTRAP !== 'false') {
+    if (envBootstrapEnabled('SEO_AUTO_BOOTSTRAP')) {
       try {
         const { ensureSeoReady } = require('./src/utils/seoBootstrap');
         await ensureSeoReady();
       } catch (bootstrapErr) {
         console.error('[SEO bootstrap] startup seed skipped:', bootstrapErr.message);
       }
+    } else {
+      console.log('[SEO bootstrap] disabled (set SEO_AUTO_BOOTSTRAP=true to run on startup)');
     }
 
-    if (process.env.STOCK_AUTO_BOOTSTRAP !== 'false') {
+    if (envBootstrapEnabled('STOCK_AUTO_BOOTSTRAP')) {
       try {
         const { ensureStockConfigReady } = require('./src/utils/stockBootstrap');
         await ensureStockConfigReady();
       } catch (bootstrapErr) {
         console.error('[Stock bootstrap] startup seed skipped:', bootstrapErr.message);
       }
+    } else {
+      console.log('[Stock bootstrap] disabled (set STOCK_AUTO_BOOTSTRAP=true to run on startup)');
     }
 
     if (process.env.STOCK_ALERTS_ENABLED !== 'false') {

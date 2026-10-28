@@ -27,6 +27,9 @@
     "migrate:stock-pipeline": "node src/scripts/migrateStockToSpecPipeline.js",
     "seed:stock-module": "node src/scripts/seedStockModule.js",
     "seed:stock-pipeline-demo": "node src/scripts/seedStockPipelineDemo.js",
+    "seed:pricing": "node src/scripts/seedVehiclePricing.js",
+    "seed:lead-stages": "node src/scripts/seedLeadStages.js",
+    "seed:homepage-products": "node src/scripts/seedHomepageProducts.js",
     "lint": "node -e \"console.log('No linter configured')\""
   },
   "dependencies": {

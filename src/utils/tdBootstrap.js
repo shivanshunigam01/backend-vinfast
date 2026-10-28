@@ -13,6 +13,7 @@ const TestDrive = require('../models/TestDrive');
 const { importLegacyTdVehiclesIfEmpty, normalizeModel } = require('./tdVehicleLegacyImport');
 const { syncTestDriveToTdBooking, syncAllLegacyTestDrives } = require('./tdBookingSync');
 const { repairUnassignedActiveTestDriveBookings } = require('./tdCoordinatorAssignment');
+const { demoSeedEnabled } = require('./bootstrapPolicy');
 
 const DEFAULT_STAFF_PASSWORD = process.env.SEED_TD_STAFF_PASSWORD || 'ChangeMe123!';
 
@@ -287,6 +288,8 @@ async function ensureTdFleet(branchId) {
     if (legacyImported > 0) return legacyImported;
   }
 
+  if (!demoSeedEnabled()) return 0;
+
   let created = 0;
   for (const row of FLEET_SEED) {
     const exists = await TDVehicle.findOne({
@@ -309,6 +312,8 @@ async function ensureTdFleet(branchId) {
 async function ensureTdStaff() {
   const legacy = await importLegacyStaffIfEmpty();
   if (legacy > 0) return legacy;
+
+  if (!demoSeedEnabled()) return 0;
 
   let created = 0;
   for (const row of STAFF_SEED) {
@@ -337,22 +342,24 @@ async function ensureTdStaff() {
 let bootstrapPromise = null;
 
 /**
- * Idempotent: seeds empty TD collections and syncs legacy TestDrive rows.
- * Safe to call on every server start (TD_AUTO_BOOTSTRAP !== 'false').
+ * Ensures branch/slot config; optional demo fleet/staff when TD_DEMO_SEED=true.
+ * Legacy TestDrive sync runs when TD_SYNC_LEGACY !== 'false'.
  */
 async function ensureTdModuleReady() {
   if (bootstrapPromise) return bootstrapPromise;
 
   bootstrapPromise = (async () => {
     const branch = await ensureTdBranch();
+    const syncLegacy = process.env.TD_SYNC_LEGACY !== 'false';
     const results = {
       branch: branch.name,
       slotConfig: Boolean(await ensureTdSlotConfig(branch._id)),
       fleetCreated: await ensureTdFleet(branch._id),
       staffCreated: await ensureTdStaff(),
-      bookingsSynced: await syncAllLegacyTestDrives(),
-      unassignedRepaired: (await repairUnassignedActiveTestDriveBookings({ limit: 500, notify: false }))
-        .repaired,
+      bookingsSynced: syncLegacy ? await syncAllLegacyTestDrives() : 0,
+      unassignedRepaired: syncLegacy
+        ? (await repairUnassignedActiveTestDriveBookings({ limit: 500, notify: false })).repaired
+        : 0,
     };
 
     const anyWork =
