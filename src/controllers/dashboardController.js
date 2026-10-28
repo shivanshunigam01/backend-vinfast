@@ -5,6 +5,9 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/apiResponse');
 const { appendLeadDateFilter } = require('../utils/leadDateFilter');
 const { toDateKey } = require('../utils/reportPeriod');
+const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
+
+const LEAD_SCOPE = { isDuplicate: { $ne: true } };
 
 function aggregateToRecord(rows) {
   const out = {};
@@ -19,7 +22,7 @@ exports.getStats = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const todayKey = toDateKey(startOfDay);
-  const newLeadsTodayQuery = { isDuplicate: { $ne: true } };
+  const newLeadsTodayQuery = { ...LEAD_SCOPE };
   appendLeadDateFilter(newLeadsTodayQuery, {
     from: todayKey,
     to: todayKey,
@@ -38,6 +41,9 @@ exports.getStats = asyncHandler(async (req, res) => {
     totalEnquiries,
     openEnquiries,
     hotLeads,
+    hotFlagLeads,
+    warmFlagLeads,
+    coldFlagLeads,
     bookings,
     pendingFollowUps,
     leadsByStatusAgg,
@@ -45,18 +51,21 @@ exports.getStats = asyncHandler(async (req, res) => {
     leadsByModelAgg,
     testDrivesByStatusAgg,
   ] = await Promise.all([
-    Lead.countDocuments(),
+    Lead.countDocuments(LEAD_SCOPE),
     Lead.countDocuments(newLeadsTodayQuery),
     TestDrive.countDocuments(),
     TestDrive.countDocuments({ createdAt: { $gte: weekStart } }),
     Enquiry.countDocuments(),
     Enquiry.countDocuments({ status: { $in: ['Open', 'In Progress'] } }),
-    Lead.countDocuments({ status: { $in: ['Interested', 'Negotiation'] } }),
-    Lead.countDocuments({ status: 'Booked' }),
-    Lead.countDocuments({ nextFollowUp: { $ne: null } }),
-    Lead.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-    Lead.aggregate([{ $group: { _id: '$source', count: { $sum: 1 } } }]),
-    Lead.aggregate([{ $group: { _id: '$model', count: { $sum: 1 } } }]),
+    Lead.countDocuments({ ...LEAD_SCOPE, status: { $in: ['Interested', 'Negotiation'] } }),
+    Lead.countDocuments(appendInterestLevelFilter({ ...LEAD_SCOPE }, 'HOT')),
+    Lead.countDocuments(appendInterestLevelFilter({ ...LEAD_SCOPE }, 'WARM')),
+    Lead.countDocuments(appendInterestLevelFilter({ ...LEAD_SCOPE }, 'COLD')),
+    Lead.countDocuments({ ...LEAD_SCOPE, status: 'Booked' }),
+    Lead.countDocuments({ ...LEAD_SCOPE, nextFollowUp: { $ne: null } }),
+    Lead.aggregate([{ $match: LEAD_SCOPE }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Lead.aggregate([{ $match: LEAD_SCOPE }, { $group: { _id: '$source', count: { $sum: 1 } } }]),
+    Lead.aggregate([{ $match: LEAD_SCOPE }, { $group: { _id: '$model', count: { $sum: 1 } } }]),
     TestDrive.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
   ]);
 
@@ -64,6 +73,9 @@ exports.getStats = asyncHandler(async (req, res) => {
     totalLeads,
     newLeadsToday,
     hotLeads,
+    hotFlagLeads,
+    warmFlagLeads,
+    coldFlagLeads,
     bookings,
     pendingFollowUps,
     totalTestDrives,

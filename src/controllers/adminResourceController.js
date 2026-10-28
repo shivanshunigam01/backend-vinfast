@@ -27,6 +27,10 @@ function buildLeadListQuery(req) {
   if (req.query.status) query.status = req.query.status;
   if (req.query.model) query.model = req.query.model;
   if (req.query.source) query.source = req.query.source;
+  if (req.query.interestLevel) {
+    const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
+    Object.assign(query, appendInterestLevelFilter(query, req.query.interestLevel));
+  }
   const range = buildDateRange(req.query.from, req.query.to);
   if (range) query.createdAt = range;
   return query;
