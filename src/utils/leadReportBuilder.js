@@ -10,6 +10,7 @@ const { STAFF_DESIGNATIONS } = require('../models/TDStaff');
 const { CRM_LEAD_STAGES, normalizeStageLabel } = require('../constants/leadStages');
 const { getActiveStageLabels } = require('./leadStageService');
 const { bucketPipelineStage } = require('./crmStatsBuilder');
+const { leadUnassignedMongoFilter, mergeLeadFilters } = require('./leadUnassigned');
 const {
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
@@ -143,10 +144,7 @@ async function buildLeadAdminReport({
       { $match: leadQuery },
       { $group: { _id: '$model', count: { $sum: 1 } } }
     ]),
-    Lead.countDocuments({
-      ...leadQuery,
-      $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }]
-    }),
+    Lead.countDocuments(mergeLeadFilters(leadQuery, leadUnassignedMongoFilter())),
     LeadFollowUp.find(
       executiveId
         ? { createdBy: executiveId, ...(Object.keys(buildLeadDateFilter(from, to)).length ? buildLeadDateFilter(from, to) : {}) }

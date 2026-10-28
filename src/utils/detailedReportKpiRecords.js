@@ -162,14 +162,17 @@ async function fetchLeadKpiRecords(admin, kpi, scope) {
 
   applyEnquiryScope(query, kpi, scope, period);
 
-  const docs = await Lead.find(query)
-    .select(
-      'name mobile model status source assignedTo assignedToEmail creSheet remarks nextFollowUp createdAt',
-    )
-    .populate({ path: 'assignedTo', select: 'name' })
-    .sort({ createdAt: -1 })
-    .limit(MAX_ROWS)
-    .lean();
+  const [total, docs] = await Promise.all([
+    Lead.countDocuments(query),
+    Lead.find(query)
+      .select(
+        'name mobile model status source assignedTo assignedToEmail creSheet remarks nextFollowUp createdAt',
+      )
+      .populate({ path: 'assignedTo', select: 'name' })
+      .sort({ createdAt: -1 })
+      .limit(MAX_ROWS)
+      .lean(),
+  ]);
 
   const rows = docs.map(serializeLeadRow);
   return {
@@ -177,8 +180,8 @@ async function fetchLeadKpiRecords(admin, kpi, scope) {
     kpi,
     scope,
     rows,
-    total: rows.length,
-    truncated: docs.length >= MAX_ROWS,
+    total,
+    truncated: total > MAX_ROWS,
   };
 }
 

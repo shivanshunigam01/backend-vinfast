@@ -81,6 +81,20 @@ function sheetConsultantAssignedExpr() {
   };
 }
 
+/** Merge Mongo lead filters without dropping either side's `$and` clauses. */
+function mergeLeadFilters(base, extension) {
+  const q = { ...(base || {}) };
+  if (!extension || typeof extension !== 'object') return q;
+  for (const [key, val] of Object.entries(extension)) {
+    if (key === '$and' && Array.isArray(val)) {
+      q.$and = [...(q.$and || []), ...val];
+    } else {
+      q[key] = val;
+    }
+  }
+  return q;
+}
+
 module.exports = {
   UNASSIGNED_CONSULTANT_RX,
   normalizeConsultantName,
@@ -90,4 +104,5 @@ module.exports = {
   sheetConsultantUnassignedMongoFilter,
   sheetConsultantAssignedMongoFilter,
   sheetConsultantAssignedExpr,
+  mergeLeadFilters,
 };

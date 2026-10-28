@@ -480,7 +480,7 @@ function canViewUnassignedLeadPool(admin) {
 }
 
 async function buildLeadQuery(admin, queryParams = {}) {
-  const query = { isDuplicate: { $ne: true } };
+  let query = { isDuplicate: { $ne: true } };
   // MoM #12: SE/SM/SH/BM see own + reporting subtree; MD/CEO/GM/superadmin see all.
   // Team-scoped users may further narrow with ?assignedTo= (self / SE in subtree / unassigned).
   if (isTeamScopedUser(admin)) {
@@ -547,7 +547,7 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (queryParams.buyerType) query.buyerType = String(queryParams.buyerType).trim();
   if (queryParams.interestLevel) {
     const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
-    Object.assign(query, appendInterestLevelFilter(query, queryParams.interestLevel));
+    query = appendInterestLevelFilter(query, queryParams.interestLevel);
   }
   if (queryParams.address) query.address = new RegExp(String(queryParams.address).trim(), 'i');
   if (queryParams.createdBy) query.createdBy = queryParams.createdBy;

@@ -5,18 +5,46 @@ function normalizeLeadInterestLevel(raw) {
   return INTEREST_LEVELS.includes(s) ? s : null;
 }
 
-/** Match CRM lead flag on interestLevel and legacy CRE HOT/WARM/COLD columns. */
+/** Mongo $expr — same priority as resolveLeadInterestLevel (one bucket per lead). */
+function resolvedInterestLevelExpr() {
+  const upperTrim = (field) => ({
+    $toUpper: { $trim: { input: { $ifNull: [field, ''] } } },
+  });
+  return {
+    $let: {
+      vars: {
+        direct: upperTrim('$interestLevel'),
+        fromType: upperTrim('$leadType'),
+        fromSheet: upperTrim('$creSheet.followUp'),
+      },
+      in: {
+        $cond: [
+          { $in: ['$$direct', INTEREST_LEVELS] },
+          '$$direct',
+          {
+            $cond: [
+              { $in: ['$$fromType', INTEREST_LEVELS] },
+              '$$fromType',
+              {
+                $cond: [
+                  { $in: ['$$fromSheet', INTEREST_LEVELS] },
+                  '$$fromSheet',
+                  null,
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+/** Match resolved HOT/WARM/COLD — avoids double-counting across legacy columns. */
 function interestLevelMatchClause(level) {
   const normalized = normalizeLeadInterestLevel(level);
   if (!normalized) return null;
-  const re = new RegExp(`^${normalized}$`, 'i');
-  return {
-    $or: [
-      { interestLevel: normalized },
-      { leadType: re },
-      { 'creSheet.followUp': re },
-    ],
-  };
+  return { $expr: { $eq: [resolvedInterestLevelExpr(), normalized] } };
 }
 
 function appendInterestLevelFilter(query, rawLevel) {
@@ -40,6 +68,7 @@ function resolveLeadInterestLevel(lead) {
 module.exports = {
   INTEREST_LEVELS,
   normalizeLeadInterestLevel,
+  resolvedInterestLevelExpr,
   interestLevelMatchClause,
   appendInterestLevelFilter,
   resolveLeadInterestLevel,

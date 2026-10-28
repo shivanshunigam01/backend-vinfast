@@ -1,5 +1,5 @@
 const Lead = require('../models/Lead');
-const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('./leadUnassigned');
+const { leadUnassignedMongoFilter, leadAssignedMongoFilter, mergeLeadFilters } = require('./leadUnassigned');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const LeadFavourite = require('../models/LeadFavourite');
 const { normalizeStageLabel } = require('../constants/leadStages');
@@ -66,8 +66,8 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     coldCount,
   ] = await Promise.all([
     Lead.countDocuments(leadQuery),
-    Lead.countDocuments({ ...unassignedScope, ...leadUnassignedMongoFilter() }),
-    Lead.countDocuments({ ...unassignedScope, ...leadAssignedMongoFilter() }),
+    Lead.countDocuments(mergeLeadFilters(unassignedScope, leadUnassignedMongoFilter())),
+    Lead.countDocuments(mergeLeadFilters(unassignedScope, leadAssignedMongoFilter())),
     favIds.length
       ? Lead.countDocuments({ ...leadQuery, _id: { $in: favIds } })
       : 0,
@@ -98,8 +98,11 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
       })
     : 0;
 
+  const pipelineTotal = Object.values(pipeline).reduce((sum, n) => sum + (Number(n) || 0), 0);
+
   return {
     total,
+    pipelineTotal,
     unassignedCount,
     assignedCount,
     pipeline,

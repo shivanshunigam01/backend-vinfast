@@ -22,11 +22,6 @@ const { appendLeadDateFilter } = require('./leadDateFilter');
 const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
 const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
 const { bucketLeadTypeAggRows } = require('./leadTypeReport');
-const {
-  isTeamScopedUser,
-  assignedToStaffFilterAsync,
-  isUnrestrictedViewer,
-} = require('./leadAssignment');
 const { buildDetailedReportLeadDetails } = require('./detailedReportLeadDetails');
 
 const MANAGER_DESIGNATIONS = new Set(['sales_manager', 'sales_head', 'branch_manager']);
@@ -70,11 +65,8 @@ function dateRange(from, to) {
 }
 
 async function buildLeadScope(admin) {
-  const scope = { isDuplicate: { $ne: true } };
-  if (admin && isTeamScopedUser(admin) && !isUnrestrictedViewer(admin)) {
-    scope.$and = [await assignedToStaffFilterAsync(admin)];
-  }
-  return scope;
+  const { buildLeadQuery } = require('../controllers/leadCrmController');
+  return buildLeadQuery(admin, {});
 }
 
 async function countLeads(scope, extra = {}, enquiryRange) {

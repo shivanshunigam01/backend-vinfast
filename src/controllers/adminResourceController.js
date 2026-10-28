@@ -16,38 +16,31 @@ const { getAll, getOne, createOne, updateOne, deleteOne } = require('./crudFacto
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
-const { buildDateRange, buildSearchQuery } = require('../utils/queryBuilder');
+const { buildPagination } = require('../utils/queryBuilder');
+const { buildLeadQuery } = require('./leadCrmController');
 const { dateKeyDayBounds } = require('../utils/reportPeriod');
 const { findOpenLeadForCustomer } = require('../utils/pvLeadIntake');
 
 const LEAD_SEARCH_FIELDS = ['name', 'mobile', 'email', 'city', 'model', 'source', 'interest'];
 
-function buildLeadListQuery(req) {
-  const query = {};
-  if (req.query.status) query.status = req.query.status;
-  if (req.query.model) query.model = req.query.model;
-  if (req.query.source) query.source = req.query.source;
-  if (req.query.interestLevel) {
-    const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
-    Object.assign(query, appendInterestLevelFilter(query, req.query.interestLevel));
-  }
-  const range = buildDateRange(req.query.from, req.query.to);
-  if (range) query.createdAt = range;
-  return query;
-}
-
-exports.getLeads = getAll(Lead, {
-  searchFields: LEAD_SEARCH_FIELDS,
-  filterMapper: (req) => buildLeadListQuery(req),
-  populate: { path: 'assignedTo', select: 'name email' },
+/** Same filters as Lead CRM (`buildLeadQuery`) so dashboard / admin list counts match CRM. */
+exports.getLeads = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = buildPagination(req);
+  const query = await buildLeadQuery(req.admin, req.query);
+  const [data, total] = await Promise.all([
+    Lead.find(query)
+      .populate('assignedTo', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Lead.countDocuments(query),
+  ]);
+  return successResponse(res, data, undefined, 200, { page, limit, total });
 });
 
 /** All leads in one response (no pagination) — used by admin leads list & export. */
 exports.getAllLeads = asyncHandler(async (req, res) => {
-  const query = buildLeadListQuery(req);
-  if (req.query.search) {
-    Object.assign(query, buildSearchQuery(req.query.search, LEAD_SEARCH_FIELDS));
-  }
+  const query = await buildLeadQuery(req.admin, req.query);
   const data = await Lead.find(query)
     .populate('assignedTo', 'name email')
     .sort({ createdAt: -1 });
