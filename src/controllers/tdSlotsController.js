@@ -11,7 +11,6 @@ const {
 const {
   ensureTdBranch,
   ensureTdSlotConfig,
-  ensureTdFleet,
 } = require("../utils/tdBootstrap");
 
 function formatSlotConfig(doc) {
@@ -44,7 +43,6 @@ async function getConfigForBranch(branchId) {
 async function ensureBranchSlotData(branchId) {
   const branch = await ensureTdBranch();
   const resolvedBranchId = branchId || branch._id;
-  await ensureTdFleet(resolvedBranchId);
   await ensureTdSlotConfig(resolvedBranchId);
   return getConfigForBranch(resolvedBranchId);
 }

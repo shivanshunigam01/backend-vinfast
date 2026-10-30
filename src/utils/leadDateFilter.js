@@ -1,4 +1,4 @@
-const { dateKeyRange } = require('./reportPeriod');
+const { dateKeyRange, toDateKey } = require('./reportPeriod');
 
 /** Effective lead date for counts/reports — matches CRM default (enquiry date, then createdAt). */
 function leadEffectiveDate(lead) {
@@ -57,9 +57,35 @@ function leadEnquiryReceivedFilter(from, to) {
   return clause || {};
 }
 
+function subtractCalendarDaysKey(fromDate, days) {
+  const x = new Date(fromDate);
+  x.setDate(x.getDate() - days);
+  return toDateKey(x);
+}
+
+/**
+ * Enquiry-age buckets for Detailed Report (days since enquiry / createdAt).
+ * Hot ≤30d, Warm 31–60d, Cold >60d.
+ */
+function leadEnquiryTemperatureFilter(temperature, now = new Date()) {
+  const t = String(temperature || '').trim().toLowerCase();
+  const todayKey = toDateKey(now);
+  if (t === 'hot') {
+    return leadEnquiryReceivedFilter(subtractCalendarDaysKey(now, 30), todayKey);
+  }
+  if (t === 'warm') {
+    return leadEnquiryReceivedFilter(subtractCalendarDaysKey(now, 60), subtractCalendarDaysKey(now, 31));
+  }
+  if (t === 'cold') {
+    return leadEnquiryReceivedFilter(null, subtractCalendarDaysKey(now, 61));
+  }
+  return {};
+}
+
 module.exports = {
   leadEffectiveDate,
   buildLeadEnquiryDateClause,
   appendLeadDateFilter,
   leadEnquiryReceivedFilter,
+  leadEnquiryTemperatureFilter,
 };

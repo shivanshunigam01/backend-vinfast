@@ -7,7 +7,6 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { buildPagination } = require('../utils/queryBuilder');
 const { normalizeModel, branchFleetQuery } = require('../utils/tdVehicleLegacyImport');
-const { ensureTdFleet } = require('../utils/tdBootstrap');
 const { getActiveModelNames, getModelNamesSync } = require('../utils/vehicleCatalog');
 
 /** Exact catalog names win over the legacy fuzzy matcher (which would mangle e.g. "VF 7 Plus"). */
@@ -94,28 +93,6 @@ exports.listVehicles = asyncHandler(async (req, res) => {
       .limit(limit),
     TDVehicle.countDocuments(query),
   ]);
-
-  if (
-    total === 0 &&
-    page === 1 &&
-    !req.query.status &&
-    !req.query.model &&
-    !req.query.branchId
-  ) {
-    const imported = await ensureTdFleet(
-      (await require('../models/TDBranch').findOne({ code: 'PATNA' }))?._id,
-    );
-    if (imported > 0) {
-      [docs, total] = await Promise.all([
-        TDVehicle.find(query)
-          .populate('branchId', 'name code')
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit),
-        TDVehicle.countDocuments(query),
-      ]);
-    }
-  }
 
   return successResponse(res, docs.map(formatVehicle), undefined, 200, { page, limit, total });
 });

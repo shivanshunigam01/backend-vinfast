@@ -282,13 +282,20 @@ async function ensureTdSlotConfig(branchId) {
 }
 
 async function ensureTdFleet(branchId) {
+  if (!demoSeedEnabled()) {
+    const syncLegacy = process.env.TD_SYNC_LEGACY !== 'false';
+    const totalBefore = await TDVehicle.countDocuments();
+    if (syncLegacy && totalBefore === 0) {
+      return importLegacyTdVehiclesIfEmpty();
+    }
+    return 0;
+  }
+
   const totalBefore = await TDVehicle.countDocuments();
   if (totalBefore === 0) {
     const legacyImported = await importLegacyTdVehiclesIfEmpty();
     if (legacyImported > 0) return legacyImported;
   }
-
-  if (!demoSeedEnabled()) return 0;
 
   let created = 0;
   for (const row of FLEET_SEED) {
@@ -310,10 +317,16 @@ async function ensureTdFleet(branchId) {
 }
 
 async function ensureTdStaff() {
+  if (!demoSeedEnabled()) {
+    const syncLegacy = process.env.TD_SYNC_LEGACY !== 'false';
+    if (syncLegacy && (await TDStaff.countDocuments()) === 0) {
+      return importLegacyStaffIfEmpty();
+    }
+    return 0;
+  }
+
   const legacy = await importLegacyStaffIfEmpty();
   if (legacy > 0) return legacy;
-
-  if (!demoSeedEnabled()) return 0;
 
   let created = 0;
   for (const row of STAFF_SEED) {

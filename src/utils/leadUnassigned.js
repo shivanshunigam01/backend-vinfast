@@ -81,6 +81,35 @@ function sheetConsultantAssignedExpr() {
   };
 }
 
+/** $expr: matches {@link leadAssignedMongoFilter} for per-source assigned counts in reports. */
+function crmLeadAssignedExpr() {
+  const emailTrim = { $trim: { input: { $ifNull: ['$assignedToEmail', ''] } } };
+  const hasAssignee = {
+    $and: [
+      { $ne: [{ $ifNull: ['$assignedTo', null] }, null] },
+      { $ne: [{ $type: '$assignedTo' }, 'missing'] },
+    ],
+  };
+  return {
+    $or: [
+      hasAssignee,
+      { $gt: [{ $strLenCP: emailTrim }, 0] },
+      sheetConsultantAssignedExpr(),
+    ],
+  };
+}
+
+/** In-memory check aligned with CRM unassigned / assigned filters. */
+function isCrmLeadAssigned(lead) {
+  if (!lead || typeof lead !== 'object') return false;
+  const assignee = lead.assignedTo?._id || lead.assignedTo;
+  if (assignee) return true;
+  const email = String(lead.assignedToEmail ?? '').trim();
+  if (email) return true;
+  const sheetName = String(lead.creSheet?.salesConsultantName ?? '').trim();
+  return Boolean(sheetName && !UNASSIGNED_CONSULTANT_RX.test(sheetName));
+}
+
 /** Merge Mongo lead filters without dropping either side's `$and` clauses. */
 function mergeLeadFilters(base, extension) {
   const q = { ...(base || {}) };
@@ -104,5 +133,7 @@ module.exports = {
   sheetConsultantUnassignedMongoFilter,
   sheetConsultantAssignedMongoFilter,
   sheetConsultantAssignedExpr,
+  crmLeadAssignedExpr,
+  isCrmLeadAssigned,
   mergeLeadFilters,
 };

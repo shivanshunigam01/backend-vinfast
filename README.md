@@ -45,6 +45,7 @@ Optional `.env` flags (all default **off**; set to `true` only for empty local D
 
 - `SEO_AUTO_BOOTSTRAP` — district SEO page generator on server start  
 - `TD_AUTO_BOOTSTRAP` — TD branch/slots; demo fleet/staff only with `TD_DEMO_SEED=true`  
+- `TD_SYNC_LEGACY=false` — disable legacy empty-DB staff/fleet import on startup (recommended on production)  
 - `STOCK_AUTO_BOOTSTRAP` — default stock config if none exists  
 
 ## Base URLs

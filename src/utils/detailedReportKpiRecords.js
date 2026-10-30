@@ -10,7 +10,8 @@ const {
   sheetDigitalQuery,
   sheetBookingCountQuery,
 } = require('./sheetCalculationLogic');
-const { appendLeadDateFilter } = require('./leadDateFilter');
+const { appendLeadDateFilter, leadEnquiryTemperatureFilter } = require('./leadDateFilter');
+const { isCrmLeadAssigned } = require('./leadUnassigned');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { monthBoundsIndia } = require('./indiaDateTime');
 const {
@@ -104,6 +105,12 @@ function normalizeKpi(raw) {
     follow_ups: 'followUps',
     followups: 'followUps',
     calls: 'followUps',
+    hot_leads: 'hotLeads',
+    hot: 'hotLeads',
+    warm_leads: 'warmLeads',
+    warm: 'warmLeads',
+    cold_leads: 'coldLeads',
+    cold: 'coldLeads',
   };
   return map[k] || k;
 }
@@ -158,9 +165,20 @@ async function fetchLeadKpiRecords(admin, kpi, scope) {
   if (kpi === 'walkIn') Object.assign(query, sheetWalkInQuery());
   else if (kpi === 'digital') Object.assign(query, sheetDigitalQuery());
   else if (kpi === 'booking') Object.assign(query, sheetBookingCountQuery());
-  else if (kpi !== 'totalLeads') throw new ApiError(400, 'Unknown lead KPI');
+  else if (kpi === 'hotLeads') {
+    query.$and = query.$and || [];
+    query.$and.push(leadEnquiryTemperatureFilter('hot', period.now));
+  } else if (kpi === 'warmLeads') {
+    query.$and = query.$and || [];
+    query.$and.push(leadEnquiryTemperatureFilter('warm', period.now));
+  } else if (kpi === 'coldLeads') {
+    query.$and = query.$and || [];
+    query.$and.push(leadEnquiryTemperatureFilter('cold', period.now));
+  } else if (kpi !== 'totalLeads') throw new ApiError(400, 'Unknown lead KPI');
 
-  applyEnquiryScope(query, kpi, scope, period);
+  if (!['hotLeads', 'warmLeads', 'coldLeads'].includes(kpi)) {
+    applyEnquiryScope(query, kpi, scope, period);
+  }
 
   const [total, docs] = await Promise.all([
     Lead.countDocuments(query),
@@ -289,7 +307,8 @@ async function fetchTableDrillRecords(admin, query = {}) {
     const metric = String(query.metric || 'count').toLowerCase();
     const filtered = leads.filter((lead) => {
       if (source && leadSourceLabel(lead) !== source) return false;
-      if (metric === 'assigned') return isSheetConsultantAssigned(lead);
+      if (metric === 'assigned') return isCrmLeadAssigned(lead);
+      if (metric === 'sheetConsultant') return isSheetConsultantAssigned(lead);
       return true;
     });
     return packLeadResult(filtered.map(serializeLeadRow), {
@@ -432,6 +451,11 @@ async function fetchDetailedKpiRecords(admin, query = {}) {
 
   if (kpi === 'testDrive') return fetchTestDriveKpiRecords(admin, scope);
   if (kpi === 'followUps') return fetchFollowUpKpiRecords(admin);
+
+  const temperatureKpis = ['hotLeads', 'warmLeads', 'coldLeads'];
+  if (temperatureKpis.includes(kpi)) {
+    return fetchLeadKpiRecords(admin, kpi, 'all');
+  }
 
   if (!['all', 'mtd', 'today'].includes(scope)) {
     throw new ApiError(400, 'scope must be all, mtd, or today for lead KPIs');

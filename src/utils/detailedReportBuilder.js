@@ -18,8 +18,14 @@ const { monthBoundsIndia } = require('./indiaDateTime');
 const ACTIVE_TD_BOOKING_FILTER = {
   bookingStatus: { $nin: ['CANCELLED', 'MISSED'] },
 };
-const { appendLeadDateFilter } = require('./leadDateFilter');
-const { sheetConsultantAssignedExpr } = require('./leadUnassigned');
+const { appendLeadDateFilter, leadEnquiryTemperatureFilter } = require('./leadDateFilter');
+const {
+  crmLeadAssignedExpr,
+  sheetConsultantAssignedExpr,
+  leadAssignedMongoFilter,
+  leadUnassignedMongoFilter,
+  sheetConsultantAssignedMongoFilter,
+} = require('./leadUnassigned');
 const { attributeLeadsBySheetConsultant } = require('./sheetConsultantStaffMatch');
 const { bucketLeadTypeAggRows } = require('./leadTypeReport');
 const { buildDetailedReportLeadDetails } = require('./detailedReportLeadDetails');
@@ -119,6 +125,12 @@ async function buildDetailedReport({ admin } = {}) {
     staffRows,
     sheetAttributionLeads,
     monthlyTdAgg,
+    crmAssignedTotal,
+    crmUnassignedTotal,
+    sheetConsultantNamedTotal,
+    leadTemperatureHot,
+    leadTemperatureWarm,
+    leadTemperatureCold,
   ] = await Promise.all([
     countLeads(leadScope),
     countLeads(leadScope, {}, mtdRange),
@@ -168,6 +180,11 @@ async function buildDetailedReport({ admin } = {}) {
           count: { $sum: 1 },
           assignedCount: {
             $sum: {
+              $cond: [crmLeadAssignedExpr(), 1, 0],
+            },
+          },
+          sheetConsultantCount: {
+            $sum: {
               $cond: [sheetConsultantAssignedExpr(), 1, 0],
             },
           },
@@ -209,6 +226,12 @@ async function buildDetailedReport({ admin } = {}) {
       },
       { $sort: { _id: 1 } },
     ]),
+    Lead.countDocuments({ $and: [leadScope, leadAssignedMongoFilter()] }),
+    Lead.countDocuments({ $and: [leadScope, leadUnassignedMongoFilter()] }),
+    Lead.countDocuments({ $and: [leadScope, sheetConsultantAssignedMongoFilter()] }),
+    Lead.countDocuments({ $and: [leadScope, leadEnquiryTemperatureFilter('hot', now)] }),
+    Lead.countDocuments({ $and: [leadScope, leadEnquiryTemperatureFilter('warm', now)] }),
+    Lead.countDocuments({ $and: [leadScope, leadEnquiryTemperatureFilter('cold', now)] }),
   ]);
 
   const {
@@ -345,6 +368,18 @@ async function buildDetailedReport({ admin } = {}) {
       },
       bookingCount,
       callsMadeToday: callsToday,
+      leadTemperature: {
+        hot: leadTemperatureHot,
+        warm: leadTemperatureWarm,
+        cold: leadTemperatureCold,
+      },
+    },
+    leadAssignment: {
+      total: totalLeadsAll,
+      crmAssigned: crmAssignedTotal,
+      crmUnassigned: crmUnassignedTotal,
+      sheetConsultantNamed: sheetConsultantNamedTotal,
+      crmAssignedOnly: Math.max(0, crmAssignedTotal - sheetConsultantNamedTotal),
     },
     leadSources,
     leadSourcesTotal: {
@@ -359,7 +394,7 @@ async function buildDetailedReport({ admin } = {}) {
     monthlyTestDrivesTotal: monthlyTdTotal,
     unassignedSheet,
     attributionNote:
-      'Summary test drive totals use the Test Drive module (TDBooking slot dates, India timezone). Staff TD columns still use CRE sheet consultant + TD DONE. TD MTD = slot date in current calendar month. Unassigned = no matching consultant on sheet.',
+      'Lead Source “Assigned” matches Lead CRM (CRM owner, assignee email, or named sheet consultant). Staff tables attribute by sheet consultant with CRM fallback. Summary test drive totals use TDBooking (India timezone). Sheet “Unassigned” = no staff match for attribution.',
     ...drillDown,
   };
 }

@@ -470,6 +470,21 @@ function formatCrmLead(doc, extras = {}) {
     followUpHighlight: followUpHighlight(plain.nextFollowUp),
     isFavourite: Boolean(extras.isFavourite),
     followUpCount: extras.followUpCount != null ? extras.followUpCount : undefined,
+    enteredBy:
+      plain.createdBy && typeof plain.createdBy === 'object'
+        ? {
+            _id: plain.createdBy._id,
+            name: plain.createdBy.name || '',
+            email: plain.createdBy.email || '',
+            designation: plain.createdBy.designation || '',
+          }
+        : plain.createdBy
+          ? { _id: plain.createdBy, name: '', email: '', designation: '' }
+          : null,
+    enteredByName:
+      (plain.createdBy && typeof plain.createdBy === 'object' && plain.createdBy.name) ||
+      (plain.creSheet?.importedBy ? String(plain.creSheet.importedBy) : '') ||
+      null,
   };
 }
 
