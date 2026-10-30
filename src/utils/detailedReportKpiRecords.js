@@ -11,7 +11,7 @@ const {
   sheetBookingCountQuery,
 } = require('./sheetCalculationLogic');
 const { appendLeadDateFilter, leadEnquiryTemperatureFilter } = require('./leadDateFilter');
-const { isCrmLeadAssigned } = require('./leadUnassigned');
+const { isCrmLeadAssigned, isCrmLeadUnassigned } = require('./leadUnassigned');
 const { startOfDay, endOfDay, toDateKey } = require('./reportPeriod');
 const { monthBoundsIndia } = require('./indiaDateTime');
 const {
@@ -371,6 +371,11 @@ async function fetchTableDrillRecords(admin, query = {}) {
     });
 
     return packLeadResult(filtered.map(serializeLeadRow), { table, staffId, metric });
+  }
+
+  if (table === 'crmUnassigned') {
+    const filtered = leads.filter((lead) => isCrmLeadUnassigned(lead));
+    return packLeadResult(filtered.map(serializeLeadRow), { table: 'crmUnassigned' });
   }
 
   if (table === 'unassigned') {

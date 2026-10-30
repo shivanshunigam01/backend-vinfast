@@ -394,7 +394,7 @@ async function buildDetailedReport({ admin } = {}) {
     monthlyTestDrivesTotal: monthlyTdTotal,
     unassignedSheet,
     attributionNote:
-      'Lead Source “Assigned” matches Lead CRM (CRM owner, assignee email, or named sheet consultant). Staff tables attribute by sheet consultant with CRM fallback. Summary test drive totals use TDBooking (India timezone). Sheet “Unassigned” = no staff match for attribution.',
+      'CRM Unassigned (Lead CRM pill) = no CRM owner, no assignee email, and blank/Un-assigned sheet consultant. “Not matched to User Master” = sheet name could not be linked to an active User Master row (may still count as CRM assigned if the sheet has a name). Manager/executive totals use Excel SALES CONSULTANT attribution.',
     ...drillDown,
   };
 }

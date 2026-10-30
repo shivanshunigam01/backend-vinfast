@@ -110,6 +110,11 @@ function isCrmLeadAssigned(lead) {
   return Boolean(sheetName && !UNASSIGNED_CONSULTANT_RX.test(sheetName));
 }
 
+/** Same rules as Lead CRM “Unassigned” pill (buildCrmLeadStats / lead pool). */
+function isCrmLeadUnassigned(lead) {
+  return !isCrmLeadAssigned(lead);
+}
+
 /** Merge Mongo lead filters without dropping either side's `$and` clauses. */
 function mergeLeadFilters(base, extension) {
   const q = { ...(base || {}) };
@@ -135,5 +140,6 @@ module.exports = {
   sheetConsultantAssignedExpr,
   crmLeadAssignedExpr,
   isCrmLeadAssigned,
+  isCrmLeadUnassigned,
   mergeLeadFilters,
 };
