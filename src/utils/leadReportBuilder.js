@@ -20,6 +20,7 @@ const {
 const { isWalkInSource, isDigitalSource, safePct, startOfDay, startOfMonth, endOfDay, WALK_IN_SOURCES } = require('./crmConversion');
 const { dateKeyRange } = require('./reportPeriod');
 const { leadEffectiveDate, appendLeadDateFilter } = require('./leadDateFilter');
+const { buildAlignedManagementKpis } = require('./leadManagementKpiBuilder');
 
 const CONVERTED_STATUSES = ['Interested', 'Negotiation', 'Booking', 'Delivered', 'Booked'];
 const TERMINAL_STATUSES = ['Delivered', 'Lost', 'Not Interested'];
@@ -587,6 +588,7 @@ async function buildLeadAdminReport({
       // Management attention
       delayStatus,
       actionRequired: actionRequired || '—',
+      enquiryDate: leadEffectiveDate(l) || l.createdAt || null,
       createdAt: l.createdAt,
       updatedAt: l.updatedAt
     };
@@ -612,9 +614,15 @@ async function buildLeadAdminReport({
   const delayedCount = leadDetailRows.filter((r) => ['Overdue', 'Delayed'].includes(r.delayStatus)).length;
   const actionRequiredCount = leadDetailRows.filter((r) => r.actionRequired && r.actionRequired !== '—').length;
 
+  const alignedManagement = await buildAlignedManagementKpis(admin, now);
+
   return {
     overview: {
       totalLeads,
+      /** Matches Detailed Report — all leads in CRM scope (non-duplicate). */
+      totalLeadsAllTime: alignedManagement.summary.totalLeads.all,
+      totalLeadsMtd: alignedManagement.summary.totalLeads.mtd,
+      totalLeadsToday: alignedManagement.summary.totalLeads.today,
       activeLeads,
       unassigned: unassignedCount,
       convertedCount,
@@ -664,7 +672,8 @@ async function buildLeadAdminReport({
     leadDetailRowsTruncated: leadDetailRows.length > 2000,
     leadAgeing,
     stages: stageLabels,
-    kpis: buildKpiSummary(leads, followUps, tdBookings, now),
+    managementKpiPeriod: alignedManagement.period,
+    kpis: alignedManagement.kpis,
     conversions: buildConversionSummary(leads, tdBookings),
     funnelReport: buildFunnelReport(pipeline, stageLabels, stageHistory, leads),
     sourcePerformance: buildSourcePerformance(leads, tdBookings),
