@@ -589,6 +589,12 @@ async function buildLeadQuery(admin, queryParams = {}) {
           { 'creSheet.enquiryDate': null, createdAt: range },
         ],
       });
+    } else if (queryParams.dateField === 'booking') {
+      const { appendBookingDateFilter } = require('../utils/leadDateFilter');
+      appendBookingDateFilter(query, { from: queryParams.from, to: queryParams.to });
+    } else if (queryParams.dateField === 'delivery') {
+      const { appendDeliveryDateFilter } = require('../utils/leadDateFilter');
+      appendDeliveryDateFilter(query, { from: queryParams.from, to: queryParams.to });
     } else {
       query.createdAt = range;
     }
@@ -875,6 +881,21 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
   }
 
   lead.status = normalizedStage;
+  lead.creSheet = lead.creSheet || {};
+  if (['Booking', 'Delivered'].includes(normalizedStage)) {
+    if (normalizedStage === 'Booking') {
+      lead.creSheet.bookingDone = true;
+    }
+  } else {
+    lead.creSheet.bookingDone = false;
+  }
+  if (
+    !['Test Drive Completed', 'Test Drive Booked', 'Negotiation', 'Booking', 'Delivered'].includes(
+      normalizedStage,
+    )
+  ) {
+    lead.creSheet.tdDone = false;
+  }
   if (prevStage === 'Enquiry' && normalizedStage !== 'Enquiry') {
     stampFirstResponse(lead);
   }
@@ -2135,9 +2156,14 @@ exports.deleteCrmLead = asyncHandler(async (req, res) => {
   if (!lead) throw new ApiError(404, 'Lead not found');
 
   const ref = lead.leadId || lead.opportunityId || String(lead._id);
+  const VehicleOrder = require('../models/VehicleOrder');
+  const MetaLead = require('../models/MetaLead');
   await Promise.all([
     LeadFollowUp.deleteMany({ leadId: lead._id }),
     LeadStageHistory.deleteMany({ leadId: lead._id }),
+    VehicleOrder.deleteMany({ leadId: lead._id }),
+    MetaLead.updateMany({ leadId: lead._id }, { $unset: { leadId: '' } }),
+    TDBooking.updateMany({ leadId: lead._id }, { $unset: { leadId: '' } }),
     lead.deleteOne(),
   ]);
 
@@ -3272,9 +3298,14 @@ exports.bulkDeleteCrmLeads = asyncHandler(async (req, res) => {
 
   const leads = await Lead.find({ _id: { $in: ids } });
   const foundIds = leads.map((l) => l._id);
+  const VehicleOrder = require('../models/VehicleOrder');
+  const MetaLead = require('../models/MetaLead');
   await Promise.all([
     LeadFollowUp.deleteMany({ leadId: { $in: foundIds } }),
     LeadStageHistory.deleteMany({ leadId: { $in: foundIds } }),
+    VehicleOrder.deleteMany({ leadId: { $in: foundIds } }),
+    MetaLead.updateMany({ leadId: { $in: foundIds } }, { $unset: { leadId: '' } }),
+    TDBooking.updateMany({ leadId: { $in: foundIds } }, { $unset: { leadId: '' } }),
     Lead.deleteMany({ _id: { $in: foundIds } }),
   ]);
 

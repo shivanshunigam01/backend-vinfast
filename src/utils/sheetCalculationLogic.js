@@ -56,8 +56,10 @@ function sheetTdDoneQuery() {
   };
 }
 
+const { crmBookingModuleMatch } = require('./leadModuleFilters');
+
 function sheetBookingCountQuery() {
-  return { 'creSheet.bookingDone': true };
+  return crmBookingModuleMatch();
 }
 
 function sheetTdMonthRange(from, to) {

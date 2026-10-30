@@ -1,9 +1,30 @@
 /**
  * Lead visibility rules per module:
  * - crm: TD not done (pipeline leads)
- * - td: TD done = Yes
- * - booking: Booking done = Yes
+ * - td: TD done = Yes (active — not Lost / Not Interested)
+ * - booking: Booking stage or bookingDone (active — not Lost / Not Interested)
  */
+
+const TERMINAL_LOST = ['Lost', 'Not Interested'];
+
+/** Matches Booking CRM module list + booking KPI counts. */
+function crmBookingModuleMatch() {
+  return {
+    status: { $nin: TERMINAL_LOST },
+    $or: [
+      { status: { $in: ['Booking', 'Booked', 'Delivered'] } },
+      { 'creSheet.bookingDone': true },
+    ],
+  };
+}
+
+/** Matches TD CRM module list + TD-done lead counts (sheet flag). */
+function crmTdModuleMatch() {
+  return {
+    status: { $nin: TERMINAL_LOST },
+    'creSheet.tdDone': true,
+  };
+}
 
 function applyLeadModuleViewFilter(query, moduleView) {
   const view = String(moduleView || '').trim().toLowerCase();
@@ -20,12 +41,17 @@ function applyLeadModuleViewFilter(query, moduleView) {
       ],
     });
   } else if (view === 'td') {
-    query.$and.push({ 'creSheet.tdDone': true });
+    query.$and.push(crmTdModuleMatch());
   } else if (view === 'booking') {
-    query.$and.push({ 'creSheet.bookingDone': true });
+    query.$and.push(crmBookingModuleMatch());
   }
 
   return query;
 }
 
-module.exports = { applyLeadModuleViewFilter };
+module.exports = {
+  applyLeadModuleViewFilter,
+  crmBookingModuleMatch,
+  crmTdModuleMatch,
+  TERMINAL_LOST,
+};

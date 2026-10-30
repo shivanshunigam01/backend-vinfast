@@ -47,6 +47,24 @@ async function cascadeDeleteBookingRelated(bookings) {
     );
   }
 
+  const TDBooking = require('../models/TDBooking');
+  const leadIds = [...new Set(list.map((b) => asId(b.leadId)).filter(Boolean))];
+  for (const leadId of leadIds) {
+    const completed = await TDBooking.countDocuments({
+      leadId,
+      bookingStatus: 'COMPLETED',
+    });
+    if (completed === 0) {
+      await Lead.updateOne(
+        { _id: leadId },
+        {
+          $set: { 'creSheet.tdDone': false },
+          $unset: { 'creSheet.tdDate': '', 'creSheet.monthYearTd': '' },
+        },
+      );
+    }
+  }
+
   return {
     feedback: feedbackResult.deletedCount || 0,
     logs: logResult.deletedCount || 0,

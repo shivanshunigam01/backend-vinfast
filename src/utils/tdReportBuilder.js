@@ -39,7 +39,8 @@ function resolveLeadForBooking(booking, leadsByMobile) {
 async function buildAdminReport({ from, to, branchId } = {}) {
   const dateFilter = buildDateFilter(from, to);
   const branchFilter = branchId ? { branchId: new mongoose.Types.ObjectId(branchId) } : {};
-  const baseFilter = { ...dateFilter, ...branchFilter };
+  const activeOnly = { bookingStatus: { $nin: ['CANCELLED', 'MISSED'] } };
+  const baseFilter = { ...dateFilter, ...branchFilter, ...activeOnly };
 
   const feedbackDateFilter = from || to ? { createdAt: dateKeyRange(from, to) } : {};
 

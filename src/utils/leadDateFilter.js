@@ -67,6 +67,61 @@ function subtractCalendarDaysKey(fromDate, days) {
  * Enquiry-age buckets for Detailed Report (days since enquiry / createdAt).
  * Hot ≤30d, Warm 31–60d, Cold >60d.
  */
+function buildLeadBookingDateClause(from, to) {
+  if (!from && !to) return null;
+  const range = dateKeyRange(from, to);
+  return {
+    $or: [
+      { 'creSheet.bookingDate': range },
+      {
+        'creSheet.bookingDate': { $exists: false },
+        status: { $in: ['Booking', 'Booked'] },
+        updatedAt: range,
+      },
+      {
+        'creSheet.bookingDate': null,
+        status: { $in: ['Booking', 'Booked'] },
+        updatedAt: range,
+      },
+    ],
+  };
+}
+
+function buildLeadDeliveryDateClause(from, to) {
+  if (!from && !to) return null;
+  const range = dateKeyRange(from, to);
+  return {
+    $or: [
+      { 'creSheet.deliveryDate': range },
+      { 'creSheet.retailDate': range },
+      {
+        status: 'Delivered',
+        'creSheet.deliveryDate': { $exists: false },
+        'creSheet.retailDate': { $exists: false },
+        updatedAt: range,
+      },
+    ],
+  };
+}
+
+function appendBookingDateFilter(query, { from, to } = {}) {
+  const clause = buildLeadBookingDateClause(from, to);
+  if (clause) {
+    query.$and = query.$and || [];
+    query.$and.push(clause);
+  }
+  return query;
+}
+
+function appendDeliveryDateFilter(query, { from, to } = {}) {
+  const clause = buildLeadDeliveryDateClause(from, to);
+  if (clause) {
+    query.$and = query.$and || [];
+    query.$and.push(clause);
+  }
+  return query;
+}
+
 function leadEnquiryTemperatureFilter(temperature, now = new Date()) {
   const t = String(temperature || '').trim().toLowerCase();
   const todayKey = toDateKey(now);
@@ -88,4 +143,8 @@ module.exports = {
   appendLeadDateFilter,
   leadEnquiryReceivedFilter,
   leadEnquiryTemperatureFilter,
+  buildLeadBookingDateClause,
+  buildLeadDeliveryDateClause,
+  appendBookingDateFilter,
+  appendDeliveryDateFilter,
 };
