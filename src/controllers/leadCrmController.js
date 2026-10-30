@@ -698,6 +698,11 @@ async function buildLeadQuery(admin, queryParams = {}) {
   if (queryParams.moduleView) {
     applyLeadModuleViewFilter(query, queryParams.moduleView);
   }
+  if (String(queryParams.entryOrigin || '').trim().toLowerCase() === 'website') {
+    const { websiteDirectLeadMongoFilter } = require('../utils/leadModuleFilters');
+    query.$and = query.$and || [];
+    query.$and.push(websiteDirectLeadMongoFilter());
+  }
 
   return query;
 }

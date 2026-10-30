@@ -1,5 +1,6 @@
 const Lead = require('../models/Lead');
 const { leadUnassignedMongoFilter, leadAssignedMongoFilter, mergeLeadFilters } = require('./leadUnassigned');
+const { websiteDirectLeadMongoFilter } = require('./leadModuleFilters');
 const LeadFollowUp = require('../models/LeadFollowUp');
 const LeadFavourite = require('../models/LeadFavourite');
 const { normalizeStageLabel } = require('../constants/leadStages');
@@ -64,6 +65,7 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     hotCount,
     warmCount,
     coldCount,
+    websiteDirectCount,
   ] = await Promise.all([
     Lead.countDocuments(leadQuery),
     Lead.countDocuments(mergeLeadFilters(unassignedScope, leadUnassignedMongoFilter())),
@@ -87,6 +89,7 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'HOT')),
     Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'WARM')),
     Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'COLD')),
+    Lead.countDocuments(mergeLeadFilters(leadQuery, websiteDirectLeadMongoFilter())),
   ]);
 
   const scopedLeadIds = await Lead.distinct('_id', openQuery);
@@ -115,6 +118,7 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     hotCount,
     warmCount,
     coldCount,
+    websiteDirectCount,
   };
 }
 
