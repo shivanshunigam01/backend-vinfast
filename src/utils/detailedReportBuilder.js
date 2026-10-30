@@ -287,6 +287,15 @@ async function buildDetailedReport({ admin } = {}) {
     return { teamTotal, teamMtd };
   }
 
+  function teamLeadTotalsForStaff(staff) {
+    const ids = teamStaffIdsForTdRollup(staff);
+    let teamTotal = 0;
+    for (const id of ids) {
+      teamTotal += leadByStaff.get(id) || 0;
+    }
+    return teamTotal;
+  }
+
   const managers = [];
   const executives = [];
 
@@ -309,6 +318,7 @@ async function buildDetailedReport({ admin } = {}) {
       const team = teamTdTotalsForStaff(s);
       row.teamTestDrive = team.teamTotal;
       row.teamTestDriveMtd = team.teamMtd;
+      row.teamTotalLeads = teamLeadTotalsForStaff(s);
       managers.push(row);
     } else if (EXECUTIVE_DESIGNATIONS.has(s.designation)) {
       executives.push(row);
@@ -317,6 +327,27 @@ async function buildDetailedReport({ admin } = {}) {
 
   managers.sort((a, b) => b.totalLeads - a.totalLeads);
   executives.sort((a, b) => b.totalLeads - a.totalLeads);
+
+  const managerIds = new Set(managers.map((m) => m.staffId));
+  const execIds = new Set(executives.map((e) => e.staffId));
+  let managersDirect = 0;
+  let executivesTotal = 0;
+  let otherStaff = 0;
+  for (const m of managers) managersDirect += m.totalLeads;
+  for (const e of executives) executivesTotal += e.totalLeads;
+  for (const [id, count] of leadByStaff.entries()) {
+    if (!managerIds.has(id) && !execIds.has(id)) otherStaff += count;
+  }
+  const sheetUnmatched = unassignedSheet?.totalLeads || 0;
+  const attributionTotals = {
+    grandTotal: totalLeadsAll,
+    managersDirect,
+    executives: executivesTotal,
+    otherStaff,
+    sheetUnmatched,
+    attributedSubtotal: managersDirect + executivesTotal + otherStaff + sheetUnmatched,
+    inBalance: managersDirect + executivesTotal + otherStaff + sheetUnmatched === totalLeadsAll,
+  };
 
   const leadSources = sourceAgg.map((r) => ({
     source: r._id || 'Unknown',
@@ -393,8 +424,9 @@ async function buildDetailedReport({ admin } = {}) {
     monthlyTestDrives,
     monthlyTestDrivesTotal: monthlyTdTotal,
     unassignedSheet,
+    attributionTotals,
     attributionNote:
-      'CRM Unassigned (Lead CRM pill) = no CRM owner, no assignee email, and blank/Un-assigned sheet consultant. “Not matched to User Master” = sheet name could not be linked to an active User Master row (may still count as CRM assigned if the sheet has a name). Manager/executive totals use Excel SALES CONSULTANT attribution.',
+      'Total Leads (All) at the top = every lead in CRM. Manager rows count leads where Excel SALES CONSULTANT matches that manager’s name (not their whole team). Executive rows count SE-attributed leads. “Not matched” = no staff match. Grand total row sums managers + executives + other staff + not matched = Total Leads (All). CRM Unassigned is a separate CRM filter (may overlap).',
     ...drillDown,
   };
 }
