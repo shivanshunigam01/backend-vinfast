@@ -72,6 +72,7 @@ const {
   pickLatestFollowUp,
   displayLabelFromFollowUp,
   refreshLeadFollowUpDisplayFields,
+  latestFollowUpSummaryByLeadIds,
 } = require('../utils/followUpSync');
 const { leadAgeInDays } = require('../utils/crmConversion');
 const { emitStaffNotification, notifyLeadAssignees, leadHref, displayLeadName } = require('../utils/staffNotifications');
@@ -470,6 +471,7 @@ function formatCrmLead(doc, extras = {}) {
     followUpHighlight: followUpHighlight(plain.nextFollowUp),
     isFavourite: Boolean(extras.isFavourite),
     followUpCount: extras.followUpCount != null ? extras.followUpCount : undefined,
+    latestFollowUpSummary: extras.latestFollowUpSummary || undefined,
     enteredBy:
       plain.createdBy && typeof plain.createdBy === 'object'
         ? {
@@ -753,11 +755,13 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
     { $group: { _id: '$leadId', n: { $sum: 1 } } },
   ]);
   const fuMap = new Map(fuCounts.map((r) => [String(r._id), r.n]));
+  const latestFuMap = await latestFollowUpSummaryByLeadIds(docs.map((d) => d._id));
   for (const doc of docs) {
     await ensureLeadIds(doc);
     data.push(formatCrmLead(doc, {
       isFavourite: favSet.has(String(doc._id)),
       followUpCount: fuMap.get(String(doc._id)) || 0,
+      latestFollowUpSummary: latestFuMap.get(String(doc._id)) || null,
     }));
   }
 

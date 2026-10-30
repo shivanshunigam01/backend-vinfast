@@ -122,6 +122,51 @@ async function refreshLeadFollowUpDisplayFields(lead, { followUps: preloaded } =
   return { latest, changed: true };
 }
 
+/** Latest follow-up row per lead (for CRM list cards). */
+async function latestFollowUpSummaryByLeadIds(leadIds) {
+  const ids = (leadIds || []).filter(Boolean);
+  if (!ids.length) return new Map();
+
+  const rows = await LeadFollowUp.aggregate([
+    { $match: { leadId: { $in: ids } } },
+    {
+      $addFields: {
+        effectiveAt: {
+          $ifNull: ['$completedAt', { $ifNull: ['$scheduledAt', '$createdAt'] }],
+        },
+      },
+    },
+    { $sort: { effectiveAt: -1, createdAt: -1 } },
+    {
+      $group: {
+        _id: '$leadId',
+        note: { $first: '$note' },
+        outcome: { $first: '$outcome' },
+        status: { $first: '$status' },
+        effectiveAt: { $first: '$effectiveAt' },
+      },
+    },
+  ]);
+
+  const map = new Map();
+  for (const row of rows) {
+    const fu = {
+      note: row.note,
+      outcome: row.outcome,
+      status: row.status,
+      completedAt: row.effectiveAt,
+    };
+    const displayLabel = displayLabelFromFollowUp(fu);
+    map.set(String(row._id), {
+      displayLabel: displayLabel || String(row.note || '').trim(),
+      note: row.note || '',
+      at: row.effectiveAt || null,
+      status: row.status || '',
+    });
+  }
+  return map;
+}
+
 module.exports = {
   normalizeInterestLevel,
   syncLeadNextFollowUp,
@@ -132,4 +177,5 @@ module.exports = {
   pickLatestFollowUp,
   displayLabelFromFollowUp,
   refreshLeadFollowUpDisplayFields,
+  latestFollowUpSummaryByLeadIds,
 };
