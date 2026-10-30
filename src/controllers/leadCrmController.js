@@ -444,6 +444,26 @@ function leadEnquiryDate(plain) {
   return plain?.creSheet?.enquiryDate || plain?.createdAt || null;
 }
 
+/** Who entered the lead when no TDStaff createdBy (website, import, Meta, etc.). */
+function resolveLeadEntryLabel(plain) {
+  if (plain?.createdBy && typeof plain.createdBy === 'object' && plain.createdBy.name) {
+    return plain.createdBy.name;
+  }
+  if (plain?.creSheet?.importedBy) return String(plain.creSheet.importedBy);
+  const src = String(plain?.source || '').trim();
+  if (plain?.testDriveId || plain?.tdBookingId || /^test drive$/i.test(src)) {
+    return 'Customer (online test drive booking)';
+  }
+  if (/website/i.test(src) || plain?.pageSource) {
+    return 'Customer (website form)';
+  }
+  if (/meta|facebook|instagram|google/i.test(src)) {
+    return `System intake (${src || 'digital lead'})`;
+  }
+  if (src) return `System intake (${src})`;
+  return null;
+}
+
 function formatCrmLead(doc, extras = {}) {
   const plain = doc.toObject ? doc.toObject() : doc;
   const customer = plain.pvCustomerId;
@@ -483,10 +503,7 @@ function formatCrmLead(doc, extras = {}) {
         : plain.createdBy
           ? { _id: plain.createdBy, name: '', email: '', designation: '' }
           : null,
-    enteredByName:
-      (plain.createdBy && typeof plain.createdBy === 'object' && plain.createdBy.name) ||
-      (plain.creSheet?.importedBy ? String(plain.creSheet.importedBy) : '') ||
-      null,
+    enteredByName: resolveLeadEntryLabel(plain),
   };
 }
 
