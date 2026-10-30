@@ -66,6 +66,7 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     warmCount,
     coldCount,
     websiteDirectCount,
+    websiteUnassignedCount,
   ] = await Promise.all([
     Lead.countDocuments(leadQuery),
     Lead.countDocuments(mergeLeadFilters(unassignedScope, leadUnassignedMongoFilter())),
@@ -90,6 +91,9 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'WARM')),
     Lead.countDocuments(appendInterestLevelFilter(leadQuery, 'COLD')),
     Lead.countDocuments(mergeLeadFilters(leadQuery, websiteDirectLeadMongoFilter())),
+    Lead.countDocuments(
+      mergeLeadFilters(leadQuery, websiteDirectLeadMongoFilter(), leadUnassignedMongoFilter()),
+    ),
   ]);
 
   const scopedLeadIds = await Lead.distinct('_id', openQuery);
@@ -119,6 +123,7 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
     warmCount,
     coldCount,
     websiteDirectCount,
+    websiteUnassignedCount,
   };
 }
 

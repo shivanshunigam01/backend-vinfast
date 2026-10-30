@@ -111,6 +111,16 @@ router.patch(
   requireModuleActionOrRoles('crm_leads', 'assign', 'superadmin', 'manager'),
   ctrl.assignLeadExecutive,
 );
+router.post(
+  '/:id/assignment-lock',
+  requireModuleActionOrRoles('crm_leads', 'assign', 'superadmin', 'manager'),
+  ctrl.acquireWebsiteLeadAssignmentLock,
+);
+router.delete(
+  '/:id/assignment-lock',
+  requireModuleActionOrRoles('crm_leads', 'assign', 'superadmin', 'manager'),
+  ctrl.releaseWebsiteLeadAssignmentLock,
+);
 router.patch('/:id/details', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadDetails);
 router.patch('/:id/cre-sheet', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadCreSheet);
 router.patch('/:id/stage', requireModuleAction('crm_leads', 'update'), ctrl.updateLeadStage);

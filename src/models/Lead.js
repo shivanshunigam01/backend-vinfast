@@ -96,6 +96,17 @@ const leadSchema = new mongoose.Schema(
     status: { type: String, trim: true, default: 'Enquiry' },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff' },
     assignedToEmail: { type: String, trim: true, lowercase: true, index: true },
+    /**
+     * Soft lock while CRE/CRM assigns an unassigned website intake lead (prevents double assignment).
+     * Expires automatically; cleared on successful assign.
+     */
+    assignmentLock: {
+      staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'TDStaff', index: true },
+      staffName: { type: String, trim: true },
+      staffEmail: { type: String, trim: true, lowercase: true },
+      lockedAt: { type: Date },
+      expiresAt: { type: Date, index: true },
+    },
     lastActivityAt: { type: Date, index: true },
     nextFollowUp: { type: Date },
     remarks: { type: String, trim: true },

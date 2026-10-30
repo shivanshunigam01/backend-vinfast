@@ -39,36 +39,25 @@ function websiteDirectLeadMongoFilter() {
   };
 }
 
-/** Public website / test-drive forms (no staff createdBy on intake). */
-const WEBSITE_DIRECT_SOURCES = [
-  'Test Drive',
-  'Website',
-  'Website Enquiry',
-  'Enquiry',
-  'Book Now',
-  'Pre-Booking',
-  'Patliputra Vinfast Website',
-  'Brochure download',
-];
+function hasWebsiteDirectSignals(plain) {
+  if (!plain || typeof plain !== 'object') return false;
+  const src = String(plain.source || '').trim();
+  if (WEBSITE_DIRECT_SOURCES.includes(src)) return true;
+  if (/website/i.test(src)) return true;
+  if (plain.testDriveId) return true;
+  if (plain.tdBookingId) return true;
+  if (plain.enquiryId) return true;
+  const pageSource = String(plain.pageSource || '').trim();
+  if (pageSource) return true;
+  return false;
+}
 
-function websiteDirectLeadMongoFilter() {
-  return {
-    $and: [
-      {
-        $or: [
-          { source: { $in: WEBSITE_DIRECT_SOURCES } },
-          { source: { $regex: /website/i } },
-          { testDriveId: { $exists: true, $ne: null } },
-          { tdBookingId: { $exists: true, $ne: null } },
-          { enquiryId: { $exists: true, $ne: null } },
-          { pageSource: { $exists: true, $nin: [null, ''] } },
-        ],
-      },
-      {
-        $or: [{ createdBy: { $exists: false } }, { createdBy: null }],
-      },
-    ],
-  };
+/** In-memory: customer website / test-drive intake (no staff createdBy). */
+function isWebsiteDirectLead(plain) {
+  if (!plain || typeof plain !== 'object') return false;
+  const createdBy = plain.createdBy?._id || plain.createdBy;
+  if (createdBy) return false;
+  return hasWebsiteDirectSignals(plain);
 }
 
 /** Matches Booking CRM module list + booking KPI counts. */
@@ -118,6 +107,7 @@ module.exports = {
   crmBookingModuleMatch,
   crmTdModuleMatch,
   websiteDirectLeadMongoFilter,
+  isWebsiteDirectLead,
   WEBSITE_DIRECT_SOURCES,
   TERMINAL_LOST,
 };

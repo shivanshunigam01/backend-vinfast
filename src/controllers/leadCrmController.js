@@ -23,6 +23,13 @@ const { buildPagination } = require('../utils/queryBuilder');
 const { dateKeyRange, dateKeyDayBounds, parseSlotDate, parseDateKey } = require('../utils/reportPeriod');
 const { applyLeadModuleViewFilter } = require('../utils/leadModuleFilters');
 const { leadUnassignedMongoFilter, leadAssignedMongoFilter } = require('../utils/leadUnassigned');
+const {
+  resolveWebsiteAssignmentAccess,
+  acquireWebsiteLeadAssignmentLock,
+  releaseWebsiteLeadAssignmentLock,
+  assertWebsiteLeadAssignmentEditable,
+  clearWebsiteLeadAssignmentLock,
+} = require('../utils/leadAssignmentLock');
 const { reconcileLeadAssignmentsFromSheet } = require('../utils/leadAssignmentReconcile');
 const { CRM_LEAD_STAGES, isCrmStaffRole, normalizeStageLabel } = require('../constants/leadStages');
 const {
@@ -466,6 +473,7 @@ function formatCrmLead(doc, extras = {}) {
   const subCustomer = plain.subCustomerId;
   const resolvedName = (customer && customer.name) || plain.name || '';
   const enquiryDate = leadEnquiryDate(plain);
+  const websiteAssignment = resolveWebsiteAssignmentAccess(plain, extras.viewer || null);
   return {
     ...plain,
     name: resolvedName,
@@ -504,6 +512,11 @@ function formatCrmLead(doc, extras = {}) {
       (plain.creSheet?.importedBy ? String(plain.creSheet.importedBy) : '') ||
       leadEntryOriginLabel(plain) ||
       null,
+    websiteDirectUnassigned: websiteAssignment.websiteDirectUnassigned,
+    assignmentLock: websiteAssignment.assignmentLock,
+    websiteAssignmentEditable: websiteAssignment.websiteAssignmentEditable,
+    assignmentLockHeldBySelf: websiteAssignment.assignmentLockHeldBySelf,
+    assignmentLockMessage: websiteAssignment.assignmentLockMessage,
   };
 }
 
@@ -787,6 +800,7 @@ exports.getCrmLeads = asyncHandler(async (req, res) => {
   for (const doc of docs) {
     await ensureLeadIds(doc);
     data.push(formatCrmLead(doc, {
+      viewer: req.admin,
       isFavourite: favSet.has(String(doc._id)),
       followUpCount: fuMap.get(String(doc._id)) || 0,
       latestFollowUpSummary: latestFuMap.get(String(doc._id)) || null,
@@ -846,7 +860,7 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   const stages = await getActiveStageLabels();
   const isAdmin = isCrmManagerLike(req.admin);
   return successResponse(res, {
-    lead: formatCrmLead(lead, { isFavourite: Boolean(fav) }),
+    lead: formatCrmLead(lead, { viewer: req.admin, isFavourite: Boolean(fav) }),
     history,
     followUps,
     followUpCount,
@@ -882,6 +896,34 @@ exports.getCrmLeadDetail = asyncHandler(async (req, res) => {
   });
 });
 
+exports.acquireWebsiteLeadAssignmentLock = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  if (!canViewUnassignedLeadPool(req.admin)) {
+    throw new ApiError(403, 'You cannot claim website leads for assignment');
+  }
+  let lead = await Lead.findById(req.params.id).populate(LEAD_POPULATE);
+  if (!lead) throw new ApiError(404, 'Lead not found');
+  await assertLeadReadable(lead, req.admin);
+
+  const result = await acquireWebsiteLeadAssignmentLock(lead._id, req.admin);
+  lead = await Lead.findById(lead._id).populate(LEAD_POPULATE);
+  return successResponse(
+    res,
+    formatCrmLead(lead, { viewer: req.admin }),
+    result.acquired ? 'You are working on this lead' : 'Lead is ready',
+  );
+});
+
+exports.releaseWebsiteLeadAssignmentLock = asyncHandler(async (req, res) => {
+  assertCrmAccess(req.admin);
+  const lead = await Lead.findById(req.params.id).populate(LEAD_POPULATE);
+  if (!lead) throw new ApiError(404, 'Lead not found');
+  await assertLeadReadable(lead, req.admin);
+  await releaseWebsiteLeadAssignmentLock(lead._id, req.admin);
+  const refreshed = await Lead.findById(lead._id).populate(LEAD_POPULATE);
+  return successResponse(res, formatCrmLead(refreshed, { viewer: req.admin }), 'Assignment lock released');
+});
+
 exports.updateLeadStage = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const { stage, reason } = req.body;
@@ -895,6 +937,7 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const prevStage = lead.status;
   if (prevStage === normalizedStage) {
@@ -998,6 +1041,8 @@ exports.updateLeadDetails = asyncHandler(async (req, res) => {
 
   const lead = await Lead.findById(req.params.id);
   if (!lead) throw new ApiError(404, 'Lead not found');
+  await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const {
     name,
@@ -1276,6 +1321,7 @@ exports.updateLeadCreSheet = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.id);
   if (!lead) throw new ApiError(404, 'Lead not found');
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const changes = await applyCreSheetPayloadToLead(lead, req.admin, req.body || {});
 
@@ -1320,6 +1366,7 @@ exports.updateLeadRemarks = asyncHandler(async (req, res) => {
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   lead.remarks = String(remarks).trim();
   touchLeadActivity(lead);
@@ -1345,6 +1392,7 @@ exports.addFollowUp = asyncHandler(async (req, res) => {
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const interest = normalizeInterestLevel(interestLevel);
   const nextAt = nextFollowUpAt ? parseUserDateTimeInput(nextFollowUpAt) : null;
@@ -1421,6 +1469,7 @@ exports.updateFollowUp = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const followUp = await LeadFollowUp.findOne({ _id: req.params.followUpId, leadId: lead._id });
   if (!followUp) throw new ApiError(404, 'Follow-up not found');
@@ -1492,6 +1541,8 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
   const { executiveId } = req.body;
   const lead = await Lead.findById(req.params.id);
   if (!lead) throw new ApiError(404, 'Lead not found');
+  await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   let assignee = null;
   if (executiveId) {
@@ -1520,6 +1571,9 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     }
   }
   touchLeadActivity(lead);
+  if (executiveId) {
+    await clearWebsiteLeadAssignmentLock(lead);
+  }
   await lead.save();
 
   const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
@@ -1552,7 +1606,7 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
   return successResponse(
     res,
-    formatCrmLead(updated),
+    formatCrmLead(updated, { viewer: req.admin }),
     executiveId ? `Lead assigned to ${assignLabel}` : 'Lead unassigned',
   );
 });
@@ -1704,6 +1758,7 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const { slotDate, slotTime, model, remarks, branch } = req.body || {};
   if (!slotDate) throw new ApiError(400, 'slotDate is required');
@@ -1825,6 +1880,7 @@ exports.convertLeadToSale = asyncHandler(async (req, res) => {
   assertCrmAccess(req.admin);
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   if (lead.convertedAt) {
     throw new ApiError(409, `This opportunity was already converted on ${lead.convertedAt.toLocaleDateString('en-IN')}`);
@@ -1990,6 +2046,7 @@ exports.reopenLostLead = asyncHandler(async (req, res) => {
 
   const lead = await Lead.findById(req.params.id);
   await assertLeadReadable(lead, req.admin);
+  assertWebsiteLeadAssignmentEditable(lead, req.admin);
 
   const normalizedStatus = normalizeStageLabel(lead.status);
   if (!REOPENABLE_STATUSES.includes(normalizedStatus) && !REOPENABLE_STATUSES.includes(lead.status)) {
