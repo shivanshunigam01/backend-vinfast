@@ -444,24 +444,20 @@ function leadEnquiryDate(plain) {
   return plain?.creSheet?.enquiryDate || plain?.createdAt || null;
 }
 
-/** Who entered the lead when no TDStaff createdBy (website, import, Meta, etc.). */
-function resolveLeadEntryLabel(plain) {
-  if (plain?.createdBy && typeof plain.createdBy === 'object' && plain.createdBy.name) {
-    return plain.createdBy.name;
-  }
-  if (plain?.creSheet?.importedBy) return String(plain.creSheet.importedBy);
+/** When no TDStaff createdBy (website / Meta / import), show how the lead entered the system. */
+function leadEntryOriginLabel(plain) {
   const src = String(plain?.source || '').trim();
-  if (plain?.testDriveId || plain?.tdBookingId || /^test drive$/i.test(src)) {
-    return 'Customer (online test drive booking)';
+  if (src === 'Test Drive') return 'Customer · website test drive form';
+  if (src === 'Meta Ads') return 'Meta Ads (digital lead)';
+  if (src === 'Enquiry') return 'Customer · website enquiry form';
+  if (/website/i.test(src) || src === 'Book Now' || src === 'Pre-Booking') {
+    return 'Customer · website';
   }
-  if (/website/i.test(src) || plain?.pageSource) {
-    return 'Customer (website form)';
-  }
-  if (/meta|facebook|instagram|google/i.test(src)) {
-    return `System intake (${src || 'digital lead'})`;
-  }
-  if (src) return `System intake (${src})`;
-  return null;
+  if (src === 'Walk-in' || src === 'Walk-In') return 'Walk-in (no staff login on create)';
+  if (plain?.metaUniqueId) return 'Meta lead sync';
+  if (plain?.enquiryId) return 'Website enquiry';
+  if (plain?.testDriveId || plain?.tdBookingId) return 'Test drive booking';
+  return src ? `Source: ${src}` : null;
 }
 
 function formatCrmLead(doc, extras = {}) {
@@ -503,7 +499,11 @@ function formatCrmLead(doc, extras = {}) {
         : plain.createdBy
           ? { _id: plain.createdBy, name: '', email: '', designation: '' }
           : null,
-    enteredByName: resolveLeadEntryLabel(plain),
+    enteredByName:
+      (plain.createdBy && typeof plain.createdBy === 'object' && plain.createdBy.name) ||
+      (plain.creSheet?.importedBy ? String(plain.creSheet.importedBy) : '') ||
+      leadEntryOriginLabel(plain) ||
+      null,
   };
 }
 
