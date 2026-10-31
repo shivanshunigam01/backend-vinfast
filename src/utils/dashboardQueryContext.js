@@ -31,7 +31,9 @@ async function buildDashboardQueryContext(admin) {
   const mtdFromKey = indiaDateKey(mtdStart);
   const mtdToKey = indiaDateKey(now);
 
-  const newLeadsTodayQuery = { ...leadScope };
+  const newLeadsTodayQuery = leadScope.$and
+    ? { $and: [...leadScope.$and] }
+    : { ...leadScope };
   appendLeadDateFilter(newLeadsTodayQuery, {
     from: todayKey,
     to: todayKey,
@@ -39,11 +41,11 @@ async function buildDashboardQueryContext(admin) {
   });
 
   const bookingBase = mergeScope(leadScope, crmBookingModuleMatch());
-  const bookingMtdQuery = { ...bookingBase };
+  const bookingMtdQuery = mergeScope(leadScope, crmBookingModuleMatch());
   appendBookingDateFilter(bookingMtdQuery, { from: mtdFromKey, to: mtdToKey });
 
   const deliveredBase = mergeScope(leadScope, { status: 'Delivered' });
-  const deliveredMtdQuery = { ...deliveredBase };
+  const deliveredMtdQuery = mergeScope(leadScope, { status: 'Delivered' });
   appendDeliveryDateFilter(deliveredMtdQuery, { from: mtdFromKey, to: mtdToKey });
 
   const testDrivesMtdQuery = {
