@@ -328,6 +328,61 @@ async function buildDetailedReport({ admin } = {}) {
   managers.sort((a, b) => b.totalLeads - a.totalLeads);
   executives.sort((a, b) => b.totalLeads - a.totalLeads);
 
+  const execById = new Map(executives.map((e) => [e.staffId, e]));
+  const nestedExecutiveIds = new Set();
+
+  function executiveRowForStaff(staff) {
+    const id = String(staff._id);
+    if (execById.has(id)) return execById.get(id);
+    const td = tdByStaff.get(id) || { totalTd: 0, tdMtd: 0 };
+    return {
+      staffId: id,
+      name: staff.name,
+      designation: staff.designation,
+      abbr: abbrFor(staff.designation),
+      totalLeads: leadByStaff.get(id) || 0,
+      totalTestDrive: td.totalTd,
+      totalTestDriveMtd: td.tdMtd,
+    };
+  }
+
+  /** Sales managers with direct-report executives nested (User Master reportsTo). */
+  const salesManagerTeams = managers.map((mgr) => {
+    const directExecStaff = (directReportsByManager.get(mgr.staffId) || []).filter((r) =>
+      EXECUTIVE_DESIGNATIONS.has(r.designation),
+    );
+    const teamExecutives = directExecStaff
+      .map((r) => {
+        nestedExecutiveIds.add(String(r._id));
+        return executiveRowForStaff(r);
+      })
+      .sort((a, b) => b.totalLeads - a.totalLeads);
+
+    const executivesLeads = teamExecutives.reduce((s, e) => s + e.totalLeads, 0);
+    const executivesTd = teamExecutives.reduce((s, e) => s + e.totalTestDrive, 0);
+    const executivesTdMtd = teamExecutives.reduce((s, e) => s + e.totalTestDriveMtd, 0);
+
+    return {
+      manager: mgr,
+      executives: teamExecutives,
+      teamRollup: {
+        managerOwnLeads: mgr.totalLeads,
+        executivesLeads,
+        teamTotalLeads: mgr.teamTotalLeads ?? mgr.totalLeads + executivesLeads,
+        managerOwnTd: mgr.totalTestDrive,
+        executivesTd,
+        teamTotalTd: mgr.teamTestDrive ?? mgr.totalTestDrive + executivesTd,
+        managerOwnTdMtd: mgr.totalTestDriveMtd,
+        executivesTdMtd,
+        teamTotalTdMtd: mgr.teamTestDriveMtd ?? mgr.totalTestDriveMtd + executivesTdMtd,
+      },
+    };
+  });
+
+  const orphanSalesExecutives = executives
+    .filter((e) => !nestedExecutiveIds.has(e.staffId))
+    .sort((a, b) => b.totalLeads - a.totalLeads);
+
   const managerIds = new Set(managers.map((m) => m.staffId));
   const execIds = new Set(executives.map((e) => e.staffId));
   let managersDirect = 0;
@@ -419,6 +474,8 @@ async function buildDetailedReport({ admin } = {}) {
     },
     salesManagers: managers,
     salesExecutives: executives,
+    salesManagerTeams,
+    orphanSalesExecutives,
     leadTypes,
     leadTypesTotal: leadTypes.reduce((s, r) => s + r.count, 0),
     monthlyTestDrives,
@@ -426,7 +483,7 @@ async function buildDetailedReport({ admin } = {}) {
     unassignedSheet,
     attributionTotals,
     attributionNote:
-      'Total Leads (All) at the top = every lead in CRM. Manager rows count leads where Excel SALES CONSULTANT matches that manager’s name (not their whole team). Executive rows count SE-attributed leads. “Not matched” = no staff match. Grand total row sums managers + executives + other staff + not matched = Total Leads (All). CRM Unassigned is a separate CRM filter (may overlap).',
+      'Total Leads (All) = every lead in CRM. Each lead is attributed once by Excel SALES CONSULTANT (User Master). Sales Manager & Team table: manager row = that person’s sheet count; indented executives = direct reports; Team Leads / TD By Team = manager + those executives combined. Executives without a manager link appear under “Other executives”. Grand total = all managers (direct) + all executives + other staff + not matched. CRM Unassigned is a separate filter.',
     ...drillDown,
   };
 }
