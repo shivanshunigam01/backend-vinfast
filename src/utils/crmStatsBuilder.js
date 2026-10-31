@@ -127,4 +127,31 @@ async function buildCrmLeadStats({ admin, leadQuery, unassignedQuery }) {
   };
 }
 
-module.exports = { buildCrmLeadStats, favouriteLeadIdsForUser, bucketPipelineStage };
+/**
+ * Mongo filter: raw `status` values that bucket into one CRM pipeline stage (matches pipeline KPI counts).
+ */
+async function pipelineStageStatusFilter(targetStage, leadQuery) {
+  const stages = await getActiveStageLabels();
+  const target = String(targetStage || '').trim();
+  if (!target) return { _id: null };
+
+  const rows = await Lead.aggregate([
+    { $match: leadQuery },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ]);
+  const statuses = [];
+  for (const row of rows) {
+    if (bucketPipelineStage(row._id, stages) === target) {
+      statuses.push(row._id);
+    }
+  }
+  if (!statuses.length) return { _id: null };
+  return { status: { $in: statuses } };
+}
+
+module.exports = {
+  buildCrmLeadStats,
+  favouriteLeadIdsForUser,
+  bucketPipelineStage,
+  pipelineStageStatusFilter,
+};

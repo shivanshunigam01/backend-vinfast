@@ -4,12 +4,12 @@ const TDBooking = require('../models/TDBooking');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
-const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
 const { buildPagination } = require('../utils/queryBuilder');
+const { buildCrmLeadStats } = require('../utils/crmStatsBuilder');
 const {
   ACTIVE_TD_BOOKING_FILTER,
   buildDashboardQueryContext,
-  resolveDashboardDrillSpec,
+  resolveDashboardDrillQuery,
 } = require('../utils/dashboardQueryContext');
 
 function aggregateToRecord(rows) {
@@ -24,12 +24,17 @@ function aggregateToRecord(rows) {
 exports.getStats = asyncHandler(async (req, res) => {
   const ctx = await buildDashboardQueryContext(req.admin);
 
+  const crmStats = await buildCrmLeadStats({
+    admin: req.admin,
+    leadQuery: ctx.leadScope,
+    unassignedQuery: ctx.leadScope,
+  });
+
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
 
   const [
-    totalLeads,
     newLeadsToday,
     totalTestDrives,
     testDrivesThisWeek,
@@ -37,20 +42,15 @@ exports.getStats = asyncHandler(async (req, res) => {
     totalEnquiries,
     openEnquiries,
     hotLeads,
-    hotFlagLeads,
-    warmFlagLeads,
-    coldFlagLeads,
     bookings,
     bookingsMtd,
     delivered,
     deliveredMtd,
     pendingFollowUps,
-    leadsByStatusAgg,
     leadsBySourceAgg,
     leadsByModelAgg,
     testDrivesByStatusAgg,
   ] = await Promise.all([
-    Lead.countDocuments(ctx.leadScope),
     Lead.countDocuments(ctx.newLeadsTodayQuery),
     TDBooking.countDocuments(ACTIVE_TD_BOOKING_FILTER),
     TDBooking.countDocuments({ ...ACTIVE_TD_BOOKING_FILTER, createdAt: { $gte: weekStart } }),
@@ -58,15 +58,11 @@ exports.getStats = asyncHandler(async (req, res) => {
     Enquiry.countDocuments(),
     Enquiry.countDocuments({ status: { $in: ['Open', 'In Progress'] } }),
     Lead.countDocuments({ ...ctx.leadScope, status: { $in: ['Interested', 'Negotiation'] } }),
-    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'HOT')),
-    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'WARM')),
-    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'COLD')),
     Lead.countDocuments(ctx.bookingBase),
     Lead.countDocuments(ctx.bookingMtdQuery),
     Lead.countDocuments(ctx.deliveredBase),
     Lead.countDocuments(ctx.deliveredMtdQuery),
     Lead.countDocuments({ ...ctx.leadScope, nextFollowUp: { $ne: null } }),
-    Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
     Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$source', count: { $sum: 1 } } }]),
     Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$model', count: { $sum: 1 } } }]),
     TDBooking.aggregate([
@@ -76,12 +72,12 @@ exports.getStats = asyncHandler(async (req, res) => {
   ]);
 
   return successResponse(res, {
-    totalLeads,
+    totalLeads: crmStats.total,
     newLeadsToday,
     hotLeads,
-    hotFlagLeads,
-    warmFlagLeads,
-    coldFlagLeads,
+    hotFlagLeads: crmStats.hotCount,
+    warmFlagLeads: crmStats.warmCount,
+    coldFlagLeads: crmStats.coldCount,
     bookings,
     bookingsMtd,
     delivered,
@@ -92,7 +88,8 @@ exports.getStats = asyncHandler(async (req, res) => {
     testDrivesMtd,
     totalEnquiries,
     openEnquiries,
-    leadsByStatus: aggregateToRecord(leadsByStatusAgg),
+    leadsByStatus: crmStats.pipeline,
+    crmPipelineStages: crmStats.stages,
     leadsBySource: aggregateToRecord(leadsBySourceAgg),
     leadsByModel: aggregateToRecord(leadsByModelAgg),
     testDrivesByStatus: aggregateToRecord(testDrivesByStatusAgg),
@@ -112,7 +109,7 @@ exports.getDashboardDrill = asyncHandler(async (req, res) => {
   const metric = String(req.query.metric || '').trim();
   const status = req.query.status != null ? String(req.query.status).trim() : undefined;
   const ctx = await buildDashboardQueryContext(req.admin);
-  const spec = resolveDashboardDrillSpec(ctx, metric, { status });
+  const spec = await resolveDashboardDrillQuery(ctx, metric, { status });
   if (!spec) {
     throw new ApiError(400, 'Unknown dashboard drill metric');
   }

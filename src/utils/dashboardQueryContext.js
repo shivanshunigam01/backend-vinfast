@@ -20,7 +20,8 @@ function mergeScope(leadScope, extra) {
  * Shared date bounds + Mongo filters for dashboard KPI counts and drill-down lists.
  */
 async function buildDashboardQueryContext(admin) {
-  const leadScope = admin ? await buildLeadQuery(admin, {}) : { ...LEAD_SCOPE };
+  /** Same default scope as Lead CRM list (`moduleView=all`). */
+  const leadScope = admin ? await buildLeadQuery(admin, { moduleView: 'all' }) : { ...LEAD_SCOPE };
 
   const now = new Date();
   const startOfDay = new Date(now);
@@ -102,13 +103,13 @@ function resolveDashboardDrillSpec(ctx, metric, { status } = {}) {
     case 'delivered-mtd':
       return { kind: 'leads', query: ctx.deliveredMtdQuery };
     case 'contact-pending':
-      return { kind: 'leads', query: mergeScope(ctx.leadScope, { status: 'Contact Attempted' }) };
+      return { kind: 'leads', pipelineStage: 'Enquiry' };
     case 'pending-followups':
       return { kind: 'leads', query: { ...ctx.leadScope, nextFollowUp: { $ne: null } } };
     case 'pipeline-status': {
       const st = String(status || '').trim();
       if (!st) return null;
-      return { kind: 'leads', query: mergeScope(ctx.leadScope, { status: st }) };
+      return { kind: 'leads', pipelineStage: st };
     }
     case 'all-testdrives':
       return { kind: 'td', query: ctx.activeTdFilter };
@@ -125,9 +126,22 @@ function resolveDashboardDrillSpec(ctx, metric, { status } = {}) {
   }
 }
 
+async function resolveDashboardDrillQuery(ctx, metric, options = {}) {
+  const spec = resolveDashboardDrillSpec(ctx, metric, options);
+  if (!spec) return null;
+  if (spec.pipelineStage) {
+    const { pipelineStageStatusFilter } = require('./crmStatsBuilder');
+    const stageFilter = await pipelineStageStatusFilter(spec.pipelineStage, ctx.leadScope);
+    const { pipelineStage, ...rest } = spec;
+    return { ...rest, query: mergeScope(ctx.leadScope, stageFilter) };
+  }
+  return spec;
+}
+
 module.exports = {
   ACTIVE_TD_BOOKING_FILTER,
   mergeScope,
   buildDashboardQueryContext,
   resolveDashboardDrillSpec,
+  resolveDashboardDrillQuery,
 };
