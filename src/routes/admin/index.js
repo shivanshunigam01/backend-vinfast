@@ -66,6 +66,7 @@ router.use(protect);
 
 // Dashboard
 router.get('/dashboard/stats', dashboardController.getStats);
+router.get('/dashboard/drill', dashboardController.getDashboardDrill);
 router.get(
   '/dashboard/calendar',
   requireModuleAction('calendar', 'view'),

@@ -2,19 +2,15 @@ const Lead = require('../models/Lead');
 const Enquiry = require('../models/Enquiry');
 const TDBooking = require('../models/TDBooking');
 const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
-const { appendLeadDateFilter, appendBookingDateFilter, appendDeliveryDateFilter } = require('../utils/leadDateFilter');
-const { toDateKey } = require('../utils/reportPeriod');
-const { monthBoundsIndia } = require('../utils/indiaDateTime');
 const { appendInterestLevelFilter } = require('../utils/leadInterestLevel');
-const { crmBookingModuleMatch } = require('../utils/leadModuleFilters');
-const { buildLeadQuery } = require('./leadCrmController');
-
-const LEAD_SCOPE = { isDuplicate: { $ne: true } };
-
-const ACTIVE_TD_BOOKING_FILTER = {
-  bookingStatus: { $nin: ['CANCELLED', 'MISSED'] },
-};
+const { buildPagination } = require('../utils/queryBuilder');
+const {
+  ACTIVE_TD_BOOKING_FILTER,
+  buildDashboardQueryContext,
+  resolveDashboardDrillSpec,
+} = require('../utils/dashboardQueryContext');
 
 function aggregateToRecord(rows) {
   const out = {};
@@ -25,39 +21,12 @@ function aggregateToRecord(rows) {
   return out;
 }
 
-function mergeScope(leadScope, extra) {
-  return { $and: [leadScope, extra] };
-}
-
 exports.getStats = asyncHandler(async (req, res) => {
-  const leadScope = req.admin ? await buildLeadQuery(req.admin, {}) : { ...LEAD_SCOPE };
-
-  const now = new Date();
-  const startOfDay = new Date(now);
-  startOfDay.setHours(0, 0, 0, 0);
-  const todayKey = toDateKey(startOfDay);
-  const { mtdStart, mtdMonthEnd } = monthBoundsIndia(now);
-  const mtdFromKey = toDateKey(mtdStart);
-  const mtdToKey = toDateKey(now);
-
-  const newLeadsTodayQuery = { ...leadScope };
-  appendLeadDateFilter(newLeadsTodayQuery, {
-    from: todayKey,
-    to: todayKey,
-    dateField: 'enquiry',
-  });
+  const ctx = await buildDashboardQueryContext(req.admin);
 
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
-
-  const bookingBase = mergeScope(leadScope, crmBookingModuleMatch());
-  const bookingMtdQuery = { ...bookingBase };
-  appendBookingDateFilter(bookingMtdQuery, { from: mtdFromKey, to: mtdToKey });
-
-  const deliveredBase = mergeScope(leadScope, { status: 'Delivered' });
-  const deliveredMtdQuery = { ...deliveredBase };
-  appendDeliveryDateFilter(deliveredMtdQuery, { from: mtdFromKey, to: mtdToKey });
 
   const [
     totalLeads,
@@ -81,28 +50,25 @@ exports.getStats = asyncHandler(async (req, res) => {
     leadsByModelAgg,
     testDrivesByStatusAgg,
   ] = await Promise.all([
-    Lead.countDocuments(leadScope),
-    Lead.countDocuments(newLeadsTodayQuery),
+    Lead.countDocuments(ctx.leadScope),
+    Lead.countDocuments(ctx.newLeadsTodayQuery),
     TDBooking.countDocuments(ACTIVE_TD_BOOKING_FILTER),
     TDBooking.countDocuments({ ...ACTIVE_TD_BOOKING_FILTER, createdAt: { $gte: weekStart } }),
-    TDBooking.countDocuments({
-      ...ACTIVE_TD_BOOKING_FILTER,
-      slotDate: { $gte: mtdStart, $lte: mtdMonthEnd },
-    }),
+    TDBooking.countDocuments(ctx.testDrivesMtdQuery),
     Enquiry.countDocuments(),
     Enquiry.countDocuments({ status: { $in: ['Open', 'In Progress'] } }),
-    Lead.countDocuments({ ...leadScope, status: { $in: ['Interested', 'Negotiation'] } }),
-    Lead.countDocuments(appendInterestLevelFilter({ ...leadScope }, 'HOT')),
-    Lead.countDocuments(appendInterestLevelFilter({ ...leadScope }, 'WARM')),
-    Lead.countDocuments(appendInterestLevelFilter({ ...leadScope }, 'COLD')),
-    Lead.countDocuments(bookingBase),
-    Lead.countDocuments(bookingMtdQuery),
-    Lead.countDocuments(deliveredBase),
-    Lead.countDocuments(deliveredMtdQuery),
-    Lead.countDocuments({ ...leadScope, nextFollowUp: { $ne: null } }),
-    Lead.aggregate([{ $match: leadScope }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-    Lead.aggregate([{ $match: leadScope }, { $group: { _id: '$source', count: { $sum: 1 } } }]),
-    Lead.aggregate([{ $match: leadScope }, { $group: { _id: '$model', count: { $sum: 1 } } }]),
+    Lead.countDocuments({ ...ctx.leadScope, status: { $in: ['Interested', 'Negotiation'] } }),
+    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'HOT')),
+    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'WARM')),
+    Lead.countDocuments(appendInterestLevelFilter({ ...ctx.leadScope }, 'COLD')),
+    Lead.countDocuments(ctx.bookingBase),
+    Lead.countDocuments(ctx.bookingMtdQuery),
+    Lead.countDocuments(ctx.deliveredBase),
+    Lead.countDocuments(ctx.deliveredMtdQuery),
+    Lead.countDocuments({ ...ctx.leadScope, nextFollowUp: { $ne: null } }),
+    Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$source', count: { $sum: 1 } } }]),
+    Lead.aggregate([{ $match: ctx.leadScope }, { $group: { _id: '$model', count: { $sum: 1 } } }]),
     TDBooking.aggregate([
       { $match: ACTIVE_TD_BOOKING_FILTER },
       { $group: { _id: '$bookingStatus', count: { $sum: 1 } } },
@@ -131,9 +97,52 @@ exports.getStats = asyncHandler(async (req, res) => {
     leadsByModel: aggregateToRecord(leadsByModelAgg),
     testDrivesByStatus: aggregateToRecord(testDrivesByStatusAgg),
     period: {
-      mtdFrom: mtdStart.toISOString(),
-      mtdTo: now.toISOString(),
-      label: `MTD: ${mtdFromKey} – ${mtdToKey}`,
+      mtdFrom: ctx.mtdStart.toISOString(),
+      mtdTo: ctx.now.toISOString(),
+      mtdFromKey: ctx.mtdFromKey,
+      mtdToKey: ctx.mtdToKey,
+      todayKey: ctx.todayKey,
+      label: `MTD: ${ctx.mtdFromKey} – ${ctx.mtdToKey}`,
     },
   });
+});
+
+/** GET /admin/dashboard/drill?metric=delivered-mtd — same filters as KPI counts. */
+exports.getDashboardDrill = asyncHandler(async (req, res) => {
+  const metric = String(req.query.metric || '').trim();
+  const status = req.query.status != null ? String(req.query.status).trim() : undefined;
+  const ctx = await buildDashboardQueryContext(req.admin);
+  const spec = resolveDashboardDrillSpec(ctx, metric, { status });
+  if (!spec) {
+    throw new ApiError(400, 'Unknown dashboard drill metric');
+  }
+
+  const { page, limit, skip } = buildPagination(req, { defaultLimit: 5000, maxLimit: 10000 });
+
+  if (spec.kind === 'leads') {
+    const [data, total] = await Promise.all([
+      Lead.find(spec.query)
+        .populate('assignedTo', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Lead.countDocuments(spec.query),
+    ]);
+    return successResponse(res, data, undefined, 200, { page, limit, total, kind: 'leads', metric });
+  }
+
+  if (spec.kind === 'td') {
+    const [data, total] = await Promise.all([
+      TDBooking.find(spec.query).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      TDBooking.countDocuments(spec.query),
+    ]);
+    return successResponse(res, data, undefined, 200, { page, limit, total, kind: 'td', metric });
+  }
+
+  const [data, total] = await Promise.all([
+    Enquiry.find(spec.query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Enquiry.countDocuments(spec.query),
+  ]);
+  return successResponse(res, data, undefined, 200, { page, limit, total, kind: 'enquiries', metric });
 });
