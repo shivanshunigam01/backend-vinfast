@@ -52,10 +52,7 @@ const TEAM = [
   },
   {
     manager: { name: 'Rahul Kumar', email: 'rahul.kumar@patliputravinfast.com' },
-    executives: [
-      { name: 'Mayank', email: 'mayank@patliputravinfast.com' },
-      { name: 'Shivanshu', email: 'shivanshu@patliputravinfast.com' },
-    ],
+    executives: [{ name: 'Mayank', email: 'mayank@patliputravinfast.com' }],
   },
   {
     manager: { name: 'Saurav', email: 'saurav@patliputravinfast.com' },
