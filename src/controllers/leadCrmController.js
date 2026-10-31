@@ -454,6 +454,7 @@ function leadEnquiryDate(plain) {
 /** When no TDStaff createdBy (website / Meta / import), show how the lead entered the system. */
 function leadEntryOriginLabel(plain) {
   const src = String(plain?.source || '').trim();
+  if (src === 'Patliputra Vinfast Website') return 'Customer · Patliputra Vinfast website';
   if (src === 'Test Drive') return 'Customer · website test drive form';
   if (src === 'Meta Ads') return 'Meta Ads (digital lead)';
   if (src === 'Enquiry') return 'Customer · website enquiry form';

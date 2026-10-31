@@ -8,6 +8,7 @@ const { syncTestDriveToTdBooking } = require('../utils/tdBookingSync');
 const { evaluateRepeatDrive } = require('../utils/tdRepeatDrive');
 const { intakePvLead } = require('../utils/pvLeadIntake');
 const { normalizeLeadModelForStorage } = require('../utils/leadModel');
+const { PATLIPUTRA_VINFAST_WEBSITE_SOURCE } = require('../constants/websiteLeadSource');
 
 const MSG_LEAD_OK =
   'Thank you! Our EV advisor will contact you within 10 minutes.';
@@ -30,7 +31,7 @@ exports.createLead = asyncHandler(async (req, res) => {
     model: normalizeLeadModelForStorage(body.model),
     interestedModels,
     interest: body.interest,
-    source: body.source?.trim() || 'Website',
+    source: PATLIPUTRA_VINFAST_WEBSITE_SOURCE,
     status: 'Enquiry',
     remarks: body.remarks,
     financeNeeded: body.financeNeeded,
@@ -103,7 +104,7 @@ exports.createTestDrive = asyncHandler(async (req, res) => {
       otherCity: body.otherCity,
       model: normalizeLeadModelForStorage(model),
       interestedModels: modelList,
-      source: 'Test Drive',
+      source: PATLIPUTRA_VINFAST_WEBSITE_SOURCE,
       status: 'Test Drive Booked',
       interest: 'Test Drive',
       testDriveId: testDrive._id,
@@ -137,7 +138,7 @@ exports.createEnquiry = asyncHandler(async (req, res) => {
     otherCity: req.body.otherCity,
     model: normalizeLeadModelForStorage(req.body.model || 'VF 7'),
     interestedModels,
-    source: 'Enquiry',
+    source: PATLIPUTRA_VINFAST_WEBSITE_SOURCE,
     status: 'Enquiry',
     interest: req.body.interest,
     enquiryId: enquiry._id,
