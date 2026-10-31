@@ -241,9 +241,14 @@ async function buildDetailedReport({ admin } = {}) {
   } = attributeLeadsBySheetConsultant(sheetAttributionLeads, staffRows, {
     mtdStart,
     mtdMonthEnd,
+    todayStart,
+    todayEnd,
   });
   const tdByStaff = new Map(
-    [...tdByStaffRaw.entries()].map(([id, v]) => [id, { totalTd: v.totalTd, tdMtd: v.tdMtd }]),
+    [...tdByStaffRaw.entries()].map(([id, v]) => [
+      id,
+      { totalTd: v.totalTd, tdMtd: v.tdMtd, tdToday: v.tdToday || 0 },
+    ]),
   );
 
   /** Direct reports by manager id (active staff only). */
@@ -301,7 +306,7 @@ async function buildDetailedReport({ admin } = {}) {
 
   for (const s of staffRows) {
     const id = String(s._id);
-    const td = tdByStaff.get(id) || { totalTd: 0, tdMtd: 0 };
+    const td = tdByStaff.get(id) || { totalTd: 0, tdMtd: 0, tdToday: 0 };
     const row = {
       staffId: id,
       name: s.name,
@@ -310,6 +315,7 @@ async function buildDetailedReport({ admin } = {}) {
       totalLeads: leadByStaff.get(id) || 0,
       totalTestDrive: td.totalTd,
       totalTestDriveMtd: td.tdMtd,
+      totalTestDriveToday: td.tdToday,
       teamTestDrive: 0,
       teamTestDriveMtd: 0,
     };
@@ -334,7 +340,7 @@ async function buildDetailedReport({ admin } = {}) {
   function executiveRowForStaff(staff) {
     const id = String(staff._id);
     if (execById.has(id)) return execById.get(id);
-    const td = tdByStaff.get(id) || { totalTd: 0, tdMtd: 0 };
+    const td = tdByStaff.get(id) || { totalTd: 0, tdMtd: 0, tdToday: 0 };
     return {
       staffId: id,
       name: staff.name,
@@ -343,11 +349,15 @@ async function buildDetailedReport({ admin } = {}) {
       totalLeads: leadByStaff.get(id) || 0,
       totalTestDrive: td.totalTd,
       totalTestDriveMtd: td.tdMtd,
+      totalTestDriveToday: td.tdToday,
     };
   }
 
+  const salesHeadStandalone = managers.filter((m) => m.designation === 'sales_head');
+  const managerTeamRoots = managers.filter((m) => m.designation !== 'sales_head');
+
   /** Sales managers with direct-report executives nested (User Master reportsTo). */
-  const salesManagerTeams = managers.map((mgr) => {
+  const salesManagerTeams = managerTeamRoots.map((mgr) => {
     const directExecStaff = (directReportsByManager.get(mgr.staffId) || []).filter((r) =>
       EXECUTIVE_DESIGNATIONS.has(r.designation),
     );
@@ -361,6 +371,7 @@ async function buildDetailedReport({ admin } = {}) {
     const executivesLeads = teamExecutives.reduce((s, e) => s + e.totalLeads, 0);
     const executivesTd = teamExecutives.reduce((s, e) => s + e.totalTestDrive, 0);
     const executivesTdMtd = teamExecutives.reduce((s, e) => s + e.totalTestDriveMtd, 0);
+    const executivesTdToday = teamExecutives.reduce((s, e) => s + (e.totalTestDriveToday || 0), 0);
 
     return {
       manager: mgr,
@@ -375,6 +386,9 @@ async function buildDetailedReport({ admin } = {}) {
         managerOwnTdMtd: mgr.totalTestDriveMtd,
         executivesTdMtd,
         teamTotalTdMtd: mgr.teamTestDriveMtd ?? mgr.totalTestDriveMtd + executivesTdMtd,
+        managerOwnTdToday: mgr.totalTestDriveToday || 0,
+        executivesTdToday,
+        teamTotalTdToday: (mgr.totalTestDriveToday || 0) + executivesTdToday,
       },
     };
   });
@@ -382,6 +396,17 @@ async function buildDetailedReport({ admin } = {}) {
   const orphanSalesExecutives = executives
     .filter((e) => !nestedExecutiveIds.has(e.staffId))
     .sort((a, b) => b.totalLeads - a.totalLeads);
+
+  const teamRosterSummary = {
+    teamStrength:
+      salesHeadStandalone.length +
+      managerTeamRoots.length +
+      executives.filter((e) => nestedExecutiveIds.has(e.staffId)).length +
+      orphanSalesExecutives.length,
+    totalSalesManagers: managerTeamRoots.length,
+    totalSalesExecutives: executives.length,
+    totalSalesHeads: salesHeadStandalone.length,
+  };
 
   const managerIds = new Set(managers.map((m) => m.staffId));
   const execIds = new Set(executives.map((e) => e.staffId));
@@ -475,6 +500,8 @@ async function buildDetailedReport({ admin } = {}) {
     salesManagers: managers,
     salesExecutives: executives,
     salesManagerTeams,
+    salesHeadStandalone,
+    teamRosterSummary,
     orphanSalesExecutives,
     leadTypes,
     leadTypesTotal: leadTypes.reduce((s, r) => s + r.count, 0),

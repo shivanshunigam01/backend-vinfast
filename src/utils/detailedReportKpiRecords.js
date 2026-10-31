@@ -356,6 +356,10 @@ async function fetchTableDrillRecords(admin, query = {}) {
         if (tdDate < period.mtdStart || tdDate > period.mtdMonthEnd) return false;
       }
 
+      if (metric === 'tdtoday') {
+        if (tdDate < period.todayStart || tdDate > period.todayEnd) return false;
+      }
+
       if (metric === 'teamtd' || metric === 'teamtdmtd') {
         const anchor = staffById.get(staffId);
         if (!anchor) return false;
@@ -389,6 +393,9 @@ async function fetchTableDrillRecords(admin, query = {}) {
       if (!tdDate) return false;
       if (metric === 'tdmtd') {
         return tdDate >= period.mtdStart && tdDate <= period.mtdMonthEnd;
+      }
+      if (metric === 'tdtoday') {
+        return tdDate >= period.todayStart && tdDate <= period.todayEnd;
       }
       return true;
     });

@@ -102,12 +102,17 @@ function isSheetTdCompleted(lead) {
 function attributeLeadsBySheetConsultant(
   leads,
   staffRows,
-  { mtdStart, mtdMonthEnd },
+  { mtdStart, mtdMonthEnd, todayStart, todayEnd },
 ) {
   const leadByStaff = new Map();
   const tdByStaff = new Map();
   const matrixCounts = new Map();
-  const unassigned = { totalLeads: 0, totalTestDrive: 0, totalTestDriveMtd: 0 };
+  const unassigned = {
+    totalLeads: 0,
+    totalTestDrive: 0,
+    totalTestDriveMtd: 0,
+    totalTestDriveToday: 0,
+  };
 
   for (const lead of leads) {
     const staff = resolveAttributionStaff(lead, staffRows);
@@ -128,14 +133,18 @@ function attributeLeadsBySheetConsultant(
     if (!tdDate) continue;
 
     const inMtd = tdDate >= mtdStart && tdDate <= mtdMonthEnd;
+    const inToday =
+      todayStart && todayEnd ? tdDate >= todayStart && tdDate <= todayEnd : false;
 
     if (!staffId) {
       unassigned.totalTestDrive += 1;
       if (inMtd) unassigned.totalTestDriveMtd += 1;
+      if (inToday) unassigned.totalTestDriveToday += 1;
     } else {
-      const prev = tdByStaff.get(staffId) || { totalTd: 0, tdMtd: 0 };
+      const prev = tdByStaff.get(staffId) || { totalTd: 0, tdMtd: 0, tdToday: 0 };
       prev.totalTd += 1;
       if (inMtd) prev.tdMtd += 1;
+      if (inToday) prev.tdToday += 1;
       tdByStaff.set(staffId, prev);
     }
   }
