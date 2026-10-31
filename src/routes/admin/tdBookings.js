@@ -18,7 +18,7 @@ router.get('/eligibility', tdBookingsController.checkBookingEligibility);
 router.get('/approvals/pending', tdBookingsController.listPendingApprovals);
 router.post(
   '/bulk-delete',
-  requireModuleActionOrRoles('td_bookings', 'update', 'superadmin', 'manager'),
+  requireModuleAction('td_bookings', 'view'),
   tdBookingsController.bulkDeleteBookings,
 );
 router.get(
@@ -94,7 +94,7 @@ router.delete(
   '/:id',
   mongoIdParam,
   validate,
-  requireModuleActionOrRoles('td_bookings', 'update', 'superadmin', 'manager'),
+  requireModuleAction('td_bookings', 'view'),
   tdBookingsController.deleteBooking,
 );
 router.patch(

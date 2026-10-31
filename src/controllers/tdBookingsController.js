@@ -585,21 +585,9 @@ exports.listDeleteAudit = asyncHandler(async (req, res) => {
  * Also removes linked TestDrive / feedback / logs so sync cannot recreate the booking.
  */
 exports.deleteBooking = asyncHandler(async (req, res) => {
-  const designation = String(req.admin.designation || '').toLowerCase();
-  const managerDesignations = new Set([
-    'sales_manager',
-    'sales_head',
-    'branch_manager',
-    'gm',
-    'ceo',
-    'md',
-  ]);
-  const canDelete =
-    ['manager', 'superadmin'].includes(req.admin.role) ||
-    managerDesignations.has(designation) ||
-    req.admin.userType === 'admin';
-  if (!canDelete) {
-    throw new ApiError(403, 'Only managers and admins can delete bookings');
+  const { canAdminPortalDeleteTdBooking } = require('../utils/tdBookingDeleteAccess');
+  if (!canAdminPortalDeleteTdBooking(req.admin)) {
+    throw new ApiError(403, 'Only portal Admin and Superadmin can delete bookings');
   }
 
   const doc = await findBookingById(req.params.id);
@@ -631,21 +619,9 @@ exports.deleteBooking = asyncHandler(async (req, res) => {
  * Skips IN_PROGRESS drives; managers/admins only.
  */
 exports.bulkDeleteBookings = asyncHandler(async (req, res) => {
-  const designation = String(req.admin.designation || '').toLowerCase();
-  const managerDesignations = new Set([
-    'sales_manager',
-    'sales_head',
-    'branch_manager',
-    'gm',
-    'ceo',
-    'md',
-  ]);
-  const canDelete =
-    ['manager', 'superadmin'].includes(req.admin.role) ||
-    managerDesignations.has(designation) ||
-    req.admin.userType === 'admin';
-  if (!canDelete) {
-    throw new ApiError(403, 'Only managers and admins can delete bookings');
+  const { canAdminPortalDeleteTdBooking } = require('../utils/tdBookingDeleteAccess');
+  if (!canAdminPortalDeleteTdBooking(req.admin)) {
+    throw new ApiError(403, 'Only portal Admin and Superadmin can delete bookings');
   }
 
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
