@@ -1,100 +1,78 @@
 const Lead = require('../models/Lead');
 const { normalizeStageLabel } = require('../constants/leadStages');
-const { resolvePeriodRange, periodBucketKey, periodBucketUnit } = require('./reportPeriod');
-
-function deliveryDateOf(lead) {
-  if (lead.convertedAt) return new Date(lead.convertedAt);
-  if (lead.creSheet?.deliveryDate) return new Date(lead.creSheet.deliveryDate);
-  if (lead.updatedAt) return new Date(lead.updatedAt);
-  return null;
-}
-
-function bump(map, key, amount = 1) {
-  const k = key || 'Unknown';
-  map[k] = (map[k] || 0) + amount;
-}
-
-function sortedCountEntries(map) {
-  return Object.entries(map)
-    .map(([key, count]) => ({ key, count }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
-}
+const {
+  loadPipelineReportContext,
+  applySourceFilter,
+  aggregateAttributedRows,
+  appendDeliveryDateFilter,
+  effectiveDeliveryDate,
+  carModelOf,
+  periodBucketUnit,
+} = require('./pipelineReportCommon');
+const { resolveAttributionStaff } = require('./sheetConsultantStaffMatch');
 
 /**
- * Delivery report: leads in Delivered stage, dated by
- * convertedAt || creSheet.deliveryDate || updatedAt.
+ * Delivery report — Delivered leads in CRM scope, dated by CRE delivery/retail date
+ * (same rules as leadDateFilter delivery clause).
  */
-async function buildDeliveryReport({ period, from, to, year, source } = {}) {
-  const range = resolvePeriodRange({ period, from, to, year });
-  const fromMs = range.fromDate.getTime();
-  const toMs = range.toDate.getTime();
+async function buildDeliveryReport({ admin, period, from, to, year, source } = {}) {
+  const ctx = await loadPipelineReportContext({ admin, period, from, to, year, source });
+  const { range, leadScope, useSource, sourceFilter, staffRows, alignedCounts } = ctx;
 
-  const leadMatch = {
-    status: { $in: ['Delivered', 'delivered'] },
+  const query = {
+    ...leadScope,
     isDuplicate: { $ne: true },
+    status: { $in: ['Delivered', 'delivered'] },
   };
-  const sourceFilter = source ? String(source).trim() : '';
-  if (sourceFilter && sourceFilter.toLowerCase() !== 'all') {
-    leadMatch.source = sourceFilter;
-  }
+  applySourceFilter(query, useSource, sourceFilter);
+  appendDeliveryDateFilter(query, { from: range.from, to: range.to });
 
-  // Pull delivered leads (canonical + common aliases); filter by delivery date in JS.
-  const candidates = await Lead.find(leadMatch)
+  const leads = await Lead.find(query)
     .populate('assignedTo', 'name email designation')
     .select(
-      'name mobile model source status assignedTo convertedAt creSheet.deliveryDate creSheet.finalModel creSheet.finalVariant creSheet.finalColour updatedAt createdAt leadId',
+      'name mobile model source status assignedTo assignedToEmail convertedAt creSheet createdAt updatedAt leadId',
     )
     .lean();
 
-  const rows = [];
-  for (const lead of candidates) {
+  const eventRows = [];
+  for (const lead of leads) {
     if (normalizeStageLabel(lead.status) !== 'Delivered') continue;
-    const deliveryDate = deliveryDateOf(lead);
+    const deliveryDate = effectiveDeliveryDate(lead);
     if (!deliveryDate || Number.isNaN(deliveryDate.getTime())) continue;
-    const ms = deliveryDate.getTime();
-    if (ms < fromMs || ms > toMs) continue;
-    rows.push({ lead, deliveryDate });
+    eventRows.push({
+      lead,
+      eventDate: deliveryDate,
+      periodKey: range.period,
+      carModel: carModelOf(lead),
+    });
   }
 
-  const byExecutiveMap = {};
-  const byModelMap = {};
-  const bySourceMap = {};
-  const byPeriodMap = {};
-  const executiveMeta = {};
+  const agg = aggregateAttributedRows(eventRows, staffRows);
 
-  for (const { lead, deliveryDate } of rows) {
-    const execId = lead.assignedTo?._id ? String(lead.assignedTo._id) : 'unassigned';
-    const execName = lead.assignedTo?.name || 'Unassigned';
-    bump(byExecutiveMap, execId);
-    if (!executiveMeta[execId]) executiveMeta[execId] = { executiveId: execId === 'unassigned' ? null : execId, name: execName };
-    const carModel = lead.creSheet?.finalModel || lead.model || 'Unknown';
-    bump(byModelMap, carModel);
-    bump(bySourceMap, lead.source || 'Unknown');
-    bump(byPeriodMap, periodBucketKey(deliveryDate, range.period));
-  }
-
-  const byExecutive = Object.keys(byExecutiveMap)
-    .map((id) => ({
-      ...executiveMeta[id],
-      count: byExecutiveMap[id],
-    }))
-    .sort((a, b) => b.count - a.count || (a.name || '').localeCompare(b.name || ''));
-
-  const deliveryRows = rows
-    .map(({ lead, deliveryDate }) => ({
-      leadId: lead.leadId || String(lead._id),
-      _id: String(lead._id),
-      name: lead.name,
-      mobile: lead.mobile,
-      model: lead.model || '—',
-      carModel: lead.creSheet?.finalModel || lead.model || '—',
-      carVariant: lead.creSheet?.finalVariant || '',
-      colour: lead.creSheet?.finalColour || '',
-      source: lead.source || '—',
-      executiveName: lead.assignedTo?.name || 'Unassigned',
-      executiveId: lead.assignedTo?._id ? String(lead.assignedTo._id) : null,
-      deliveryDate: deliveryDate.toISOString(),
-    }))
+  const deliveryRows = eventRows
+    .map(({ lead, eventDate }) => {
+      const staff = resolveAttributionStaff(lead, staffRows);
+      const execRow = agg.byExecutive.find(
+        (e) => e.executiveId === (staff?._id ? String(staff._id) : null),
+      );
+      return {
+        leadId: lead.leadId || String(lead._id),
+        _id: String(lead._id),
+        name: lead.name,
+        mobile: lead.mobile,
+        model: lead.model || '—',
+        carModel: carModelOf(lead),
+        carVariant: lead.creSheet?.finalVariant || '',
+        colour: lead.creSheet?.finalColour || '',
+        source: lead.source || '—',
+        executiveName: staff?.name || 'Unassigned',
+        executiveId: staff?._id ? String(staff._id) : null,
+        sheetConsultant: String(lead.creSheet?.salesConsultantName || '').trim() || '—',
+        teamManager: execRow?.teamManagerName || '—',
+        deliveryDate: eventDate.toISOString(),
+        status: 'Delivered',
+      };
+    })
     .sort((a, b) => new Date(b.deliveryDate) - new Date(a.deliveryDate));
 
   return {
@@ -102,18 +80,28 @@ async function buildDeliveryReport({ period, from, to, year, source } = {}) {
     from: range.from,
     to: range.to,
     bucketUnit: periodBucketUnit(range.period),
-    totalDeliveries: rows.length,
-    byExecutive,
-    byModel: sortedCountEntries(byModelMap).map(({ key, count }) => ({ model: key, count })),
-    bySource: sortedCountEntries(bySourceMap).map(({ key, count }) => ({ source: key, count })),
-    byPeriod: Object.entries(byPeriodMap)
-      .map(([bucket, count]) => ({ bucket, count }))
-      .sort((a, b) => a.bucket.localeCompare(b.bucket)),
-    rows: deliveryRows.slice(0, 500),
+    totalDeliveries: eventRows.length,
+    alignedWithLeadReport: {
+      ...alignedCounts.deliveries,
+      periodLabel: alignedCounts.leadReportPeriodLabel,
+      note:
+        'All / MTD / Today match Lead CRM Reports KPI tiles (enquiry date + Delivered stage). ' +
+        'Total in selected range uses CRE delivery/retail date.',
+    },
+    totalInSelectedRange: eventRows.length,
+    byExecutive: agg.byExecutive,
+    byTeam: agg.byTeam,
+    byModel: agg.byModel,
+    bySource: agg.bySource,
+    byPeriod: agg.byPeriod,
+    breakdownTotals: agg.breakdownTotals,
+    rows: deliveryRows.slice(0, 5000),
+    rowsTotal: deliveryRows.length,
+    rowsTruncated: deliveryRows.length > 5000,
   };
 }
 
 module.exports = {
   buildDeliveryReport,
-  deliveryDateOf,
+  deliveryDateOf: effectiveDeliveryDate,
 };

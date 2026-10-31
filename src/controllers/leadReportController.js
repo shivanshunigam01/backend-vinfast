@@ -72,6 +72,7 @@ exports.getAdminReport = asyncHandler(async (req, res) => {
 
 exports.getDeliveryReport = asyncHandler(async (req, res) => {
   const data = await buildDeliveryReport({
+    admin: req.admin,
     ...readPeriodQuery(req),
     source: req.query.source || undefined,
   });
@@ -80,6 +81,7 @@ exports.getDeliveryReport = asyncHandler(async (req, res) => {
 
 exports.getBookingReport = asyncHandler(async (req, res) => {
   const data = await buildBookingReport({
+    admin: req.admin,
     ...readPeriodQuery(req),
     source: req.query.source || undefined,
   });
