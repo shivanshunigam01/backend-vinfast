@@ -30,6 +30,13 @@ const modelPageContentSchema = new mongoose.Schema(
     galleryTitle: { type: String, trim: true, default: '' },
     galleryIntro: { type: String, trim: true, default: '' },
     features: { type: [modelPageFeatureSchema], default: [] },
+    hero: {
+      imageUrl: { type: String, trim: true, default: '' },
+      width: { type: Number, default: 3840 },
+      height: { type: Number, default: 2160 },
+      alt: { type: String, trim: true, default: '' },
+      imageFit: { type: String, enum: ['cover', 'contain'], default: 'cover' },
+    },
   },
   { timestamps: true },
 );

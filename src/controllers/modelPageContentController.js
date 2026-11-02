@@ -34,6 +34,23 @@ function normalizeFeatures(raw) {
     .sort((a, b) => a.order - b.order || 0);
 }
 
+function normalizeHero(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const imageUrl = String(raw.imageUrl || '').trim();
+  if (!imageUrl) return null;
+  const width = Number.isFinite(Number(raw.width)) && Number(raw.width) > 0 ? Number(raw.width) : 3840;
+  const height = Number.isFinite(Number(raw.height)) && Number(raw.height) > 0 ? Number(raw.height) : 2160;
+  const imageFit = raw.imageFit === 'contain' ? 'contain' : 'cover';
+  const alt = String(raw.alt || '').trim();
+  return { imageUrl, width, height, alt, imageFit };
+}
+
+function heroFromDoc(doc) {
+  const normalized = normalizeHero(doc?.hero);
+  if (normalized) return normalized;
+  return null;
+}
+
 function toPublicPayload(doc) {
   const features = (doc.features || [])
     .filter((f) => f.active !== false)
@@ -47,13 +64,23 @@ function toPublicPayload(doc) {
       layout: f.layout,
       order: f.order,
     }));
-  return {
+  const hero = heroFromDoc(doc);
+  const payload = {
     slug: doc.slug,
     galleryLabel: doc.galleryLabel,
     galleryTitle: doc.galleryTitle,
     galleryIntro: doc.galleryIntro,
     features,
   };
+  if (hero) payload.hero = hero;
+  return payload;
+}
+
+function docHasPublicContent(doc) {
+  if (!doc) return false;
+  const hasFeatures = (doc.features || []).some((f) => f.active !== false && f.title);
+  const hasHero = Boolean(heroFromDoc(doc));
+  return hasFeatures || hasHero;
 }
 
 exports.listAdmin = asyncHandler(async (req, res) => {
@@ -90,8 +117,9 @@ exports.upsertBySlug = asyncHandler(async (req, res) => {
   const slug = normalizeSlug(req.params.slug);
   assertValidSlug(slug);
   const features = normalizeFeatures(req.body?.features);
-  if (features.length === 0) {
-    throw new ApiError(400, 'At least one feature with a title is required');
+  const hero = normalizeHero(req.body?.hero);
+  if (features.length === 0 && !hero) {
+    throw new ApiError(400, 'Add a hero banner image or at least one gallery feature with a title');
   }
   const payload = {
     slug,
@@ -100,19 +128,28 @@ exports.upsertBySlug = asyncHandler(async (req, res) => {
     galleryIntro: String(req.body?.galleryIntro || '').trim(),
     features,
   };
+  if (req.body?.hero !== undefined) {
+    payload.hero = hero || {
+      imageUrl: '',
+      width: 3840,
+      height: 2160,
+      alt: '',
+      imageFit: 'cover',
+    };
+  }
   const doc = await ModelPageContent.findOneAndUpdate({ slug }, payload, {
     new: true,
     upsert: true,
     runValidators: true,
   });
-  return successResponse(res, toPublicPayload(doc), 'Model page gallery saved');
+  return successResponse(res, toPublicPayload(doc), 'Model page content saved');
 });
 
 exports.getPublicBySlug = asyncHandler(async (req, res) => {
   const slug = normalizeSlug(req.params.slug);
   assertValidSlug(slug);
   const doc = await ModelPageContent.findOne({ slug });
-  if (!doc || !(doc.features || []).some((f) => f.active !== false)) {
+  if (!docHasPublicContent(doc)) {
     throw new ApiError(404, 'Model page content not found');
   }
   return successResponse(res, toPublicPayload(doc));
