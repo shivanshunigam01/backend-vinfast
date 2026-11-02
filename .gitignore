@@ -7,6 +7,10 @@ node_modules/
 npm-debug.log*
 logs/
 
+# User-uploaded files (model page images, etc.)
+uploads/*
+!uploads/.gitkeep
+
 # Nested frontend app — lives in career-section-nanak repo only
 career-section-nanak/
 

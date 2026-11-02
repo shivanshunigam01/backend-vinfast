@@ -31,6 +31,8 @@ const testDriveFeedbackController = require('../../controllers/testDriveFeedback
 const calendarController = require('../../controllers/calendarController');
 const geocodeController = require('../../controllers/geocodeController');
 const modelPageContentController = require('../../controllers/modelPageContentController');
+const modelPageUploadController = require('../../controllers/modelPageUploadController');
+const uploadModelPageImage = require('../../middleware/uploadModelPageImage');
 const complaintsRoutes = require('./complaints');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { otpSendLimiter, otpVerifyLimiter } = require('../../middleware/rateLimiter');
@@ -270,6 +272,12 @@ router.delete(
 router.get('/model-pages', requireModuleAction('products', 'view'), modelPageContentController.listAdmin);
 router.get('/model-pages/:slug', requireModuleAction('products', 'view'), modelPageContentController.getAdminBySlug);
 router.put('/model-pages/:slug', requireModuleAction('products', 'update'), modelPageContentController.upsertBySlug);
+router.post(
+  '/model-pages/:slug/upload',
+  requireModuleAction('products', 'update'),
+  uploadModelPageImage.single('image'),
+  modelPageUploadController.uploadModelPageImage,
+);
 
 // Offers
 router.get('/offers', requireModuleAction('offers', 'view'), ctrl.getOffers);

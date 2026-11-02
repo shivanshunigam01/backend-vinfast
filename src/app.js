@@ -1,4 +1,6 @@
 const express = require('express');
+const path = require('path');
+const { getUploadRoot, ensureDir } = require('./utils/uploadPaths');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -68,7 +70,13 @@ app.use(
     credentials: true,
   }),
 );
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
+ensureDir(getUploadRoot());
+app.use('/uploads', express.static(getUploadRoot(), { maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0 }));
 app.use(compression());
 app.use(hpp());
 app.use(express.json({ limit: '2mb' }));
