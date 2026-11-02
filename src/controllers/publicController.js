@@ -1,5 +1,7 @@
 const Product = require('../models/Product');
 const HeroSlide = require('../models/HeroSlide');
+const ModelPageContent = require('../models/ModelPageContent');
+const { modelPageDocToHomeHeroSlide } = require('../utils/modelPageHomeHero');
 const Offer = require('../models/Offer');
 const Banner = require('../models/Banner');
 const FAQ = require('../models/FAQ');
@@ -95,8 +97,15 @@ exports.getDealerSettings = asyncHandler(async (req, res) => {
 });
 
 exports.getHeroSlides = asyncHandler(async (req, res) => {
-  const data = await HeroSlide.find({ active: true }).sort({ order: 1, createdAt: -1 });
-  return successResponse(res, data);
+  const [cmsSlides, modelDocs] = await Promise.all([
+    HeroSlide.find({ active: true }).lean(),
+    ModelPageContent.find({}).lean(),
+  ]);
+  const fromModelPages = modelDocs.map(modelPageDocToHomeHeroSlide).filter(Boolean);
+  const combined = [...cmsSlides, ...fromModelPages].sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0),
+  );
+  return successResponse(res, combined);
 });
 
 exports.getProducts = asyncHandler(async (req, res) => {

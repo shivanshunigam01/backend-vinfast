@@ -34,15 +34,10 @@ function normalizeFeatures(raw) {
     .sort((a, b) => a.order - b.order || 0);
 }
 
+const { normalizeHeroFields } = require('../utils/modelPageHomeHero');
+
 function normalizeHero(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const imageUrl = String(raw.imageUrl || '').trim();
-  if (!imageUrl) return null;
-  const width = Number.isFinite(Number(raw.width)) && Number(raw.width) > 0 ? Number(raw.width) : 3840;
-  const height = Number.isFinite(Number(raw.height)) && Number(raw.height) > 0 ? Number(raw.height) : 2160;
-  const imageFit = raw.imageFit === 'contain' ? 'contain' : 'cover';
-  const alt = String(raw.alt || '').trim();
-  return { imageUrl, width, height, alt, imageFit };
+  return normalizeHeroFields(raw);
 }
 
 function heroFromDoc(doc) {
@@ -135,6 +130,12 @@ exports.upsertBySlug = asyncHandler(async (req, res) => {
       height: 2160,
       alt: '',
       imageFit: 'cover',
+      showcaseOnHomepage: false,
+      homepageHeroOrder: 10,
+      homepageHeroTitle: '',
+      homepageHeroSubtitle: '',
+      homepageHeroBadge: '',
+      homepageObjectPosition: 'center center',
     };
   }
   const doc = await ModelPageContent.findOneAndUpdate({ slug }, payload, {
