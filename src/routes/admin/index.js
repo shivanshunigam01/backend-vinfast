@@ -30,6 +30,7 @@ const postDeliveryFeedbackController = require('../../controllers/postDeliveryFe
 const testDriveFeedbackController = require('../../controllers/testDriveFeedbackController');
 const calendarController = require('../../controllers/calendarController');
 const geocodeController = require('../../controllers/geocodeController');
+const modelPageContentController = require('../../controllers/modelPageContentController');
 const complaintsRoutes = require('./complaints');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
 const { otpSendLimiter, otpVerifyLimiter } = require('../../middleware/rateLimiter');
@@ -264,6 +265,11 @@ router.delete(
   requireModuleActionOrRoles('products', 'delete', 'superadmin', 'manager'),
   ctrl.deleteProduct,
 );
+
+// Model page gallery (VF 6 / VF 7 / MPV 7 product features)
+router.get('/model-pages', requireModuleAction('products', 'view'), modelPageContentController.listAdmin);
+router.get('/model-pages/:slug', requireModuleAction('products', 'view'), modelPageContentController.getAdminBySlug);
+router.put('/model-pages/:slug', requireModuleAction('products', 'update'), modelPageContentController.upsertBySlug);
 
 // Offers
 router.get('/offers', requireModuleAction('offers', 'view'), ctrl.getOffers);
