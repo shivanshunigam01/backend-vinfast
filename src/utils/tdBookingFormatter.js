@@ -169,6 +169,7 @@ function formatTdBooking(doc) {
     })(),
     branchId: formatBranch(plain.branchId),
     testDriveId: formatTestDrive(plain.testDriveId),
+    assignedExecutiveEmail: plain.assignedExecutiveEmail || plain.assignedExecutive?.email || null,
   };
 }
 

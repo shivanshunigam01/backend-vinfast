@@ -734,11 +734,8 @@ exports.acceptAssignment = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   await assertBookingReadable(doc, req.admin);
 
-  const staffIds = await resolveStaffIdsForUser(req.admin);
-  const assignedId = doc?.assignedExecutive?._id || doc?.assignedExecutive;
-  const isAssignee =
-    bookingAssignedToStaff(doc, req.admin._id, req.admin.email) ||
-    (assignedId && staffIds.includes(String(assignedId)));
+  const { isTdBookingAssignee } = require('../utils/leadAssignment');
+  const isAssignee = await isTdBookingAssignee(req.admin, doc);
   if (!isAssignee && !['manager', 'superadmin'].includes(req.admin.role)) {
     throw new ApiError(403, 'Only the assigned executive can accept this assignment');
   }
@@ -765,11 +762,8 @@ exports.rejectAssignment = asyncHandler(async (req, res) => {
   const doc = await findBookingById(req.params.id);
   await assertBookingReadable(doc, req.admin);
 
-  const staffIds = await resolveStaffIdsForUser(req.admin);
-  const assignedId = doc?.assignedExecutive?._id || doc?.assignedExecutive;
-  const isAssignee =
-    bookingAssignedToStaff(doc, req.admin._id, req.admin.email) ||
-    (assignedId && staffIds.includes(String(assignedId)));
+  const { isTdBookingAssignee } = require('../utils/leadAssignment');
+  const isAssignee = await isTdBookingAssignee(req.admin, doc);
   if (!isAssignee && !['manager', 'superadmin'].includes(req.admin.role)) {
     throw new ApiError(403, 'Only the assigned executive can reject this assignment');
   }

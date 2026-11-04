@@ -114,6 +114,8 @@ router.patch(
   requireAnyModuleAction([
     ['td_my_bookings', 'update'],
     ['td_bookings', 'update'],
+    ['td_my_bookings', 'start_drive'],
+    ['td_bookings', 'start_drive'],
   ]),
   tdBookingsController.acceptAssignment,
 );
@@ -124,6 +126,8 @@ router.patch(
   requireAnyModuleAction([
     ['td_my_bookings', 'update'],
     ['td_bookings', 'update'],
+    ['td_my_bookings', 'start_drive'],
+    ['td_bookings', 'start_drive'],
   ]),
   tdBookingsController.rejectAssignment,
 );

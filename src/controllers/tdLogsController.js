@@ -8,6 +8,7 @@ const ApiError = require('../utils/apiError');
 const { successResponse } = require('../utils/apiResponse');
 const { syncLeadFromTDCompletion } = require('../utils/syncLeadFromTDCompletion');
 const { cloudinaryConfigured, uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+const { isTdBookingAssignee } = require('../utils/leadAssignment');
 
 function executiveIdFromReq(req) {
   return req.tdStaff?._id || req.admin?._id;
@@ -67,7 +68,15 @@ exports.startTestDrive = asyncHandler(async (req, res) => {
     );
   }
   if (booking.assignmentStatus === 'PENDING_ACCEPTANCE') {
-    throw new ApiError(400, 'Accept the assignment before starting the test drive');
+    const isAssignee = await isTdBookingAssignee(req.admin, booking);
+    if (isAssignee) {
+      booking.assignmentStatus = 'ACCEPTED';
+      booking.assignmentRespondedAt = new Date();
+      if (booking.bookingStatus === 'PENDING') booking.bookingStatus = 'CONFIRMED';
+      await booking.save();
+    } else {
+      throw new ApiError(400, 'Accept the assignment before starting the test drive');
+    }
   }
 
   const existing = await TDLog.findOne({ bookingId, status: 'STARTED' });

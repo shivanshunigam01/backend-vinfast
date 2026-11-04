@@ -404,6 +404,18 @@ function bookingAssignedToStaff(booking, staffId, staffEmail) {
   return false;
 }
 
+/** True when this admin is the assigned TD executive (by id or email, including duplicate TDStaff rows). */
+async function isTdBookingAssignee(admin, booking) {
+  if (!admin || !booking) return false;
+  if (bookingAssignedToStaff(booking, admin._id, admin.email)) return true;
+
+  const selfIds = await resolveSelfStaffIds(admin);
+  const assignedId = booking?.assignedExecutive?._id || booking?.assignedExecutive;
+  if (assignedId && selfIds.includes(String(assignedId))) return true;
+
+  return false;
+}
+
 function applyBookingExecutiveAssignment(booking, staff) {
   if (staff) {
     booking.assignedExecutive = toObjectId(staff._id) || staff._id;
@@ -482,6 +494,7 @@ module.exports = {
   assignedExecutiveIdsFilter,
   assignedExecutiveFilterAsync,
   bookingAssignedToStaff,
+  isTdBookingAssignee,
   applyBookingExecutiveAssignment,
   repairExecutiveBookingAssignments,
 };
