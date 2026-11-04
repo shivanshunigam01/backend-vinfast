@@ -582,7 +582,12 @@ async function buildLeadQuery(admin, queryParams = {}) {
     query.$and.push(await assignedToStaffFilterAsync(admin));
   }
 
-  if (queryParams.status) query.status = queryParams.status;
+  if (queryParams.status) {
+    const { pipelineStageStatusFilter } = require('../utils/crmStatsBuilder');
+    const stageFilter = await pipelineStageStatusFilter(queryParams.status, query);
+    query.$and = query.$and || [];
+    query.$and.push(stageFilter);
+  }
   if (queryParams.model) query.model = queryParams.model;
   if (queryParams.source) query.source = queryParams.source;
   if (queryParams.city) query.city = new RegExp(`^${String(queryParams.city).trim()}$`, 'i');

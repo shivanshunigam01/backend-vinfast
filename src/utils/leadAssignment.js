@@ -70,8 +70,8 @@ function touchLeadActivity(lead, at = new Date()) {
   lead.lastActivityAt = at;
 }
 
-/** CRM list sort — newest created leads first (date + time), then recent activity. */
-const CRM_LEAD_LIST_SORT = { createdAt: -1, lastActivityAt: -1, updatedAt: -1, _id: -1 };
+/** CRM list sort — recent activity first so TD-completed / updated leads appear in “All leads”. */
+const CRM_LEAD_LIST_SORT = { lastActivityAt: -1, updatedAt: -1, createdAt: -1, _id: -1 };
 
 /**
  * Admin portal, MD / CEO / GM / CRE / superadmin see all records.

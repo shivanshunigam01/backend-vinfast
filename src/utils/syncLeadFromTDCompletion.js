@@ -72,6 +72,11 @@ async function syncLeadFromTDCompletion({ log, booking, changedBy }) {
       lead.assignedToEmail = executiveEmail;
       lead.source = 'Test Drive';
       lead.remarks = remarks;
+      if (!lead.creSheet) lead.creSheet = {};
+      lead.creSheet.tdDone = true;
+      touchLeadActivity(lead);
+      await lead.save();
+    } else {
       touchLeadActivity(lead);
       await lead.save();
     }

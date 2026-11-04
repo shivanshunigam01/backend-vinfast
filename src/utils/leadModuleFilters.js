@@ -86,11 +86,21 @@ function applyLeadModuleViewFilter(query, moduleView) {
   query.$and = query.$and || [];
 
   if (view === 'crm') {
+    // Pipeline-only list: hide TD-finished rows (sheet flag or CRM stage).
     query.$and.push({
-      $or: [
-        { 'creSheet.tdDone': { $ne: true } },
-        { 'creSheet.tdDone': { $exists: false } },
-        { 'creSheet.tdDone': null },
+      $and: [
+        {
+          $or: [
+            { 'creSheet.tdDone': { $ne: true } },
+            { 'creSheet.tdDone': { $exists: false } },
+            { 'creSheet.tdDone': null },
+          ],
+        },
+        {
+          status: {
+            $nin: ['Test Drive Completed', 'TEST_DRIVE_FEEDBACK', 'Test Drive Complete'],
+          },
+        },
       ],
     });
   } else if (view === 'td') {
