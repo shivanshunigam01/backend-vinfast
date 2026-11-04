@@ -215,6 +215,14 @@ async function findBookingById(id) {
   return doc;
 }
 
+exports.listAvailableVehiclesForBooking = asyncHandler(async (req, res) => {
+  const doc = await findBookingById(req.params.id);
+  await assertBookingReadable(doc, req.admin);
+  const { listAssignableVehiclesForBooking } = require('../utils/tdBookingVehicleAvailability');
+  const result = await listAssignableVehiclesForBooking(doc);
+  return successResponse(res, result);
+});
+
 async function assertBookingReadable(booking, admin) {
   if (!isTeamScopedUser(admin)) return;
   const staffIds = await resolveStaffIdsForUser(admin);

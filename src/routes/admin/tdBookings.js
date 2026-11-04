@@ -64,6 +64,17 @@ router.patch(
   tdBookingsController.decideRepeatApproval,
 );
 router.get(
+  '/:id/available-vehicles',
+  mongoIdParam,
+  validate,
+  requireAnyModuleAction([
+    ['td_bookings', 'view'],
+    ['td_bookings', 'assign'],
+    ['td_my_bookings', 'view'],
+  ]),
+  tdBookingsController.listAvailableVehiclesForBooking,
+);
+router.get(
   '/:id',
   mongoIdParam,
   validate,

@@ -30,10 +30,15 @@ function formatCustomer(customer) {
 function formatVehicle(vehicle) {
   if (!vehicle || typeof vehicle !== 'object') return null;
   return {
+    _id: vehicle._id,
     vehicleId: vehicle.vehicleId,
     model: vehicle.model,
+    variant: vehicle.variant,
     registrationNo: vehicle.registrationNo,
     color: vehicle.color,
+    status: vehicle.status,
+    batteryPercent: vehicle.batteryPercent,
+    currentOdometer: vehicle.currentOdometer,
   };
 }
 

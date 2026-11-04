@@ -181,5 +181,6 @@ module.exports = {
   computeSlotsForBranchDate,
   countFleetCapacity,
   normalizeVariant,
+  normalizeSlotTimeKey,
   calendarDayBounds,
 };
