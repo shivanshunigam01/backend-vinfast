@@ -11,6 +11,17 @@ const {
   buildDashboardQueryContext,
   resolveDashboardDrillQuery,
 } = require('../utils/dashboardQueryContext');
+const { formatTdBooking } = require('../utils/tdBookingFormatter');
+
+const TD_DRILL_POPULATE = [
+  { path: 'assignedExecutive', select: 'name email role designation', model: 'TDStaff' },
+  { path: 'branchId', select: 'name code' },
+  {
+    path: 'leadId',
+    select: 'assignedTo name mobile',
+    populate: { path: 'assignedTo', select: 'name email' },
+  },
+];
 
 function aggregateToRecord(rows) {
   const out = {};
@@ -130,10 +141,15 @@ exports.getDashboardDrill = asyncHandler(async (req, res) => {
   }
 
   if (spec.kind === 'td') {
-    const [data, total] = await Promise.all([
-      TDBooking.find(spec.query).sort({ slotDate: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+    const [docs, total] = await Promise.all([
+      TDBooking.find(spec.query)
+        .populate(TD_DRILL_POPULATE)
+        .sort({ slotDate: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
       TDBooking.countDocuments(spec.query),
     ]);
+    const data = docs.map((d) => formatTdBooking(d));
     return successResponse(res, data, undefined, 200, { page, limit, total, kind: 'td', metric });
   }
 

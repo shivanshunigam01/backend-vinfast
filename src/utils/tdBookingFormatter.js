@@ -151,7 +151,22 @@ function formatTdBooking(doc) {
     createdAt: plain.createdAt,
     customerId: resolveCustomerForBooking(plain),
     vehicleId: formatVehicle(plain.vehicleId),
-    assignedExecutive: formatExecutive(plain.assignedExecutive),
+    assignedExecutive: (() => {
+      const formatted = formatExecutive(plain.assignedExecutive);
+      if (formatted?.name) return formatted;
+      const email = String(plain.assignedExecutiveEmail || '').trim();
+      if (email) {
+        return {
+          _id: plain.assignedExecutive || null,
+          name: email,
+          email,
+          role: null,
+          designation: null,
+          designationLabel: null,
+        };
+      }
+      return formatted;
+    })(),
     branchId: formatBranch(plain.branchId),
     testDriveId: formatTestDrive(plain.testDriveId),
   };
