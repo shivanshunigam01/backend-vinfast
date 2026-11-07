@@ -10,15 +10,17 @@ const { appendInterestLevelFilter } = require('./leadInterestLevel');
 
 /** Map raw DB status into an active pipeline stage bucket (legacy + import aliases). */
 function bucketPipelineStage(rawStatus, stages) {
+  const list = Array.isArray(stages) ? stages : [];
   const normalized = normalizeStageLabel(rawStatus || 'Enquiry');
-  if (stages.includes(normalized)) return normalized;
+  if (list.includes(normalized)) return normalized;
 
   const raw = String(rawStatus || '').trim().toLowerCase();
   if (raw === 'follow up' || raw === 'follow-up') {
-    return stages.includes('Interested') ? 'Interested' : 'Enquiry';
+    return list.includes('Interested') ? 'Interested' : 'Enquiry';
   }
 
-  return stages.includes('Enquiry') ? 'Enquiry' : stages[0];
+  if (list.includes('Enquiry')) return 'Enquiry';
+  return list[0] || 'Enquiry';
 }
 
 async function favouriteLeadIdsForUser(admin, extraStaffIds = null) {
