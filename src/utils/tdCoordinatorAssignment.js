@@ -212,19 +212,38 @@ async function assignNewBookingToTdCoordinator(
  */
 async function routeIntakeBookingToTdCoordinator(booking, { actorId, notify = true, save = true } = {}) {
   if (!booking) return null;
-  applyBookingExecutiveAssignment(booking, null);
-  booking.assignmentStatus = 'UNASSIGNED';
-  booking.assignmentRespondedAt = undefined;
+  const coordinator = await findTdCoordinatorStaff();
+  if (!coordinator) {
+    console.warn(
+      '[tdCoordinator] Booking not routed — configure TD_COORDINATOR_EMAIL or td_coordinator in User Master',
+    );
+    return booking;
+  }
+
+  applyBookingExecutiveAssignment(booking, coordinator);
+  booking.assignmentStatus = 'ACCEPTED';
+  booking.assignmentRespondedAt = new Date();
   booking.assignmentRejectReason = undefined;
 
-  const updated = await assignNewBookingToTdCoordinator(booking, { notify, actorId, save });
-  const exec = updated?.assignedExecutive?._id || updated?.assignedExecutive;
-  if (!exec && !updated?.assignedExecutiveEmail) {
-    console.warn(
-      '[tdCoordinator] Booking saved without coordinator — configure TD_COORDINATOR_EMAIL or td_coordinator in User Master',
-    );
+  if (save) {
+    await booking.save();
   }
-  return updated;
+
+  if (notify) {
+    try {
+      const { notifyTdEvent } = require('./staffNotifications');
+      await notifyTdEvent(booking, {
+        type: 'td_booked',
+        title: 'New test drive — assign executive',
+        actorId,
+        priority: 'today',
+      });
+    } catch (err) {
+      console.error('[routeIntakeBookingToTdCoordinator notify]', err.message);
+    }
+  }
+
+  return booking;
 }
 
 /**
@@ -304,8 +323,18 @@ async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
 
 /** When CRM assigns a TD-booked lead to the coordinator, sync the linked TDBooking row. */
 async function syncTdBookingForCoordinatorLeadAssignment(lead, assignee, { actorId, notify = true } = {}) {
-  if (!lead?.tdBookingId || !assignee || !isTdCoordinatorStaff(assignee)) return null;
-  const booking = await TDBooking.findById(lead.tdBookingId);
+  if (!assignee || !isTdCoordinatorStaff(assignee)) return null;
+  const plain = lead?.toObject ? lead.toObject() : lead;
+  if (!plain?._id) return null;
+
+  let booking = plain.tdBookingId ? await TDBooking.findById(plain.tdBookingId) : null;
+  if (!booking) {
+    booking = await TDBooking.findOne({ leadId: plain._id }).sort({ createdAt: -1 });
+    if (booking) {
+      const Lead = require('../models/Lead');
+      await Lead.updateOne({ _id: plain._id }, { $set: { tdBookingId: booking._id } });
+    }
+  }
   if (!booking) return null;
   return routeIntakeBookingToTdCoordinator(booking, { notify, actorId, save: true });
 }
