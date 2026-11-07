@@ -1773,13 +1773,26 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   const nextDate = parseSlotDate(slotDate);
   if (!nextDate) throw new ApiError(400, 'Invalid slotDate');
 
+  const { normalizeModel } = require('../utils/tdVehicleLegacyImport');
+  const { baseProductModel } = require('../utils/leadModel');
+  const modelRaw = String(model || lead.model || '').trim();
+  const baseModel = baseProductModel(modelRaw) || modelRaw;
+  const chosenModel = normalizeModel(baseModel);
   const validModels = await getActiveModelNames();
-  const chosenModel = String(model || lead.model || '').trim();
   if (!validModels.includes(chosenModel)) {
     throw new ApiError(
       400,
       `Select a specific model for the test drive. Valid models: ${validModels.join(', ')}`,
     );
+  }
+  let preferredVariant = String(req.body?.preferredVariant || '').trim();
+  if (!preferredVariant && modelRaw && modelRaw !== chosenModel) {
+    preferredVariant = modelRaw.startsWith(`${chosenModel} `)
+      ? modelRaw.slice(chosenModel.length + 1).trim()
+      : '';
+  }
+  if (preferredVariant.startsWith(`${chosenModel} `)) {
+    preferredVariant = preferredVariant.slice(chosenModel.length + 1).trim();
   }
 
   const state = await getCustomerTestDriveState(lead.mobile);
@@ -1806,10 +1819,12 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
     slotTime: normalizeSlotTime(slotTime),
     slotDuration: 60,
     preferredModel: chosenModel,
+    preferredVariant: preferredVariant || undefined,
     remarks: remarks ? String(remarks).trim() : undefined,
     customerId: customer._id,
     branchId: branchDoc._id,
     leadId: lead._id,
+    createdByAdmin: req.admin._id,
     isRepeatDrive: isRepeat,
     approvalStatus,
     approvalRequestedBy: isRepeat ? toObjectId(req.admin._id) || req.admin._id : undefined,

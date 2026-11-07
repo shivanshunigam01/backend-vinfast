@@ -2,6 +2,7 @@ const TDBooking = require('../models/TDBooking');
 const TDVehicle = require('../models/TDVehicle');
 const TDSlotConfig = require('../models/TDSlotConfig');
 const { branchFleetQuery, normalizeModel } = require('./tdVehicleLegacyImport');
+const { baseProductModel } = require('./leadModel');
 const {
   countFleetCapacity,
   normalizeVariant,
@@ -21,12 +22,35 @@ function bookingBranchId(booking) {
   return b._id || b;
 }
 
+function trimLabelFromStoredModel(raw, baseModel) {
+  const s = String(raw || '').trim();
+  const base = String(baseModel || '').trim();
+  if (!s || !base || s === base) return '';
+  if (s.startsWith(`${base} `)) return s.slice(base.length + 1).trim();
+  return '';
+}
+
+function resolveBookingModelVariant(booking) {
+  const rawPreferred = String(booking?.preferredModel || booking?.testDriveId?.model || '').trim();
+  const base = baseProductModel(rawPreferred) || rawPreferred;
+  const model = normalizeModel(base || rawPreferred);
+
+  let variant = String(booking?.preferredVariant || booking?.testDriveId?.variant || '').trim();
+  if (!variant) {
+    variant = trimLabelFromStoredModel(rawPreferred, model);
+  }
+  if (variant.startsWith(`${model} `)) {
+    variant = variant.slice(model.length + 1).trim();
+  }
+  return { model, variant, modelRaw: rawPreferred || model };
+}
+
 function bookingModel(booking) {
-  return normalizeModel(booking?.preferredModel || booking?.testDriveId?.model || '');
+  return resolveBookingModelVariant(booking).model;
 }
 
 function bookingVariant(booking) {
-  return String(booking?.preferredVariant || booking?.testDriveId?.variant || '').trim();
+  return resolveBookingModelVariant(booking).variant;
 }
 
 function vehicleFleetReason(vehicle, bounds) {
@@ -57,9 +81,7 @@ async function listAssignableVehiclesForBooking(bookingDoc) {
     branchName = fallback.name;
   }
 
-  const modelRaw = String(booking.preferredModel || booking.testDriveId?.model || '').trim();
-  const model = bookingModel(booking);
-  const variant = bookingVariant(booking);
+  const { model, variant, modelRaw } = resolveBookingModelVariant(booking);
   const catalogModels = await getActiveModelNames();
   const modelInCatalog = catalogModels.includes(modelRaw) || catalogModels.includes(model);
 

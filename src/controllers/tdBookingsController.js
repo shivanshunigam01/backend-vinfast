@@ -76,10 +76,21 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Enter a valid 10-digit Indian mobile number');
   }
 
-  const model = String(body.preferredModel || '').trim();
+  const { normalizeModel } = require('../utils/tdVehicleLegacyImport');
+  const { baseProductModel } = require('../utils/leadModel');
+  const modelRaw = String(body.preferredModel || '').trim();
+  const baseModel = baseProductModel(modelRaw) || modelRaw;
+  const model = normalizeModel(baseModel);
   const validModels = await getActiveModelNames();
   if (!validModels.includes(model)) {
     throw new ApiError(400, `Invalid model. Use one of: ${validModels.join(', ')}`);
+  }
+  let preferredVariant = String(body.preferredVariant || '').trim();
+  if (!preferredVariant && modelRaw && modelRaw !== model) {
+    preferredVariant = modelRaw.startsWith(`${model} `) ? modelRaw.slice(model.length + 1).trim() : modelRaw;
+  }
+  if (preferredVariant.startsWith(`${model} `)) {
+    preferredVariant = preferredVariant.slice(model.length + 1).trim();
   }
 
   if (!body.slotDate) throw new ApiError(400, 'slotDate is required');
@@ -119,9 +130,11 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
     slotTime: normalizeSlotTime(body.slotTime),
     slotDuration: 60,
     preferredModel: model,
+    preferredVariant: preferredVariant || undefined,
     remarks: String(body.remarks || '').trim() || undefined,
     customerId: customer._id,
     branchId: branch._id,
+    leadId: body.leadId || undefined,
     customerName: name,
     customerMobile: mobile,
     customerEmail: String(body.customerEmail || '').trim() || undefined,
@@ -825,8 +838,11 @@ exports.assignVehicle = asyncHandler(async (req, res) => {
   if (vehicleId) {
     const vehicle = await TDVehicle.findById(vehicleId);
     if (!vehicle) throw new ApiError(404, 'Vehicle not found');
-    if (doc.preferredModel && vehicle.model !== doc.preferredModel) {
-      throw new ApiError(400, `This booking is for ${doc.preferredModel}. Selected vehicle is ${vehicle.model}.`);
+    const { normalizeModel } = require('../utils/tdVehicleLegacyImport');
+    const bookingModel = normalizeModel(doc.preferredModel || doc.testDriveId?.model || '');
+    const vehicleModel = normalizeModel(vehicle.model);
+    if (bookingModel && vehicleModel && bookingModel !== vehicleModel) {
+      throw new ApiError(400, `This booking is for ${bookingModel}. Selected vehicle is ${vehicle.model}.`);
     }
     if (
       !['AVAILABLE', 'BOOKED'].includes(vehicle.status) &&
