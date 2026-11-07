@@ -2,6 +2,18 @@ const mongoose = require('mongoose');
 
 const MODEL_PAGE_SLUGS = ['vf6', 'vf7', 'mpv7', 'limo-green'];
 
+const modelPageColorShadeSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    hex: { type: String, trim: true, default: '#888888' },
+    imageUrl: { type: String, trim: true, default: '' },
+    alt: { type: String, trim: true, default: '' },
+    order: { type: Number, default: 0 },
+    active: { type: Boolean, default: true },
+  },
+  { _id: true },
+);
+
 const modelPageFeatureSchema = new mongoose.Schema(
   {
     imageUrl: { type: String, trim: true, default: '' },
@@ -29,6 +41,8 @@ const modelPageContentSchema = new mongoose.Schema(
     galleryLabel: { type: String, trim: true, default: 'Gallery' },
     galleryTitle: { type: String, trim: true, default: '' },
     galleryIntro: { type: String, trim: true, default: '' },
+    colorStudioIntro: { type: String, trim: true, default: '' },
+    colorShades: { type: [modelPageColorShadeSchema], default: [] },
     features: { type: [modelPageFeatureSchema], default: [] },
     hero: {
       imageUrl: { type: String, trim: true, default: '' },
