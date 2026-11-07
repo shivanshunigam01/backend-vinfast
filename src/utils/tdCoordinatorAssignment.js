@@ -199,6 +199,54 @@ let repairInFlight = false;
 let lastRepairAt = 0;
 const REPAIR_COOLDOWN_MS = 60 * 1000;
 
+/** My Test Drives: coordinator sees own assignments + entire open pipeline. */
+async function tdCoordinatorMyBookingsFilter(admin) {
+  const { assignedExecutiveFilterAsync } = require('./leadAssignment');
+  const selfFilter = await assignedExecutiveFilterAsync(admin);
+  return {
+    $or: [selfFilter, { bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES } }],
+  };
+}
+
+/**
+ * CRM "Book test drive" intake should sit on the coordinator until they delegate.
+ * Re-queue open bookings that still have leadId but wrong/missing executive.
+ */
+async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
+  const coordinator = await findTdCoordinatorStaff();
+  if (!coordinator) return { repaired: 0 };
+
+  const coordOid = coordinator._id;
+  const coordEmail = normalizeEmail(coordinator.email);
+  const docs = await TDBooking.find({
+    bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES },
+    leadId: { $exists: true, $ne: null },
+    assignedExecutive: { $ne: coordOid },
+    ...(coordEmail
+      ? {
+          assignedExecutiveEmail: { $ne: coordEmail },
+        }
+      : {}),
+  })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(Math.max(limit, 1), 500));
+
+  let repaired = 0;
+  for (const doc of docs) {
+    const exec = doc.assignedExecutive?._id || doc.assignedExecutive;
+    if (exec && String(exec) === String(coordOid)) continue;
+    if (
+      doc.assignedExecutiveEmail &&
+      normalizeEmail(doc.assignedExecutiveEmail) === normalizeEmail(coordinator.email)
+    ) {
+      continue;
+    }
+    await routeIntakeBookingToTdCoordinator(doc, { notify: false, save: true });
+    repaired += 1;
+  }
+  return { repaired };
+}
+
 /** Non-blocking repair (e.g. when staff open TD bookings). */
 function scheduleRepairUnassignedTestDriveBookings(options = {}) {
   const now = Date.now();
@@ -232,6 +280,8 @@ module.exports = {
   isTdBookingUnassigned,
   assignNewBookingToTdCoordinator,
   routeIntakeBookingToTdCoordinator,
+  tdCoordinatorMyBookingsFilter,
+  repairCrmIntakeBookingsToCoordinator,
   repairUnassignedActiveTestDriveBookings,
   scheduleRepairUnassignedTestDriveBookings,
   OPEN_TD_BOOKING_STATUSES,

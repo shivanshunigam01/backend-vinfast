@@ -237,6 +237,18 @@ exports.listAvailableVehiclesForBooking = asyncHandler(async (req, res) => {
 });
 
 async function assertBookingReadable(booking, admin) {
+  const {
+    isTdCoordinatorUser,
+    OPEN_TD_BOOKING_STATUSES,
+  } = require('../utils/tdCoordinatorAssignment');
+  if (isTdCoordinatorUser(admin)) {
+    const st = String(booking?.bookingStatus || '').toUpperCase();
+    if (OPEN_TD_BOOKING_STATUSES.includes(st)) return;
+    if (booking?.leadId) return;
+    const { isTdBookingAssignee } = require('../utils/leadAssignment');
+    if (await isTdBookingAssignee(admin, booking)) return;
+  }
+
   if (!isTeamScopedUser(admin)) return;
   const staffIds = await resolveStaffIdsForUser(admin);
   const assigned = booking?.assignedExecutive?._id || booking?.assignedExecutive;
@@ -321,12 +333,27 @@ exports.listBookings = asyncHandler(async (req, res) => {
 });
 
 exports.listMyBookings = asyncHandler(async (req, res) => {
+  const {
+    isTdCoordinatorUser,
+    tdCoordinatorMyBookingsFilter,
+    repairUnassignedActiveTestDriveBookings,
+    repairCrmIntakeBookingsToCoordinator,
+    scheduleRepairUnassignedTestDriveBookings,
+  } = require('../utils/tdCoordinatorAssignment');
+
+  if (isTdCoordinatorUser(req.admin)) {
+    scheduleRepairUnassignedTestDriveBookings({ notify: false });
+    await repairUnassignedActiveTestDriveBookings({ limit: 100, notify: false });
+    await repairCrmIntakeBookingsToCoordinator({ limit: 150 });
+  }
+
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
 
-  // Self-only email backfill, then scope to self + reporting subtree.
   await repairExecutiveBookingAssignments(req.admin);
-  const scopeFilter = await assignedExecutiveFilterAsync(req.admin);
+  const scopeFilter = isTdCoordinatorUser(req.admin)
+    ? await tdCoordinatorMyBookingsFilter(req.admin)
+    : await assignedExecutiveFilterAsync(req.admin);
   query.$and = [...(query.$and || []), scopeFilter];
 
   const [docs, total] = await Promise.all([
