@@ -537,7 +537,55 @@ async function assignedExecutiveMyBookingsFilter(admin) {
     ? await resolveSelfStaffIds(admin)
     : await resolveStaffIdsForUser(admin);
   const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
-  return assignedExecutiveIdsFilter(staffIds, admin?.email, emails);
+  const assignFilter = assignedExecutiveIdsFilter(staffIds, admin?.email, emails);
+  const parts = assignFilter.$or ? [...assignFilter.$or] : [assignFilter];
+
+  const Lead = require('../models/Lead');
+  const leadAssignee = assignedToIdsFilter(staffIds, admin?.email, emails);
+  const myLeads = await Lead.find(leadAssignee).select('_id tdBookingId').limit(8000).lean();
+  const leadIds = myLeads.map((l) => l._id).filter(Boolean);
+  const leadBookingIds = myLeads.map((l) => l.tdBookingId).filter(Boolean);
+
+  if (leadIds.length) parts.push({ leadId: { $in: leadIds } });
+  if (leadBookingIds.length) parts.push({ _id: { $in: leadBookingIds } });
+
+  return parts.length ? { $or: parts } : { _id: null };
+}
+
+/**
+ * When CRM assigned the lead to an executive but the TD booking still points at the coordinator,
+ * sync assignee fields so My Test Drives can find the booking.
+ */
+async function repairMyTestDriveAssignmentsFromCrmLead(admin) {
+  const staffIds = await resolveSelfStaffIds(admin);
+  const email = normalizeEmail(admin?.email);
+  const primaryId = toObjectId(admin._id) || admin._id;
+  if (!primaryId || !staffIds.length) return;
+
+  const Lead = require('../models/Lead');
+  const TDBooking = require('../models/TDBooking');
+  const leadAssignee = assignedToIdsFilter(staffIds, email, email ? [email] : []);
+  const leads = await Lead.find({
+    $and: [leadAssignee, { tdBookingId: { $exists: true, $ne: null } }],
+  })
+    .select('_id tdBookingId assignedTo assignedToEmail')
+    .limit(400)
+    .lean();
+
+  if (!leads.length) return;
+
+  const bookingIds = leads.map((l) => l.tdBookingId).filter(Boolean);
+
+  await TDBooking.updateMany(
+    { _id: { $in: bookingIds } },
+    {
+      $set: {
+        assignedExecutive: primaryId,
+        assignedExecutiveEmail: email || undefined,
+      },
+    },
+    { timestamps: false },
+  );
 }
 
 /** Link bookings tagged with this executive's email to their canonical staff id (coordinator assign). */
@@ -614,6 +662,7 @@ async function repairExecutiveBookingAssignments(admin) {
             { assignedExecutiveEmail: { $exists: false } },
             { assignedExecutiveEmail: null },
             { assignedExecutiveEmail: '' },
+            { assignedExecutiveEmail: { $ne: email } },
           ],
         },
       ],
@@ -659,6 +708,7 @@ module.exports = {
   assignedExecutiveFilterAsync,
   assignedExecutiveMyBookingsFilter,
   repairBookingsAssignedByEmail,
+  repairMyTestDriveAssignmentsFromCrmLead,
   bookingAssignedToStaff,
   isTdBookingAssignee,
   applyBookingExecutiveAssignment,

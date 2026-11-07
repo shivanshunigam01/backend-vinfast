@@ -22,6 +22,7 @@ const {
   assignedExecutiveFilterAsync,
   assignedExecutiveMyBookingsFilter,
   repairBookingsAssignedByEmail,
+  repairMyTestDriveAssignmentsFromCrmLead,
   assignedExecutiveIdsFilter,
   bookingAssignedToStaff,
   applyBookingExecutiveAssignment,
@@ -392,6 +393,7 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
 
   await repairExecutiveBookingAssignments(req.admin);
   await repairBookingsAssignedByEmail(req.admin);
+  await repairMyTestDriveAssignmentsFromCrmLead(req.admin);
   const scopeFilter = coordinatorDesk
     ? await tdCoordinatorMyBookingsFilter(req.admin)
     : await assignedExecutiveMyBookingsFilter(req.admin);
@@ -749,7 +751,7 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
   }
   await doc.save();
 
-  if (isTdCoordinatorStaff(staff) && doc.leadId) {
+  if (doc.leadId) {
     const Lead = require('../models/Lead');
     const { applyLeadAssignment, touchLeadActivity } = require('../utils/leadAssignment');
     const lead = await Lead.findById(doc.leadId);
