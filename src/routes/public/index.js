@@ -12,6 +12,7 @@ const vehicleModelsController = require('../../controllers/vehicleModelsControll
 const pricingController = require('../../controllers/pricingController');
 const seoController = require('../../controllers/seoController');
 const modelPageContentController = require('../../controllers/modelPageContentController');
+const marketingPageContentController = require('../../controllers/marketingPageContentController');
 const { leadValidator, testDriveValidator, enquiryValidator } = require('../../validators/formValidators');
 const postDeliveryFeedbackController = require('../../controllers/postDeliveryFeedbackController');
 const { postDeliveryFeedbackValidator } = require('../../validators/postDeliveryFeedbackValidators');
@@ -24,6 +25,7 @@ router.get('/public/hero-slides', publicController.getHeroSlides);
 router.get('/public/products', publicController.getProducts);
 router.get('/public/products/:slug', publicController.getProductBySlug);
 router.get('/public/model-pages/:slug', modelPageContentController.getPublicBySlug);
+router.get('/public/marketing-pages/:slug', marketingPageContentController.getPublicBySlug);
 router.get('/public/offers', publicController.getOffers);
 router.get('/public/banners', publicController.getBanners);
 router.get('/public/faqs', publicController.getFAQs);

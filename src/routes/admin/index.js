@@ -32,6 +32,8 @@ const calendarController = require('../../controllers/calendarController');
 const geocodeController = require('../../controllers/geocodeController');
 const modelPageContentController = require('../../controllers/modelPageContentController');
 const modelPageUploadController = require('../../controllers/modelPageUploadController');
+const marketingPageContentController = require('../../controllers/marketingPageContentController');
+const marketingPageUploadController = require('../../controllers/marketingPageUploadController');
 const uploadModelPageImage = require('../../middleware/uploadModelPageImage');
 const complaintsRoutes = require('./complaints');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
@@ -277,6 +279,16 @@ router.post(
   requireModuleAction('products', 'update'),
   uploadModelPageImage.single('image'),
   modelPageUploadController.uploadModelPageImage,
+);
+
+router.get('/marketing-pages', requireModuleAction('products', 'view'), marketingPageContentController.listAdmin);
+router.get('/marketing-pages/:slug', requireModuleAction('products', 'view'), marketingPageContentController.getAdminBySlug);
+router.put('/marketing-pages/:slug', requireModuleAction('products', 'update'), marketingPageContentController.upsertBySlug);
+router.post(
+  '/marketing-pages/:slug/upload',
+  requireModuleAction('products', 'update'),
+  uploadModelPageImage.single('image'),
+  marketingPageUploadController.uploadMarketingPageImage,
 );
 
 // Offers
