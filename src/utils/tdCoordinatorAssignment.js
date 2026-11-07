@@ -349,11 +349,138 @@ async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
 /**
  * Leads manually assigned to TD Coordinator in CRM — ensure the linked booking matches the desk.
  */
+async function isLeadAssignedToCoordinator(lead) {
+  const { ids, emails } = await collectCoordinatorStaffIds();
+  const plain = lead?.toObject ? lead.toObject() : lead;
+  if (!plain) return false;
+  const assigned = String(plain.assignedTo?._id || plain.assignedTo || '');
+  if (assigned && ids.includes(assigned)) return true;
+  const leadEmail = normalizeEmail(plain.assignedToEmail);
+  if (leadEmail && emails.includes(leadEmail)) return true;
+  const consultant = String(plain.creSheet?.salesConsultantName || '')
+    .toLowerCase()
+    .trim();
+  if (consultant === 'td coordinator' || consultant.includes('test drive coordinator')) return true;
+  return false;
+}
+
+async function findActiveBookingForLead(lead) {
+  const plain = lead?.toObject ? lead.toObject() : lead;
+  if (!plain?._id) return null;
+
+  if (plain.tdBookingId) {
+    const byId = await TDBooking.findById(plain.tdBookingId);
+    if (byId && String(byId.bookingStatus || '').toUpperCase() !== 'CANCELLED') return byId;
+  }
+
+  let booking = await TDBooking.findOne({
+    leadId: plain._id,
+    bookingStatus: { $nin: ['CANCELLED'] },
+  })
+    .sort({ createdAt: -1 })
+    .lean(false);
+  if (booking) return booking;
+
+  const mobile = String(plain.mobile || '').replace(/\D/g, '').slice(-10);
+  if (mobile.length === 10) {
+    booking = await TDBooking.findOne({
+      customerMobile: new RegExp(`${mobile}$`),
+      bookingStatus: { $nin: ['CANCELLED'] },
+    })
+      .sort({ createdAt: -1 })
+      .lean(false);
+    if (booking) {
+      let dirty = false;
+      if (!booking.leadId) {
+        booking.leadId = plain._id;
+        dirty = true;
+      }
+      if (dirty) await booking.save();
+    }
+  }
+  return booking;
+}
+
+/**
+ * CRM leads marked “Test Drive Booked” / assigned to TD Coordinator must have a TDBooking
+ * row or they never appear on My Test Drives (coordinator desk is booking-based).
+ */
+async function ensureCoordinatorIntakeBookingForLead(lead, { actorId, notify = false } = {}) {
+  const plain = lead?.toObject ? lead.toObject() : lead;
+  if (!plain?._id) return null;
+
+  if (!(await isLeadAssignedToCoordinator(plain))) {
+    return null;
+  }
+
+  let booking = await findActiveBookingForLead(plain);
+  const Lead = require('../models/Lead');
+
+  if (booking) {
+    if (!plain.tdBookingId) {
+      await Lead.updateOne({ _id: plain._id }, { $set: { tdBookingId: booking._id } });
+    }
+    if (!booking.leadId) {
+      booking.leadId = plain._id;
+      await booking.save();
+    }
+    return routeIntakeBookingToTdCoordinator(booking, { actorId, notify, save: true });
+  }
+
+  const { nextBookingId, resolveBranch, normalizeSlotTime } = require('./tdBookingSync');
+  const { parseSlotDate } = require('./reportPeriod');
+  const { upsertTDCustomer } = require('./tdCustomerResolver');
+  const { normalizeModel } = require('./tdVehicleLegacyImport');
+  const { baseProductModel } = require('./leadModel');
+
+  const modelRaw = String(plain.model || 'VF 7').trim();
+  const chosenModel = normalizeModel(baseProductModel(modelRaw) || modelRaw) || 'VF 7';
+
+  const customer = await upsertTDCustomer({
+    name: plain.name,
+    mobile: plain.mobile,
+    email: plain.email,
+    city: plain.city,
+  });
+  const branchDoc = await resolveBranch(null);
+
+  let slotDate = new Date();
+  slotDate.setHours(0, 0, 0, 0);
+  if (plain.nextFollowUp) {
+    const d = parseSlotDate(plain.nextFollowUp);
+    if (d) slotDate = d;
+  } else if (plain.creSheet?.tdDate) {
+    const d = parseSlotDate(plain.creSheet.tdDate);
+    if (d) slotDate = d;
+  }
+
+  booking = await TDBooking.create({
+    bookingId: nextBookingId(),
+    bookingStatus: 'PENDING',
+    slotDate,
+    slotTime: normalizeSlotTime('10:00'),
+    slotDuration: 60,
+    preferredModel: chosenModel,
+    remarks: 'CRM test drive — coordinator desk (confirm slot & executive)',
+    customerId: customer._id,
+    branchId: branchDoc._id,
+    leadId: plain._id,
+    customerName: plain.name,
+    customerMobile: plain.mobile,
+    customerEmail: plain.email,
+    customerCity: plain.city,
+    approvalStatus: 'NOT_REQUIRED',
+  });
+
+  await Lead.updateOne({ _id: plain._id }, { $set: { tdBookingId: booking._id } });
+  return ensureCrmLeadTestDriveRoutedToCoordinator(booking, { lead: plain, actorId, notify });
+}
+
 async function repairLeadsAssignedToCoordinatorBookings({ limit = 120 } = {}) {
   const Lead = require('../models/Lead');
   const { assignedToIdsFilter } = require('./leadAssignment');
   const { ids, emails } = await collectCoordinatorStaffIds();
-  if (!ids.length && !emails.length) return { repaired: 0 };
+  if (!ids.length && !emails.length) return { repaired: 0, created: 0 };
 
   const leadQuery = {
     $and: [
@@ -370,19 +497,27 @@ async function repairLeadsAssignedToCoordinatorBookings({ limit = 120 } = {}) {
   const leads = await Lead.find(leadQuery)
     .sort({ updatedAt: -1 })
     .limit(Math.min(Math.max(limit, 1), 300))
-    .select('_id tdBookingId status')
+    .select('_id tdBookingId status name mobile email city model nextFollowUp assignedTo assignedToEmail creSheet remarks')
     .lean();
 
   let repaired = 0;
+  let created = 0;
   for (const lead of leads) {
     let booking = lead.tdBookingId ? await TDBooking.findById(lead.tdBookingId) : null;
     if (!booking) {
-      booking = await TDBooking.findOne({ leadId: lead._id }).sort({ createdAt: -1 });
+      booking = await findActiveBookingForLead(lead);
       if (booking) {
         await Lead.updateOne({ _id: lead._id }, { $set: { tdBookingId: booking._id } });
       }
     }
-    if (!booking) continue;
+    if (!booking) {
+      booking = await ensureCoordinatorIntakeBookingForLead(lead, { notify: false });
+      if (booking) {
+        created += 1;
+        repaired += 1;
+      }
+      continue;
+    }
 
     const exec = String(booking.assignedExecutive?._id || booking.assignedExecutive || '');
     const em = normalizeEmail(booking.assignedExecutiveEmail);
@@ -392,7 +527,7 @@ async function repairLeadsAssignedToCoordinatorBookings({ limit = 120 } = {}) {
     await routeIntakeBookingToTdCoordinator(booking, { notify: false, save: true });
     repaired += 1;
   }
-  return { repaired };
+  return { repaired, created };
 }
 
 /**
@@ -414,15 +549,14 @@ async function syncTdBookingForCoordinatorLeadAssignment(lead, assignee, { actor
   const plain = lead?.toObject ? lead.toObject() : lead;
   if (!plain?._id) return null;
 
-  let booking = plain.tdBookingId ? await TDBooking.findById(plain.tdBookingId) : null;
+  let booking = await findActiveBookingForLead(plain);
   if (!booking) {
-    booking = await TDBooking.findOne({ leadId: plain._id }).sort({ createdAt: -1 });
-    if (booking) {
-      const Lead = require('../models/Lead');
-      await Lead.updateOne({ _id: plain._id }, { $set: { tdBookingId: booking._id } });
-    }
+    return ensureCoordinatorIntakeBookingForLead(plain, { actorId, notify });
   }
-  if (!booking) return null;
+  const Lead = require('../models/Lead');
+  if (!plain.tdBookingId) {
+    await Lead.updateOne({ _id: plain._id }, { $set: { tdBookingId: booking._id } });
+  }
   return routeIntakeBookingToTdCoordinator(booking, { notify, actorId, save: true });
 }
 
@@ -471,5 +605,8 @@ module.exports = {
   repairLeadsAssignedToCoordinatorBookings,
   repairUnassignedActiveTestDriveBookings,
   scheduleRepairUnassignedTestDriveBookings,
+  ensureCoordinatorIntakeBookingForLead,
+  findActiveBookingForLead,
+  isLeadAssignedToCoordinator,
   OPEN_TD_BOOKING_STATUSES,
 };

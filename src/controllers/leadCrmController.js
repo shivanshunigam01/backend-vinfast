@@ -1008,6 +1008,19 @@ exports.updateLeadStage = asyncHandler(async (req, res) => {
     reason: reason || `Stage updated to ${normalizedStage}`,
   });
 
+  if (['Test Drive Booked', 'Test Drive Scheduled'].includes(normalizedStage)) {
+    const {
+      ensureCoordinatorIntakeBookingForLead,
+      isLeadAssignedToCoordinator,
+    } = require('../utils/tdCoordinatorAssignment');
+    if (await isLeadAssignedToCoordinator(lead)) {
+      await ensureCoordinatorIntakeBookingForLead(lead, {
+        actorId: req.admin._id,
+        notify: true,
+      });
+    }
+  }
+
   let vehicleOrder = null;
   let vehicleOrderError = null;
   if (normalizedStage === 'Booking') {
