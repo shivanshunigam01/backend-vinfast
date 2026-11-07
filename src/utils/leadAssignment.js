@@ -281,10 +281,31 @@ async function resolveStaffEmailsForIds(staffIds, viewerEmail) {
   return [...emails];
 }
 
+async function expandStaffIdsForCrmVisibility(admin) {
+  const teamIds = await resolveStaffIdsForUser(admin);
+  const selfIds = await resolveSelfStaffIds(admin);
+  const seed = new Set([...teamIds, ...selfIds].map(String));
+  const viewerEmail = normalizeEmail(admin?.email);
+
+  const emails = new Set();
+  if (viewerEmail) emails.add(viewerEmail);
+  for (const e of await resolveStaffEmailsForIds([...seed], viewerEmail)) {
+    if (e) emails.add(e);
+  }
+
+  const emailList = [...emails];
+  if (emailList.length) {
+    const aliasRows = await TDStaff.find({ email: { $in: emailList } }).select('_id').lean();
+    for (const row of aliasRows) seed.add(String(row._id));
+  }
+  return [...seed];
+}
+
 async function assignedToStaffFilterAsync(admin) {
-  const staffIds = await resolveStaffIdsForUser(admin);
-  const emails = await resolveStaffEmailsForIds(staffIds, null);
-  return assignedToIdsFilter(staffIds, null, emails);
+  const staffIds = await expandStaffIdsForCrmVisibility(admin);
+  const viewerEmail = normalizeEmail(admin?.email);
+  const emails = await resolveStaffEmailsForIds(staffIds, viewerEmail);
+  return assignedToIdsFilter(staffIds, viewerEmail, emails);
 }
 
 function createdBySelfIdsFilter(selfIds) {
@@ -306,9 +327,10 @@ function createdBySelfIdsFilter(selfIds) {
  * (so a lead saved without picking an executive still appears for the creator).
  */
 async function teamCrmLeadVisibilityFilterAsync(admin) {
-  const staffIds = await resolveStaffIdsForUser(admin);
-  const emails = await resolveStaffEmailsForIds(staffIds, null);
-  const assignedPart = assignedToIdsFilter(staffIds, null, emails);
+  const staffIds = await expandStaffIdsForCrmVisibility(admin);
+  const viewerEmail = normalizeEmail(admin?.email);
+  const emails = await resolveStaffEmailsForIds(staffIds, viewerEmail);
+  const assignedPart = assignedToIdsFilter(staffIds, viewerEmail, emails);
 
   const selfIds = await resolveSelfStaffIds(admin);
   const unassignedOwned = {
@@ -348,11 +370,17 @@ async function leadReadableByAdmin(lead, admin) {
     return false;
   }
 
-  const teamIds = await resolveSalesTeamStaffIds(admin);
+  const viewerEmail = normalizeEmail(admin?.email);
+  if (viewerEmail && leadEmail && viewerEmail === leadEmail) return true;
+
+  const selfIds = await resolveSelfStaffIds(admin);
+  if (assigned && selfIds.includes(String(assigned))) return true;
+
+  const teamIds = await expandStaffIdsForCrmVisibility(admin);
   if (assigned && teamIds.includes(String(assigned))) return true;
 
   if (leadEmail) {
-    const teamEmails = await resolveStaffEmailsForIds(teamIds, null);
+    const teamEmails = await resolveStaffEmailsForIds(teamIds, viewerEmail);
     if (teamEmails.includes(leadEmail)) return true;
   }
 
@@ -383,7 +411,7 @@ async function repairExecutiveLeadAssignments(admin) {
   }
   if (!idOr.length) return;
 
-  const primaryId = toObjectId(admin._id) || admin._id;
+  const primaryId = toObjectId(selfIds[0]) || selfIds[0] || toObjectId(admin._id) || admin._id;
 
   await Lead.updateMany(
     {
@@ -399,6 +427,24 @@ async function repairExecutiveLeadAssignments(admin) {
       ],
     },
     { $set: { assignedToEmail: email, assignedTo: primaryId } },
+    { timestamps: false },
+  );
+
+  // Duplicate User Master rows: assigned by email to this person but stale/wrong assignedTo id.
+  const assignedIdOr = [];
+  for (const rawId of selfIds) {
+    const oid = toObjectId(rawId);
+    if (oid) assignedIdOr.push({ assignedTo: oid }, { assignedTo: String(rawId) });
+    else assignedIdOr.push({ assignedTo: String(rawId) });
+  }
+  await Lead.updateMany(
+    {
+      assignedToEmail: email,
+      ...(assignedIdOr.length
+        ? { $nor: [{ $or: assignedIdOr }] }
+        : {}),
+    },
+    { $set: { assignedTo: primaryId } },
     { timestamps: false },
   );
 }

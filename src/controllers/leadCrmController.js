@@ -40,6 +40,7 @@ const {
 const { listAssignableStaff } = require('./tdUsersController');
 const {
   toObjectId,
+  normalizeEmail,
   isCreUser,
   isCrmDeskUser,
   isCreAssignableDesignation,
@@ -1588,6 +1589,16 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
     : null;
 
   if (executiveId) {
+    if (assignee && !normalizeEmail(assignee.email)) {
+      const twin = await TDStaff.findOne({
+        name: new RegExp(`^${String(assignee.name || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        email: { $exists: true, $nin: [null, ''] },
+        active: { $ne: false },
+      })
+        .select('email _id')
+        .lean();
+      if (twin?.email) assignee.email = twin.email;
+    }
     applyLeadAssignment(lead, assignee);
     lead.creSheet = lead.creSheet || {};
     lead.creSheet.salesConsultantName = assignee.name;
