@@ -6,6 +6,7 @@ const Lead = require('../models/Lead');
 const { getActiveModelNames } = require('./vehicleCatalog');
 const { parseSlotDate } = require('./reportPeriod');
 const { normalizeSlotTime } = require('./tdBookingSync');
+const { assertSlotBookableForBooking } = require('./tdSlotAvailability');
 const { hasCustomModuleAcl, canPerformAction } = require('./modulePermissions');
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED', 'MISSED'];
@@ -95,15 +96,33 @@ async function applyTdBookingCorrections(doc, body = {}) {
     doc.preferredVariant = variant;
   }
 
-  if (slotDate !== undefined) {
-    const nextDate = parseSlotDate(slotDate);
-    if (!nextDate) throw new ApiError(400, 'Invalid slotDate');
-    doc.slotDate = nextDate;
-  }
-  if (slotTime !== undefined) {
-    const t = String(slotTime).trim();
-    if (!t) throw new ApiError(400, 'slotTime cannot be empty');
-    doc.slotTime = normalizeSlotTime(t);
+  const slotChanging = slotDate !== undefined || slotTime !== undefined;
+  const modelForSlot = model !== undefined ? model : doc.preferredModel;
+  const variantForSlot = variant !== undefined ? variant : doc.preferredVariant;
+
+  if (slotChanging) {
+    const nextDate = slotDate !== undefined ? parseSlotDate(slotDate) : doc.slotDate;
+    if (slotDate !== undefined && !nextDate) throw new ApiError(400, 'Invalid slotDate');
+    const nextTime =
+      slotTime !== undefined ? normalizeSlotTime(String(slotTime).trim()) : doc.slotTime;
+    if (slotTime !== undefined && !String(slotTime).trim()) {
+      throw new ApiError(400, 'slotTime cannot be empty');
+    }
+
+    const branchRef = doc.branchId?._id || doc.branchId;
+    if (branchRef && modelForSlot) {
+      await assertSlotBookableForBooking({
+        branchId: branchRef,
+        slotDate: nextDate,
+        slotTime: nextTime,
+        model: modelForSlot,
+        variant: variantForSlot,
+        excludeBookingId: doc._id,
+      });
+    }
+
+    if (slotDate !== undefined) doc.slotDate = nextDate;
+    if (slotTime !== undefined) doc.slotTime = nextTime;
   }
 
   const openStatuses = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'RESCHEDULED'];

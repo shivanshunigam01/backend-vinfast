@@ -1,5 +1,7 @@
 const TDBooking = require('../models/TDBooking');
 const TDVehicle = require('../models/TDVehicle');
+const TDSlotConfig = require('../models/TDSlotConfig');
+const ApiError = require('./apiError');
 const {
   generateSlotTimesFromRules,
   normalizeSlotTimesList,
@@ -77,7 +79,7 @@ async function countFleetCapacity(branchId, model, dateStr, variant) {
   return pool.length;
 }
 
-async function buildSlotOccupancy(branchId, dateStr, model, variant) {
+async function buildSlotOccupancy(branchId, dateStr, model, variant, excludeBookingId = null) {
   const bounds = calendarDayBounds(dateStr);
   if (!bounds) return {};
 
@@ -90,10 +92,11 @@ async function buildSlotOccupancy(branchId, dateStr, model, variant) {
 
   const bookings = await TDBooking.find(bookingQuery)
     .populate('testDriveId', 'variant model')
-    .select('slotTime preferredModel preferredVariant testDriveId');
+    .select('_id slotTime preferredModel preferredVariant testDriveId');
 
   const occupancy = {};
   for (const booking of bookings) {
+    if (excludeBookingId && String(booking._id) === String(excludeBookingId)) continue;
     if (!bookingMatchesVariant(booking, variant)) continue;
     const key = normalizeSlotTimeKey(booking.slotTime);
     if (!key) continue;
@@ -136,9 +139,16 @@ async function computeSlotsForBranchDate(branchId, dateStr, options = {}) {
   const disabledForDate = getAdminDisabledTimes(config, normalizedDate);
   const fleetCapacity = await countFleetCapacity(branchId, model, normalizedDate, variant);
   const concurrent = Math.max(Number(config.maxConcurrentBookings) || 2, 1);
-  // No demo fleet rows for this model/branch → use slot config limit (staff can still book).
-  const effectiveMax = fleetCapacity > 0 ? fleetCapacity : concurrent;
-  const bookingCounts = await buildSlotOccupancy(branchId, normalizedDate, model, variant);
+  // When a model is chosen, capacity = demo fleet only (coordinator must have a car to assign).
+  const effectiveMax =
+    fleetCapacity > 0 ? fleetCapacity : model ? 0 : concurrent;
+  const bookingCounts = await buildSlotOccupancy(
+    branchId,
+    normalizedDate,
+    model,
+    variant,
+    options.excludeBookingId || null,
+  );
 
   const slots = baseTimes.map((time) => {
     const count = bookingCounts[time] || 0;
@@ -179,8 +189,71 @@ async function computeSlotsForBranchDate(branchId, dateStr, options = {}) {
   return { slots, config, fleetCapacity };
 }
 
+/**
+ * Reject booking/reschedule when the slot is not offered, full, past, or has no demo fleet for the model.
+ */
+async function assertSlotBookableForBooking({
+  branchId,
+  slotDate,
+  slotTime,
+  model,
+  variant,
+  excludeBookingId,
+}) {
+  if (!branchId || !slotDate || !slotTime) {
+    throw new ApiError(400, 'Branch, date, and time are required to book a test drive slot');
+  }
+
+  const config = await TDSlotConfig.findOne({ branchId });
+  if (!config) {
+    throw new ApiError(
+      409,
+      'No slot configuration exists for this branch. Set up Slot config under Test Drive first.',
+    );
+  }
+
+  const dateStr = isoDateOnly(slotDate);
+  const normalizedModel = model ? normalizeModel(model) : null;
+  const { slots, fleetCapacity } = await computeSlotsForBranchDate(branchId, dateStr, {
+    model: normalizedModel,
+    variant: variant || null,
+    config: config.toObject(),
+    excludeBookingId: excludeBookingId || null,
+  });
+
+  const want = normalizeSlotTimeKey(slotTime);
+  const slot = slots.find((s) => normalizeSlotTimeKey(s.time) === want);
+
+  if (!slot) {
+    throw new ApiError(400, 'That time is not offered on this date. Pick a time from the available list.');
+  }
+
+  if (!slot.available) {
+    const reasonMessages = {
+      no_fleet: normalizedModel
+        ? `No demo ${normalizedModel} is available at this branch on ${dateStr}. Add the model in Demo Fleet or choose another date/time.`
+        : 'No demo vehicle capacity for this slot. Choose another date/time.',
+      full: 'This time slot is full for that model. Pick another time.',
+      past: 'That time has already passed.',
+      blocked: 'This date is blocked for test drives.',
+      not_offered: 'That time is not offered on this date.',
+    };
+    throw new ApiError(409, reasonMessages[slot.reason] || 'This slot is not available. Choose another time.');
+  }
+
+  if (normalizedModel && fleetCapacity <= 0) {
+    throw new ApiError(
+      409,
+      `No demo ${normalizedModel} is tagged at this branch. Add it in Demo Fleet before booking.`,
+    );
+  }
+
+  return slot;
+}
+
 module.exports = {
   computeSlotsForBranchDate,
+  assertSlotBookableForBooking,
   countFleetCapacity,
   normalizeVariant,
   normalizeSlotTimeKey,

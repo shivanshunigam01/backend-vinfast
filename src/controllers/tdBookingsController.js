@@ -126,6 +126,15 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
   });
   const branch = await resolveBranch(body.branchName);
 
+  const { assertSlotBookableForBooking } = require('../utils/tdSlotAvailability');
+  await assertSlotBookableForBooking({
+    branchId: branch._id,
+    slotDate,
+    slotTime: body.slotTime,
+    model,
+    variant: preferredVariant || undefined,
+  });
+
   const booking = await TDBooking.create({
     bookingId: nextBookingId(),
     bookingStatus: 'CONFIRMED',

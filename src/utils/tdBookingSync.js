@@ -84,6 +84,15 @@ async function syncTestDriveToTdBooking(testDrive) {
   const slotDate = parseSlotDate(testDrive.preferredDate);
   const slotTime = normalizeSlotTime(testDrive.preferredTime);
 
+  const { assertSlotBookableForBooking } = require('./tdSlotAvailability');
+  await assertSlotBookableForBooking({
+    branchId: branch._id,
+    slotDate,
+    slotTime,
+    model: normalizeModel(testDrive.model),
+    variant: testDrive.variant || undefined,
+  });
+
   const booking = await TDBooking.create({
     bookingId: nextBookingId(),
     bookingStatus: 'CONFIRMED',

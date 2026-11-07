@@ -49,6 +49,7 @@ async function assertSlotStillAvailable(booking, chosen) {
     model,
     variant,
     config: config.toObject(),
+    excludeBookingId: booking._id,
   });
   const slot = slots.find((candidate) => candidate.time === chosen.slotTime);
 

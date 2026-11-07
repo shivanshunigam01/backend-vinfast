@@ -1937,6 +1937,15 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   });
   const branchDoc = await resolveBranch(branch);
 
+  const { assertSlotBookableForBooking } = require('../utils/tdSlotAvailability');
+  await assertSlotBookableForBooking({
+    branchId: branchDoc._id,
+    slotDate: nextDate,
+    slotTime,
+    model: chosenModel,
+    variant: preferredVariant || undefined,
+  });
+
   const booking = await TDBooking.create({
     bookingId: nextBookingId(),
     bookingStatus: approvalStatus === 'PENDING' ? 'PENDING' : 'CONFIRMED',
