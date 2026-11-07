@@ -135,7 +135,9 @@ async function computeSlotsForBranchDate(branchId, dateStr, options = {}) {
   const baseTimes = resolveConfiguredSlotTimes(config);
   const disabledForDate = getAdminDisabledTimes(config, normalizedDate);
   const fleetCapacity = await countFleetCapacity(branchId, model, normalizedDate, variant);
-  const effectiveMax = fleetCapacity > 0 ? fleetCapacity : 0;
+  const concurrent = Math.max(Number(config.maxConcurrentBookings) || 2, 1);
+  // No demo fleet rows for this model/branch → use slot config limit (staff can still book).
+  const effectiveMax = fleetCapacity > 0 ? fleetCapacity : concurrent;
   const bookingCounts = await buildSlotOccupancy(branchId, normalizedDate, model, variant);
 
   const slots = baseTimes.map((time) => {

@@ -343,7 +343,16 @@ async function teamCrmLeadVisibilityFilterAsync(admin) {
   };
 
   const assignedBranches = assignedPart.$or ? [...assignedPart.$or] : [assignedPart];
-  return { $or: [...assignedBranches, unassignedOwned] };
+  const selfCreated = createdBySelfIdsFilter(selfIds);
+  const branches = [...assignedBranches, unassignedOwned, selfCreated];
+
+  const consultantName = String(admin?.name || '').trim();
+  if (consultantName.length >= 2) {
+    const escaped = consultantName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    branches.push({ 'creSheet.salesConsultantName': new RegExp(`^${escaped}$`, 'i') });
+  }
+
+  return { $or: branches };
 }
 
 function leadAssignedToStaff(lead, staffId, staffEmail) {
@@ -359,21 +368,27 @@ async function leadReadableByAdmin(lead, admin) {
   if (!lead) return false;
   if (!isTeamScopedUser(admin)) return true;
 
+  const selfIds = await resolveSelfStaffIds(admin);
+  const createdBy = lead?.createdBy?._id || lead?.createdBy;
+  if (createdBy && selfIds.includes(String(createdBy))) return true;
+
+  const sheetConsultant = String(lead?.creSheet?.salesConsultantName || '').trim();
+  const viewerName = String(admin?.name || '').trim();
+  if (sheetConsultant && viewerName && sheetConsultant.toLowerCase() === viewerName.toLowerCase()) {
+    return true;
+  }
+
   const assigned = lead?.assignedTo?._id || lead?.assignedTo;
   const leadEmail = normalizeEmail(lead?.assignedToEmail);
 
   if (!assigned && !leadEmail) {
     if (isCreUser(admin) || isCrmDeskUser(admin)) return true;
-    const selfIds = await resolveSelfStaffIds(admin);
-    const createdBy = lead?.createdBy?._id || lead?.createdBy;
-    if (createdBy && selfIds.includes(String(createdBy))) return true;
     return false;
   }
 
   const viewerEmail = normalizeEmail(admin?.email);
   if (viewerEmail && leadEmail && viewerEmail === leadEmail) return true;
 
-  const selfIds = await resolveSelfStaffIds(admin);
   if (assigned && selfIds.includes(String(assigned))) return true;
 
   const teamIds = await expandStaffIdsForCrmVisibility(admin);
@@ -447,6 +462,24 @@ async function repairExecutiveLeadAssignments(admin) {
     { $set: { assignedTo: primaryId } },
     { timestamps: false },
   );
+
+  const viewerName = String(admin?.name || '').trim();
+  if (viewerName.length >= 2) {
+    const escaped = viewerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await Lead.updateMany(
+      {
+        'creSheet.salesConsultantName': new RegExp(`^${escaped}$`, 'i'),
+        $or: [
+          { assignedToEmail: { $exists: false } },
+          { assignedToEmail: null },
+          { assignedToEmail: '' },
+          ...(email ? [{ assignedToEmail: email }] : []),
+        ],
+      },
+      { $set: { assignedTo: primaryId, ...(email ? { assignedToEmail: email } : {}) } },
+      { timestamps: false },
+    );
+  }
 }
 
 function assignedExecutiveIdsFilter(staffIds, staffEmail, extraEmails = []) {
