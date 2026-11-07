@@ -311,11 +311,12 @@ async function tdCoordinatorMyBookingsFilter(admin) {
     ]),
   ].filter(Boolean);
   const selfFilter = assignedExecutiveIdsFilter(allIds, viewerEmail, emailList);
-  const crmIntakeFilter = {
+  /** Any CRM-originated test drive (Book Test Drive on a lead) — coordinator owns slot & demo car. */
+  const crmLinkedFilter = {
     leadId: { $exists: true, $ne: null },
-    bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES },
+    bookingStatus: { $nin: ['CANCELLED'] },
   };
-  return { $or: [selfFilter, crmIntakeFilter] };
+  return { $or: [selfFilter, crmLinkedFilter] };
 }
 
 /**
@@ -327,8 +328,8 @@ async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
   if (!ids.length) return { repaired: 0 };
 
   const docs = await TDBooking.find({
-    bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES },
     leadId: { $exists: true, $ne: null },
+    bookingStatus: { $nin: ['CANCELLED'] },
   })
     .sort({ createdAt: -1 })
     .limit(Math.min(Math.max(limit, 1), 500));
@@ -394,6 +395,19 @@ async function repairLeadsAssignedToCoordinatorBookings({ limit = 120 } = {}) {
   return { repaired };
 }
 
+/**
+ * Lead CRM “Book Test Drive” — always queue on TD coordinator (any staff account).
+ */
+async function ensureCrmLeadTestDriveRoutedToCoordinator(booking, { lead, actorId, notify = true } = {}) {
+  if (!booking) return null;
+  const updated = await routeIntakeBookingToTdCoordinator(booking, { actorId, notify, save: true });
+  if (lead && !lead.tdBookingId) {
+    const Lead = require('../models/Lead');
+    await Lead.updateOne({ _id: lead._id }, { $set: { tdBookingId: booking._id } });
+  }
+  return updated;
+}
+
 /** When CRM assigns a TD-booked lead to the coordinator, sync the linked TDBooking row. */
 async function syncTdBookingForCoordinatorLeadAssignment(lead, assignee, { actorId, notify = true } = {}) {
   if (!assignee || !isTdCoordinatorStaff(assignee)) return null;
@@ -444,6 +458,7 @@ module.exports = {
   collectCoordinatorStaffIds,
   coordinatorCrmLeadsVisibilityFilter,
   syncTdBookingForCoordinatorLeadAssignment,
+  ensureCrmLeadTestDriveRoutedToCoordinator,
   CRM_TD_BOOKED_STATUSES,
   isCrmLeadTdBookedForCoordinator,
   crmTdBookedLeadsMongoFilter,

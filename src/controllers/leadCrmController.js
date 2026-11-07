@@ -1895,11 +1895,16 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
 
   const pendingApproval = approvalStatus === 'PENDING';
   if (!pendingApproval) {
-    const { routeIntakeBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
-    await routeIntakeBookingToTdCoordinator(booking, {
-      notify: true,
+    const {
+      ensureCrmLeadTestDriveRoutedToCoordinator,
+      repairCrmIntakeBookingsToCoordinator,
+    } = require('../utils/tdCoordinatorAssignment');
+    await ensureCrmLeadTestDriveRoutedToCoordinator(booking, {
+      lead,
       actorId: req.admin._id,
+      notify: true,
     });
+    await repairCrmIntakeBookingsToCoordinator({ limit: 10 });
   }
   if (!pendingApproval) {
     // Move the pipeline forward only for confirmed bookings.
