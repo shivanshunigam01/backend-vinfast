@@ -1632,8 +1632,12 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
         actorId: req.admin._id,
         notify: true,
       });
-      const { repairCrmIntakeBookingsToCoordinator } = require('../utils/tdCoordinatorAssignment');
+      const {
+        repairCrmIntakeBookingsToCoordinator,
+        repairLeadsAssignedToCoordinatorBookings,
+      } = require('../utils/tdCoordinatorAssignment');
       await repairCrmIntakeBookingsToCoordinator({ limit: 25 });
+      await repairLeadsAssignedToCoordinatorBookings({ limit: 25 });
     }
   }
 

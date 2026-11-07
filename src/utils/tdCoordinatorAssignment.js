@@ -54,7 +54,20 @@ function isTdCoordinatorUser(admin) {
   if (!admin) return false;
   const target = tdCoordinatorEmail();
   if (target && normalizeEmail(admin.email) === target) return true;
-  return isTdCoordinatorDesignation(admin.designation);
+  if (isTdCoordinatorDesignation(admin.designation)) return true;
+  const name = String(admin?.name || '').toLowerCase().trim();
+  if (name === 'td coordinator' || name.includes('test drive coordinator')) return true;
+  return false;
+}
+
+/** Session check including duplicate User Master rows (async). */
+async function resolveTdCoordinatorSession(admin) {
+  if (isTdCoordinatorUser(admin)) return true;
+  const { resolveSelfStaffIds } = require('./leadAssignment');
+  const selfIds = await resolveSelfStaffIds(admin);
+  const { ids } = await collectCoordinatorStaffIds();
+  if (selfIds.some((id) => ids.includes(id))) return true;
+  return false;
 }
 
 /** Every User Master row that represents the TD coordinator (duplicate-safe). */
@@ -282,16 +295,27 @@ let repairInFlight = false;
 let lastRepairAt = 0;
 const REPAIR_COOLDOWN_MS = 60 * 1000;
 
-/** My Test Drives: coordinator desk — own rows (all duplicate ids) + open pipeline. */
+/** My Test Drives / TD desk: bookings on coordinator + CRM-linked open intake. */
 async function tdCoordinatorMyBookingsFilter(admin) {
-  const { assignedExecutiveIdsFilter } = require('./leadAssignment');
+  const { assignedExecutiveIdsFilter, resolveSelfStaffIds } = require('./leadAssignment');
   const { ids, emails } = await collectCoordinatorStaffIds();
+  const selfIds = await resolveSelfStaffIds(admin);
+  const allIds = [...new Set([...ids, ...selfIds])];
   const viewerEmail = normalizeEmail(admin?.email);
-  const emailList = [...new Set([...emails, ...(viewerEmail ? [viewerEmail] : [])])];
-  const selfFilter = assignedExecutiveIdsFilter(ids, viewerEmail, emailList);
-  return {
-    $or: [selfFilter, { bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES } }],
+  const target = tdCoordinatorEmail();
+  const emailList = [
+    ...new Set([
+      ...emails,
+      ...(target ? [target] : []),
+      ...(viewerEmail ? [viewerEmail] : []),
+    ]),
+  ].filter(Boolean);
+  const selfFilter = assignedExecutiveIdsFilter(allIds, viewerEmail, emailList);
+  const crmIntakeFilter = {
+    leadId: { $exists: true, $ne: null },
+    bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES },
   };
+  return { $or: [selfFilter, crmIntakeFilter] };
 }
 
 /**
@@ -316,6 +340,55 @@ async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
     if (exec && ids.includes(exec)) continue;
     if (em && emails.includes(em)) continue;
     await routeIntakeBookingToTdCoordinator(doc, { notify: false, save: true });
+    repaired += 1;
+  }
+  return { repaired };
+}
+
+/**
+ * Leads manually assigned to TD Coordinator in CRM — ensure the linked booking matches the desk.
+ */
+async function repairLeadsAssignedToCoordinatorBookings({ limit = 120 } = {}) {
+  const Lead = require('../models/Lead');
+  const { assignedToIdsFilter } = require('./leadAssignment');
+  const { ids, emails } = await collectCoordinatorStaffIds();
+  if (!ids.length && !emails.length) return { repaired: 0 };
+
+  const leadQuery = {
+    $and: [
+      assignedToIdsFilter(ids, null, emails),
+      {
+        $or: [
+          { tdBookingId: { $exists: true, $ne: null } },
+          { status: { $in: CRM_TD_BOOKED_STATUSES } },
+        ],
+      },
+    ],
+  };
+
+  const leads = await Lead.find(leadQuery)
+    .sort({ updatedAt: -1 })
+    .limit(Math.min(Math.max(limit, 1), 300))
+    .select('_id tdBookingId status')
+    .lean();
+
+  let repaired = 0;
+  for (const lead of leads) {
+    let booking = lead.tdBookingId ? await TDBooking.findById(lead.tdBookingId) : null;
+    if (!booking) {
+      booking = await TDBooking.findOne({ leadId: lead._id }).sort({ createdAt: -1 });
+      if (booking) {
+        await Lead.updateOne({ _id: lead._id }, { $set: { tdBookingId: booking._id } });
+      }
+    }
+    if (!booking) continue;
+
+    const exec = String(booking.assignedExecutive?._id || booking.assignedExecutive || '');
+    const em = normalizeEmail(booking.assignedExecutiveEmail);
+    if (exec && ids.includes(exec)) continue;
+    if (em && emails.includes(em)) continue;
+
+    await routeIntakeBookingToTdCoordinator(booking, { notify: false, save: true });
     repaired += 1;
   }
   return { repaired };
@@ -365,6 +438,7 @@ function scheduleRepairUnassignedTestDriveBookings(options = {}) {
 module.exports = {
   tdCoordinatorEmail,
   isTdCoordinatorUser,
+  resolveTdCoordinatorSession,
   isTdCoordinatorStaff,
   isTdCoordinatorDesignation,
   collectCoordinatorStaffIds,
@@ -379,6 +453,7 @@ module.exports = {
   routeIntakeBookingToTdCoordinator,
   tdCoordinatorMyBookingsFilter,
   repairCrmIntakeBookingsToCoordinator,
+  repairLeadsAssignedToCoordinatorBookings,
   repairUnassignedActiveTestDriveBookings,
   scheduleRepairUnassignedTestDriveBookings,
   OPEN_TD_BOOKING_STATUSES,

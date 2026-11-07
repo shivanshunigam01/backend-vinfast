@@ -238,10 +238,10 @@ exports.listAvailableVehiclesForBooking = asyncHandler(async (req, res) => {
 
 async function assertBookingReadable(booking, admin) {
   const {
-    isTdCoordinatorUser,
+    resolveTdCoordinatorSession,
     OPEN_TD_BOOKING_STATUSES,
   } = require('../utils/tdCoordinatorAssignment');
-  if (isTdCoordinatorUser(admin)) {
+  if (await resolveTdCoordinatorSession(admin)) {
     const st = String(booking?.bookingStatus || '').toUpperCase();
     if (OPEN_TD_BOOKING_STATUSES.includes(st)) return;
     if (booking?.leadId) return;
@@ -276,9 +276,24 @@ exports.listBookings = asyncHandler(async (req, res) => {
     await repairExecutiveBookingAssignments(req.admin);
   }
 
-  // MoM #12: SM/SH/SE limited to reporting tree; MD/CEO/GM see all.
+  const { resolveTdCoordinatorSession, tdCoordinatorMyBookingsFilter } = require('../utils/tdCoordinatorAssignment');
+  const coordinatorDesk = await resolveTdCoordinatorSession(req.admin);
+  if (coordinatorDesk) {
+    const {
+      repairCrmIntakeBookingsToCoordinator,
+      repairLeadsAssignedToCoordinatorBookings,
+    } = require('../utils/tdCoordinatorAssignment');
+    await repairCrmIntakeBookingsToCoordinator({ limit: 80 });
+    await repairLeadsAssignedToCoordinatorBookings({ limit: 80 });
+  }
+
+  // MoM #12: SM/SH/SE limited to reporting tree; TD coordinator sees coordinator desk queue.
   if (isTeamScopedUser(req.admin)) {
-    andClauses.push(await assignedExecutiveFilterAsync(req.admin));
+    andClauses.push(
+      coordinatorDesk
+        ? await tdCoordinatorMyBookingsFilter(req.admin)
+        : await assignedExecutiveFilterAsync(req.admin),
+    );
   }
 
   // Optional narrow: ?assignedExecutive= / ?assignedTo= (staff id | unassigned)
@@ -334,24 +349,27 @@ exports.listBookings = asyncHandler(async (req, res) => {
 
 exports.listMyBookings = asyncHandler(async (req, res) => {
   const {
-    isTdCoordinatorUser,
+    resolveTdCoordinatorSession,
     tdCoordinatorMyBookingsFilter,
     repairUnassignedActiveTestDriveBookings,
     repairCrmIntakeBookingsToCoordinator,
+    repairLeadsAssignedToCoordinatorBookings,
     scheduleRepairUnassignedTestDriveBookings,
   } = require('../utils/tdCoordinatorAssignment');
 
-  if (isTdCoordinatorUser(req.admin)) {
+  const coordinatorDesk = await resolveTdCoordinatorSession(req.admin);
+  if (coordinatorDesk) {
     scheduleRepairUnassignedTestDriveBookings({ notify: false });
     await repairUnassignedActiveTestDriveBookings({ limit: 100, notify: false });
     await repairCrmIntakeBookingsToCoordinator({ limit: 150 });
+    await repairLeadsAssignedToCoordinatorBookings({ limit: 120 });
   }
 
   const { page, limit, skip } = buildPagination(req);
   const query = buildBookingListQuery(req);
 
   await repairExecutiveBookingAssignments(req.admin);
-  const scopeFilter = isTdCoordinatorUser(req.admin)
+  const scopeFilter = coordinatorDesk
     ? await tdCoordinatorMyBookingsFilter(req.admin)
     : await assignedExecutiveFilterAsync(req.admin);
   query.$and = [...(query.$and || []), scopeFilter];
@@ -747,12 +765,30 @@ exports.assignExecutive = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'CRE can only assign test drives to Sales Executives or Sales Managers');
   }
 
+  const { isTdCoordinatorStaff } = require('../utils/tdCoordinatorAssignment');
   applyBookingExecutiveAssignment(doc, staff);
-  doc.assignmentStatus = 'PENDING_ACCEPTANCE';
-  doc.assignmentRespondedAt = undefined;
-  doc.assignmentRejectReason = undefined;
-  // Stay PENDING until executive accepts; do not auto-confirm on assign alone.
+  if (isTdCoordinatorStaff(staff)) {
+    doc.assignmentStatus = 'ACCEPTED';
+    doc.assignmentRespondedAt = new Date();
+    doc.assignmentRejectReason = undefined;
+  } else {
+    doc.assignmentStatus = 'PENDING_ACCEPTANCE';
+    doc.assignmentRespondedAt = undefined;
+    doc.assignmentRejectReason = undefined;
+  }
   await doc.save();
+
+  if (isTdCoordinatorStaff(staff) && doc.leadId) {
+    const Lead = require('../models/Lead');
+    const { applyLeadAssignment, touchLeadActivity } = require('../utils/leadAssignment');
+    const lead = await Lead.findById(doc.leadId);
+    if (lead) {
+      applyLeadAssignment(lead, staff);
+      if (!lead.tdBookingId) lead.tdBookingId = doc._id;
+      touchLeadActivity(lead);
+      await lead.save();
+    }
+  }
 
   const { notifyTestDriveAssignment } = require('../utils/notifications');
   await notifyTestDriveAssignment({
