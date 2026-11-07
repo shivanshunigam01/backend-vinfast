@@ -287,6 +287,43 @@ async function assignedToStaffFilterAsync(admin) {
   return assignedToIdsFilter(staffIds, null, emails);
 }
 
+function createdBySelfIdsFilter(selfIds) {
+  const or = [];
+  for (const rawId of selfIds || []) {
+    const oid = toObjectId(rawId);
+    if (oid) {
+      or.push({ createdBy: oid }, { createdBy: String(rawId) });
+    } else {
+      or.push({ createdBy: String(rawId) });
+    }
+  }
+  if (!or.length) return { _id: null };
+  return { $or: or };
+}
+
+/**
+ * CRM list visibility for SE / SM / BM: team assignments + unassigned leads they created
+ * (so a lead saved without picking an executive still appears for the creator).
+ */
+async function teamCrmLeadVisibilityFilterAsync(admin) {
+  const staffIds = await resolveStaffIdsForUser(admin);
+  const emails = await resolveStaffEmailsForIds(staffIds, null);
+  const assignedPart = assignedToIdsFilter(staffIds, null, emails);
+
+  const selfIds = await resolveSelfStaffIds(admin);
+  const unassignedOwned = {
+    $and: [
+      {
+        $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }],
+      },
+      createdBySelfIdsFilter(selfIds),
+    ],
+  };
+
+  const assignedBranches = assignedPart.$or ? [...assignedPart.$or] : [assignedPart];
+  return { $or: [...assignedBranches, unassignedOwned] };
+}
+
 function leadAssignedToStaff(lead, staffId, staffEmail) {
   const assigned = lead?.assignedTo?._id || lead?.assignedTo;
   const email = normalizeEmail(staffEmail);
@@ -304,7 +341,11 @@ async function leadReadableByAdmin(lead, admin) {
   const leadEmail = normalizeEmail(lead?.assignedToEmail);
 
   if (!assigned && !leadEmail) {
-    return isCreUser(admin) || isCrmDeskUser(admin);
+    if (isCreUser(admin) || isCrmDeskUser(admin)) return true;
+    const selfIds = await resolveSelfStaffIds(admin);
+    const createdBy = lead?.createdBy?._id || lead?.createdBy;
+    if (createdBy && selfIds.includes(String(createdBy))) return true;
+    return false;
   }
 
   const teamIds = await resolveSalesTeamStaffIds(admin);
@@ -486,6 +527,8 @@ module.exports = {
   resolveStaffEmailsForIds,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
+  teamCrmLeadVisibilityFilterAsync,
+  createdBySelfIdsFilter,
   assignedToIdsFilter,
   leadAssignedToStaff,
   leadReadableByAdmin,

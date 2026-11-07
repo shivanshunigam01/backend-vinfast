@@ -45,8 +45,11 @@ const {
   isCreAssignableDesignation,
   isExecutiveScopedUser,
   isTeamScopedUser,
+  isSalesTeamAnchorDesignation,
   assignedToStaffFilter,
   assignedToStaffFilterAsync,
+  teamCrmLeadVisibilityFilterAsync,
+  resolveSelfStaffIds,
   resolveStaffIdsForUser,
   leadAssignedToStaff,
   leadReadableByAdmin,
@@ -194,6 +197,30 @@ async function resolveSalesConsultant(executiveId, salesConsultant, viewer) {
   return null;
 }
 
+/** Default assignee when SM/SE create a lead without picking someone in User Master. */
+async function resolveAssigneeOnLeadCreate(admin, body = {}) {
+  const assignee = await resolveSalesConsultant(body.executiveId, body.salesConsultant, admin);
+  if (assignee) return assignee;
+
+  if (isCreUser(admin) || isCrmDeskUser(admin)) return null;
+  if (!isTeamScopedUser(admin)) return null;
+
+  const ownsLead =
+    isExecutiveScopedUser(admin) ||
+    isSalesTeamAnchorDesignation(admin.designation) ||
+    admin.role === 'executive';
+
+  if (!ownsLead) return null;
+
+  const selfIds = await resolveSelfStaffIds(admin);
+  const primaryId = toObjectId(selfIds[0]) || selfIds[0] || admin._id;
+  return {
+    _id: primaryId,
+    name: admin.name || '',
+    email: admin.email,
+  };
+}
+
 function normalizeImportModel(raw) {
   const s = String(raw || '').trim();
   if (!s) return 'VF 7';
@@ -269,17 +296,11 @@ async function createOneCrmLeadFromBody(admin, body = {}) {
   let assignedToEmail;
   let assignLabel = '';
 
-  if (admin.role === 'executive' && !isCreUser(admin)) {
-    assignedTo = toObjectId(admin._id) || admin._id;
-    assignedToEmail = admin.email;
-    assignLabel = admin.name;
-  } else {
-    const assignee = await resolveSalesConsultant(executiveId, salesConsultant, admin);
-    if (assignee) {
-      assignedTo = assignee._id;
-      assignedToEmail = assignee.email;
-      assignLabel = assignee.name;
-    }
+  const assignee = await resolveAssigneeOnLeadCreate(admin, { executiveId, salesConsultant });
+  if (assignee) {
+    assignedTo = assignee._id;
+    assignedToEmail = assignee.email;
+    assignLabel = assignee.name;
   }
 
   const leadSource =
@@ -543,7 +564,7 @@ async function buildLeadQuery(admin, queryParams = {}) {
       query.$and.push(leadAssignedMongoFilter());
       query.$and.push(await assignedToStaffFilterAsync(admin));
     } else {
-      query.$and.push(await assignedToStaffFilterAsync(admin));
+      query.$and.push(await teamCrmLeadVisibilityFilterAsync(admin));
     }
 
     if (queryParams.assignedTo) {
@@ -2116,17 +2137,11 @@ exports.reopenLostLead = asyncHandler(async (req, res) => {
   let assignedTo;
   let assignedToEmail;
   let assignLabel = '';
-  if (req.body?.executiveId) {
-    const assignee = await resolveSalesConsultant(req.body.executiveId, null, req.admin);
-    if (assignee) {
-      assignedTo = assignee._id;
-      assignedToEmail = assignee.email;
-      assignLabel = assignee.name;
-    }
-  } else if (req.admin.role === 'executive' && !isCreUser(req.admin)) {
-    assignedTo = toObjectId(req.admin._id) || req.admin._id;
-    assignedToEmail = req.admin.email;
-    assignLabel = req.admin.name;
+  const assignee = await resolveAssigneeOnLeadCreate(req.admin, { executiveId: req.body?.executiveId });
+  if (assignee) {
+    assignedTo = assignee._id;
+    assignedToEmail = assignee.email;
+    assignLabel = assignee.name;
   } else if (lead.assignedTo) {
     assignedTo = lead.assignedTo;
     assignedToEmail = lead.assignedToEmail;
