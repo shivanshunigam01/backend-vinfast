@@ -12,6 +12,15 @@ const DESIGNATION_LABELS = {
   md: 'Managing Director',
 };
 
+function isPlaceholderCustomerName(name, mobile) {
+  const n = String(name || '').trim();
+  if (!n || /^customer$/i.test(n)) return true;
+  const m = String(mobile || '').replace(/\D/g, '').slice(-10);
+  if (m && (n === m || n.replace(/\D/g, '').endsWith(m))) return true;
+  if (/^\d{10}$/.test(n.replace(/\s/g, ''))) return true;
+  return false;
+}
+
 function formatCustomer(customer) {
   if (!customer || typeof customer !== 'object') return null;
   const name = customer.name || customer.customerName;
@@ -83,39 +92,50 @@ function formatTestDrive(testDrive) {
 }
 
 function resolveCustomerForBooking(plain) {
+  const denormName = String(plain.customerName || '').trim();
+  const denormMobile = String(plain.customerMobile || '').replace(/\D/g, '').slice(-10);
+
   const fromRef = formatCustomer(plain.customerId);
-  if (fromRef?.name) return fromRef;
-
-  const extracted = extractCustomerFromBooking(plain);
-  if (extracted) {
-    return {
-      _id:
-        plain.customerId && typeof plain.customerId === 'object'
-          ? plain.customerId._id
-          : plain.customerId,
-      name: extracted.name,
-      mobile: extracted.mobile,
-      customerId: extracted.customerId,
-      email: extracted.email,
-      city: extracted.city,
-    };
-  }
-
   const td = formatTestDrive(plain.testDriveId);
-  if (td?.customerName || td?.mobile) {
-    return {
-      _id:
-        plain.customerId && typeof plain.customerId === 'object'
-          ? plain.customerId._id
-          : plain.customerId,
-      name: td.customerName || 'Customer',
-      mobile: td.mobile || '',
-      email: td.email,
-      city: td.city,
-    };
-  }
+  const extracted = extractCustomerFromBooking(plain);
 
-  return null;
+  const candidates = [
+    { name: denormName, mobile: denormMobile || fromRef?.mobile },
+    { name: td?.customerName, mobile: td?.mobile },
+    { name: extracted?.name, mobile: extracted?.mobile, email: extracted?.email, city: extracted?.city },
+    { name: fromRef?.name, mobile: fromRef?.mobile, email: fromRef?.email, city: fromRef?.city },
+  ];
+
+  let best = candidates.find((c) => c.name && !isPlaceholderCustomerName(c.name, c.mobile));
+  if (!best) best = candidates.find((c) => c.name || c.mobile);
+  if (!best && !fromRef && !extracted && !td?.mobile) return null;
+
+  const mobile =
+    best?.mobile ||
+    fromRef?.mobile ||
+    extracted?.mobile ||
+    td?.mobile ||
+    denormMobile ||
+    '';
+  const name =
+    (best?.name && !isPlaceholderCustomerName(best.name, mobile) ? best.name : null) ||
+    denormName ||
+    td?.customerName ||
+    extracted?.name ||
+    fromRef?.name ||
+    (mobile ? 'Customer' : 'Customer');
+
+  return {
+    _id:
+      plain.customerId && typeof plain.customerId === 'object'
+        ? plain.customerId._id
+        : plain.customerId,
+    name,
+    mobile,
+    customerId: extracted?.customerId || fromRef?.customerId,
+    email: best?.email || fromRef?.email || td?.email || extracted?.email,
+    city: best?.city || fromRef?.city || td?.city || extracted?.city,
+  };
 }
 
 function formatTdBooking(doc) {

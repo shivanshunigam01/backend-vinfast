@@ -528,6 +528,33 @@ async function assignedExecutiveFilterAsync(admin) {
   return assignedExecutiveIdsFilter(staffIds, null, emails);
 }
 
+/**
+ * My Test Drives queue: executives see only bookings assigned to them (by staff id or email).
+ * Managers / CRE / coordinators use the wider team filter.
+ */
+async function assignedExecutiveMyBookingsFilter(admin) {
+  const staffIds = isExecutiveScopedUser(admin)
+    ? await resolveSelfStaffIds(admin)
+    : await resolveStaffIdsForUser(admin);
+  const emails = await resolveStaffEmailsForIds(staffIds, admin?.email);
+  return assignedExecutiveIdsFilter(staffIds, admin?.email, emails);
+}
+
+/** Link bookings tagged with this executive's email to their canonical staff id (coordinator assign). */
+async function repairBookingsAssignedByEmail(admin) {
+  const email = normalizeEmail(admin?.email);
+  if (!email) return;
+  const primaryId = toObjectId(admin._id) || admin._id;
+  if (!primaryId) return;
+
+  const TDBooking = require('../models/TDBooking');
+  await TDBooking.updateMany(
+    { assignedExecutiveEmail: email },
+    { $set: { assignedExecutive: primaryId } },
+    { timestamps: false },
+  );
+}
+
 function bookingAssignedToStaff(booking, staffId, staffEmail) {
   const assigned = booking?.assignedExecutive?._id || booking?.assignedExecutive;
   const email = normalizeEmail(staffEmail);
@@ -630,6 +657,8 @@ module.exports = {
   repairExecutiveLeadAssignments,
   assignedExecutiveIdsFilter,
   assignedExecutiveFilterAsync,
+  assignedExecutiveMyBookingsFilter,
+  repairBookingsAssignedByEmail,
   bookingAssignedToStaff,
   isTdBookingAssignee,
   applyBookingExecutiveAssignment,

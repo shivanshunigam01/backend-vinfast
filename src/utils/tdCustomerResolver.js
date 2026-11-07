@@ -114,7 +114,14 @@ async function upsertTDCustomer(patch) {
 async function ensureBookingCustomer(doc) {
   const plain = doc.toObject ? doc.toObject() : doc;
   const populated = plain.customerId;
-  if (populated && typeof populated === 'object' && populated.name) {
+  const populatedName = populated && typeof populated === 'object' ? String(populated.name || '').trim() : '';
+  const denormName = String(plain.customerName || '').trim();
+  if (
+    populated &&
+    typeof populated === 'object' &&
+    populatedName &&
+    (!denormName || populatedName === denormName || !/^\d{10}$/.test(populatedName))
+  ) {
     return doc;
   }
 
@@ -127,6 +134,10 @@ async function ensureBookingCustomer(doc) {
 
   const customer = await upsertTDCustomer(source);
   doc.customerId = customer._id;
+  if (denormName && customer.name !== denormName && !/^\d{10}$/.test(denormName)) {
+    customer.name = denormName;
+    await customer.save();
+  }
   await doc.save();
   await doc.populate({ path: 'customerId' });
   return doc;

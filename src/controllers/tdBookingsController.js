@@ -20,6 +20,8 @@ const {
   isExecutiveScopedUser,
   isTeamScopedUser,
   assignedExecutiveFilterAsync,
+  assignedExecutiveMyBookingsFilter,
+  repairBookingsAssignedByEmail,
   assignedExecutiveIdsFilter,
   bookingAssignedToStaff,
   applyBookingExecutiveAssignment,
@@ -389,15 +391,38 @@ exports.listMyBookings = asyncHandler(async (req, res) => {
   const query = buildBookingListQuery(req);
 
   await repairExecutiveBookingAssignments(req.admin);
+  await repairBookingsAssignedByEmail(req.admin);
   const scopeFilter = coordinatorDesk
     ? await tdCoordinatorMyBookingsFilter(req.admin)
-    : await assignedExecutiveFilterAsync(req.admin);
+    : await assignedExecutiveMyBookingsFilter(req.admin);
   query.$and = [...(query.$and || []), scopeFilter];
 
-  const [docs, total] = await Promise.all([
+  const activeFirst = [
+    'IN_PROGRESS',
+    'CONFIRMED',
+    'RESCHEDULED',
+    'PENDING',
+    'COMPLETED',
+    'CANCELLED',
+    'MISSED',
+  ];
+
+  const [rawDocs, total] = await Promise.all([
     TDBooking.find(query).populate(BOOKING_POPULATE).sort({ createdAt: -1, slotDate: -1, slotTime: -1 }).skip(skip).limit(limit),
     TDBooking.countDocuments(query),
   ]);
+  const docs = [...rawDocs].sort((a, b) => {
+    const ap = a.toObject ? a.toObject() : a;
+    const bp = b.toObject ? b.toObject() : b;
+    const ai = activeFirst.indexOf(String(ap.bookingStatus || '').toUpperCase());
+    const bi = activeFirst.indexOf(String(bp.bookingStatus || '').toUpperCase());
+    const ar = ai === -1 ? 99 : ai;
+    const br = bi === -1 ? 99 : bi;
+    if (ar !== br) return ar - br;
+    const ad = new Date(ap.slotDate || ap.createdAt).getTime();
+    const bd = new Date(bp.slotDate || bp.createdAt).getTime();
+    return bd - ad;
+  });
   const enriched = await ensureBookingsCustomers(docs);
   const data = enriched.map(formatTdBooking);
   return successResponse(res, data, undefined, 200, { page, limit, total });
