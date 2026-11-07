@@ -48,15 +48,18 @@ exports.checkBookingEligibility = asyncHandler(async (req, res) => {
   const model = String(req.query.model || '').trim();
 
   const summary = await evaluateRepeatDrive(mobile, model);
-  const isAdmin = ['manager', 'superadmin'].includes(req.admin.role);
+  const isAdmin =
+    req.admin?.userType === 'admin' || ['manager', 'superadmin'].includes(req.admin?.role);
   return successResponse(res, {
     mobile,
     model: model || null,
     activeSameModel: summary.activeSameModel,
+    activeAny: summary.activeAny,
     completedSameModel: summary.completedSameModel,
     completedAny: summary.completedAny,
     requiresApproval: Boolean(model && summary.completedSameModel),
     canApproveRepeat: isAdmin,
+    canModifyActive: isAdmin,
     bookings: summary.bookings,
   });
 });
@@ -269,11 +272,7 @@ async function assertBookingReadable(booking, admin) {
   throw new ApiError(403, 'This booking is not in your team');
 }
 
-function assertAdminEditRights(admin) {
-  if (!['manager', 'superadmin'].includes(admin.role)) {
-    throw new ApiError(403, 'Only managers and admins can edit booking details');
-  }
-}
+const { assertTdBookingManagerEdit, applyTdBookingCorrections } = require('../utils/tdBookingCorrection');
 
 exports.listBookings = asyncHandler(async (req, res) => {
   const { scheduleRepairUnassignedTestDriveBookings } = require('../utils/tdCoordinatorAssignment');
@@ -470,84 +469,10 @@ const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
  * and the original website TestDrive record so all views stay consistent.
  */
 exports.updateBookingDetails = asyncHandler(async (req, res) => {
-  assertAdminEditRights(req.admin);
+  assertTdBookingManagerEdit(req.admin);
   const doc = await findBookingById(req.params.id);
 
-  const { customerName, customerMobile, customerEmail, customerCity, preferredModel, remarks } =
-    req.body || {};
-
-  const name = customerName !== undefined ? String(customerName).trim() : undefined;
-  if (name !== undefined && !name) throw new ApiError(400, 'Customer name cannot be empty');
-
-  let mobile;
-  if (customerMobile !== undefined) {
-    mobile = String(customerMobile).replace(/\D/g, '').slice(-10);
-    if (!MOBILE_10_REGEX.test(mobile)) {
-      throw new ApiError(400, 'Enter a valid 10-digit Indian mobile number');
-    }
-  }
-
-  const email = customerEmail !== undefined ? String(customerEmail).trim() : undefined;
-  const city = customerCity !== undefined ? String(customerCity).trim() : undefined;
-
-  let model;
-  if (preferredModel !== undefined) {
-    model = String(preferredModel).trim();
-    const validModels = await getActiveModelNames();
-    if (!validModels.includes(model)) {
-      throw new ApiError(400, `Invalid model. Use one of: ${validModels.join(', ')}`);
-    }
-  }
-
-  // Booking (denormalized fields)
-  if (name !== undefined) doc.customerName = name;
-  if (mobile !== undefined) doc.customerMobile = mobile;
-  if (email !== undefined) doc.customerEmail = email || undefined;
-  if (city !== undefined) doc.customerCity = city || undefined;
-  if (remarks !== undefined) doc.remarks = String(remarks).trim() || undefined;
-
-  if (model !== undefined && doc.preferredModel !== model) {
-    doc.preferredModel = model;
-    // Release an assigned demo vehicle that no longer matches the chosen model.
-    if (doc.vehicleId) {
-      const assigned = await TDVehicle.findById(doc.vehicleId._id || doc.vehicleId);
-      if (assigned && assigned.model !== model) {
-        if (['BOOKED', 'AVAILABLE'].includes(assigned.status)) {
-          assigned.status = 'AVAILABLE';
-          await assigned.save();
-        }
-        doc.vehicleId = undefined;
-      }
-    }
-  }
-
-  await doc.save();
-
-  // Sync the linked TDCustomer profile.
-  const customerRef = doc.customerId?._id || doc.customerId;
-  if (customerRef && (name !== undefined || mobile !== undefined || email !== undefined || city !== undefined)) {
-    const update = {};
-    if (name !== undefined) update.name = name;
-    if (mobile !== undefined) update.mobile = mobile;
-    if (email !== undefined) update.email = email || undefined;
-    if (city !== undefined) update.city = city || undefined;
-    await TDCustomer.updateOne({ _id: customerRef }, { $set: update });
-  }
-
-  // Sync the original website TestDrive record shown in the booking dialog.
-  const testDriveRef = doc.testDriveId?._id || doc.testDriveId;
-  if (testDriveRef) {
-    const update = {};
-    if (name !== undefined) update.customerName = name;
-    if (mobile !== undefined) update.mobile = mobile;
-    if (email !== undefined) update.email = email || undefined;
-    if (city !== undefined) update.city = city || undefined;
-    if (model !== undefined) update.model = model;
-    if (remarks !== undefined) update.remarks = String(remarks).trim() || undefined;
-    if (Object.keys(update).length) {
-      await TestDrive.updateOne({ _id: testDriveRef }, { $set: update }, { runValidators: true });
-    }
-  }
+  await applyTdBookingCorrections(doc, req.body || {});
 
   const fresh = await findBookingById(doc._id);
   return successResponse(res, formatTdBooking(fresh), 'Booking details updated');
@@ -1044,15 +969,7 @@ exports.rescheduleBooking = asyncHandler(async (req, res) => {
   if (!slotDate || !slotTime) throw new ApiError(400, 'slotDate and slotTime are required');
 
   const doc = await findBookingById(req.params.id);
-  const nextDate = parseSlotDate(slotDate);
-  if (!nextDate) throw new ApiError(400, 'Invalid slotDate');
-
-  doc.slotDate = nextDate;
-  doc.slotTime = String(slotTime).trim();
-  if (!['COMPLETED', 'CANCELLED', 'MISSED'].includes(doc.bookingStatus)) {
-    doc.bookingStatus = 'RESCHEDULED';
-  }
-  await doc.save();
+  await applyTdBookingCorrections(doc, { slotDate, slotTime, syncLeadModel: false });
   await doc.populate(BOOKING_POPULATE);
   try {
     const { notifyTdEvent } = require('../utils/staffNotifications');

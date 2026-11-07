@@ -27,8 +27,11 @@ async function findBookingsByMobile(mobile10) {
 async function evaluateRepeatDrive(mobile10, model) {
   const bookings = await findBookingsByMobile(mobile10);
   const sameModel = bookings.filter((b) => (b.preferredModel || '') === String(model || '').trim());
+  const activeAny =
+    bookings.find((b) => ACTIVE_BOOKING_STATUSES.includes(b.bookingStatus)) || null;
   return {
     bookings,
+    activeAny,
     activeSameModel: sameModel.find((b) => ACTIVE_BOOKING_STATUSES.includes(b.bookingStatus)) || null,
     completedSameModel: sameModel.find((b) => b.bookingStatus === 'COMPLETED') || null,
     completedAny: bookings.find((b) => b.bookingStatus === 'COMPLETED') || null,

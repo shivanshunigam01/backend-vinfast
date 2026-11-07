@@ -159,6 +159,7 @@ router.patch(
   requireAnyModuleAction([
     ['td_bookings', 'reschedule_approve'],
     ['td_my_bookings', 'reschedule'],
+    ['td_bookings', 'update'],
   ]),
   tdBookingsController.rescheduleBooking,
 );

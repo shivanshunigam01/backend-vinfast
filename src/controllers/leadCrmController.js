@@ -74,6 +74,8 @@ const {
   getCustomerTestDriveState,
   findCustomerByMobile,
 } = require('../utils/customerHistoryBuilder');
+const { applyTdBookingCorrections } = require('../utils/tdBookingCorrection');
+const { ACTIVE_BOOKING_STATUSES } = require('../utils/tdRepeatDrive');
 const {
   syncLeadNextFollowUp,
   ensureNextPendingFollowUp,
@@ -1865,11 +1867,65 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
   }
 
   const state = await getCustomerTestDriveState(lead.mobile);
+  const isAdmin = isCrmManagerLike(req.admin);
+
   if (state.hasActiveBooking) {
-    throw new ApiError(409, 'This customer already has an active test drive booking');
+    if (!isAdmin) {
+      throw new ApiError(409, 'This customer already has an active test drive booking');
+    }
+
+    const activeRows = state.bookings.filter(
+      (b) => ACTIVE_BOOKING_STATUSES.includes(b.bookingStatus) && b.approvalStatus !== 'REJECTED',
+    );
+    let target = null;
+    if (lead.tdBookingId) {
+      target = activeRows.find((b) => String(b._id) === String(lead.tdBookingId)) || null;
+    }
+    if (!target) {
+      target =
+        activeRows.find((b) => b.leadId && String(b.leadId) === String(lead._id)) || activeRows[0] || null;
+    }
+    if (!target?._id) {
+      throw new ApiError(409, 'This customer already has an active test drive booking');
+    }
+
+    const doc = await TDBooking.findById(target._id);
+    if (!doc) throw new ApiError(404, 'Active test drive booking not found');
+
+    await applyTdBookingCorrections(doc, {
+      preferredModel: chosenModel,
+      preferredVariant: preferredVariant || undefined,
+      slotDate,
+      slotTime,
+      remarks: remarks ? String(remarks).trim() : undefined,
+      syncLeadModel: true,
+    });
+
+    touchLeadActivity(lead);
+    await lead.save();
+
+    await doc.populate({
+      path: 'assignedExecutive',
+      select: 'name email designation reportsTo',
+      populate: { path: 'reportsTo', select: 'name email' },
+    });
+    await doc.populate('customerId', 'name mobile');
+    await LeadStageHistory.create({
+      leadId: lead._id,
+      bookingId: doc._id,
+      fromStage: lead.status,
+      toStage: lead.status,
+      changedBy: req.admin._id,
+      reason: `Active test drive updated (${doc.bookingId}): ${chosenModel}, ${normalizeSlotTime(slotTime)} on ${slotDate}`,
+    });
+
+    return successResponse(
+      res,
+      formatTdBooking(doc.toObject ? doc.toObject() : doc),
+      'Active test drive updated',
+    );
   }
 
-  const isAdmin = isCrmManagerLike(req.admin);
   const isRepeat = state.hasCompletedTestDrive;
   const approvalStatus = isRepeat ? (isAdmin ? 'APPROVED' : 'PENDING') : 'NOT_REQUIRED';
 
