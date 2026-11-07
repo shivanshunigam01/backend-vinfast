@@ -29,20 +29,36 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 async function findTdCoordinatorStaff() {
   const email = tdCoordinatorEmail();
-  if (!email) return null;
-
   const now = Date.now();
-  if (cachedCoordinator && cacheExpiresAt > now && normalizeEmail(cachedCoordinator.email) === email) {
+  if (
+    cachedCoordinator &&
+    cacheExpiresAt > now &&
+    (!email || normalizeEmail(cachedCoordinator.email) === email)
+  ) {
     return cachedCoordinator;
   }
 
-  const staff = await TDStaff.findOne({ email, active: true }).select('name email role designation');
+  let staff = null;
+  if (email) {
+    staff = await TDStaff.findOne({ email, active: { $ne: false } }).select('name email role designation');
+  }
+  if (!staff) {
+    staff = await TDStaff.findOne({
+      active: { $ne: false },
+      designation: { $regex: /(td_coordinator|test_drive_coordinator)/i },
+    })
+      .sort({ createdAt: 1 })
+      .select('name email role designation');
+  }
   if (staff) {
     cachedCoordinator = staff;
     cacheExpiresAt = now + CACHE_TTL_MS;
   } else {
     cachedCoordinator = null;
     cacheExpiresAt = 0;
+    console.warn(
+      `[tdCoordinator] No active coordinator (set TD_COORDINATOR_EMAIL or td_coordinator in User Master)`,
+    );
   }
   return staff;
 }
@@ -59,7 +75,10 @@ function isTdBookingUnassigned(booking) {
   return true;
 }
 
-async function assignNewBookingToTdCoordinator(booking, { notify = false, actorId, save = true } = {}) {
+async function assignNewBookingToTdCoordinator(
+  booking,
+  { notify = false, actorId, save = true, queueForCoordinator = false } = {},
+) {
   if (!booking) return null;
   if (!isTdBookingUnassigned(booking)) return booking;
 
@@ -73,6 +92,12 @@ async function assignNewBookingToTdCoordinator(booking, { notify = false, actorI
   booking.assignmentStatus = 'ACCEPTED';
   booking.assignmentRespondedAt = new Date();
   booking.assignmentRejectReason = undefined;
+  if (
+    queueForCoordinator &&
+    !['COMPLETED', 'CANCELLED'].includes(String(booking.bookingStatus || '').toUpperCase())
+  ) {
+    booking.bookingStatus = 'PENDING';
+  }
 
   if (save) {
     await booking.save();
@@ -93,6 +118,27 @@ async function assignNewBookingToTdCoordinator(booking, { notify = false, actorI
   }
 
   return booking;
+}
+
+/**
+ * Website + Lead CRM intake: clear any prior executive and queue on the TD coordinator
+ * (demo car, slot confirm, delegate to SE) — same as public test-drive sync.
+ */
+async function routeIntakeBookingToTdCoordinator(booking, { actorId, notify = true, save = true } = {}) {
+  if (!booking) return null;
+  applyBookingExecutiveAssignment(booking, null);
+  booking.assignmentStatus = 'UNASSIGNED';
+  booking.assignmentRespondedAt = undefined;
+  booking.assignmentRejectReason = undefined;
+
+  const updated = await assignNewBookingToTdCoordinator(booking, { notify, actorId, save });
+  const exec = updated?.assignedExecutive?._id || updated?.assignedExecutive;
+  if (!exec && !updated?.assignedExecutiveEmail) {
+    console.warn(
+      '[tdCoordinator] Booking saved without coordinator — configure TD_COORDINATOR_EMAIL or td_coordinator in User Master',
+    );
+  }
+  return updated;
 }
 
 /**
@@ -160,6 +206,7 @@ module.exports = {
   findTdCoordinatorStaff,
   isTdBookingUnassigned,
   assignNewBookingToTdCoordinator,
+  routeIntakeBookingToTdCoordinator,
   repairUnassignedActiveTestDriveBookings,
   scheduleRepairUnassignedTestDriveBookings,
   OPEN_TD_BOOKING_STATUSES,

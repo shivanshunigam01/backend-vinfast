@@ -1871,8 +1871,8 @@ exports.bookTestDriveForLead = asyncHandler(async (req, res) => {
 
   const pendingApproval = approvalStatus === 'PENDING';
   if (!pendingApproval) {
-    const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
-    await assignNewBookingToTdCoordinator(booking, {
+    const { routeIntakeBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+    await routeIntakeBookingToTdCoordinator(booking, {
       notify: true,
       actorId: req.admin._id,
     });

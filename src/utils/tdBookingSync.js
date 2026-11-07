@@ -101,7 +101,8 @@ async function syncTestDriveToTdBooking(testDrive) {
     customerCity: testDrive.city,
   });
 
-  await assignNewBookingToTdCoordinator(booking, { notify: true });
+  const { routeIntakeBookingToTdCoordinator } = require('./tdCoordinatorAssignment');
+  await routeIntakeBookingToTdCoordinator(booking, { notify: true });
   return booking;
 }
 

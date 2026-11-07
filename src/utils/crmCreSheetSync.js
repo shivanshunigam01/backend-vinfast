@@ -231,8 +231,8 @@ async function syncTestDriveBookingFromCreSheet(lead, { assigneeId } = {}) {
   }
 
   if (!assigneeId && bookingStatus !== 'COMPLETED') {
-    const { assignNewBookingToTdCoordinator } = require('./tdCoordinatorAssignment');
-    await assignNewBookingToTdCoordinator(booking, { notify: true });
+    const { routeIntakeBookingToTdCoordinator } = require('./tdCoordinatorAssignment');
+    await routeIntakeBookingToTdCoordinator(booking, { notify: true });
   }
 
   row.tdBookingId = booking._id;

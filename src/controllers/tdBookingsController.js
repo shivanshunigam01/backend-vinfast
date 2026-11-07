@@ -144,8 +144,8 @@ exports.createBookingByStaff = asyncHandler(async (req, res) => {
     createdByAdmin: req.admin._id,
   });
 
-  const { assignNewBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
-  await assignNewBookingToTdCoordinator(booking, { notify: true, actorId: req.admin._id });
+  const { routeIntakeBookingToTdCoordinator } = require('../utils/tdCoordinatorAssignment');
+  await routeIntakeBookingToTdCoordinator(booking, { notify: true, actorId: req.admin._id });
 
   // Link the CRM side: update the source lead when given, otherwise run the standard intake.
   let lead = null;
