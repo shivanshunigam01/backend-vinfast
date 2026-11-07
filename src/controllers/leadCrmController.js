@@ -565,15 +565,11 @@ async function buildLeadQuery(admin, queryParams = {}) {
       query.$and.push(leadAssignedMongoFilter());
       query.$and.push(await assignedToStaffFilterAsync(admin));
     } else {
-      const teamVis = await teamCrmLeadVisibilityFilterAsync(admin);
-      const {
-        isTdCoordinatorUser,
-        crmTdBookedLeadsMongoFilter,
-      } = require('../utils/tdCoordinatorAssignment');
+      const { isTdCoordinatorUser, coordinatorCrmLeadsVisibilityFilter } = require('../utils/tdCoordinatorAssignment');
       if (isTdCoordinatorUser(admin)) {
-        query.$and.push({ $or: [teamVis, crmTdBookedLeadsMongoFilter()] });
+        query.$and.push(await coordinatorCrmLeadsVisibilityFilter(admin));
       } else {
-        query.$and.push(teamVis);
+        query.$and.push(await teamCrmLeadVisibilityFilterAsync(admin));
       }
     }
 
@@ -1625,6 +1621,19 @@ exports.assignLeadExecutive = asyncHandler(async (req, res) => {
 
   const updated = await Lead.findById(lead._id).populate(LEAD_POPULATE);
   if (!updated) throw new ApiError(404, 'Lead not found');
+
+  if (executiveId && assignee) {
+    const {
+      syncTdBookingForCoordinatorLeadAssignment,
+      isTdCoordinatorStaff,
+    } = require('../utils/tdCoordinatorAssignment');
+    if (isTdCoordinatorStaff(assignee)) {
+      await syncTdBookingForCoordinatorLeadAssignment(updated, assignee, {
+        actorId: req.admin._id,
+        notify: true,
+      });
+    }
+  }
 
   const assignLabel = assignee ? assignee.name : 'Unassigned';
   const prevLabel = prevAssignee?.name || 'Unassigned';

@@ -371,9 +371,16 @@ async function leadReadableByAdmin(lead, admin) {
   const {
     isTdCoordinatorUser,
     isCrmLeadTdBookedForCoordinator,
+    collectCoordinatorStaffIds,
   } = require('./tdCoordinatorAssignment');
-  if (isTdCoordinatorUser(admin) && isCrmLeadTdBookedForCoordinator(lead)) {
-    return true;
+  if (isTdCoordinatorUser(admin)) {
+    if (isCrmLeadTdBookedForCoordinator(lead)) return true;
+    const { ids, emails } = await collectCoordinatorStaffIds();
+    const assigned = lead?.assignedTo?._id || lead?.assignedTo;
+    if (assigned && ids.includes(String(assigned))) return true;
+    const leadEmail = normalizeEmail(lead?.assignedToEmail);
+    if (leadEmail && emails.includes(leadEmail)) return true;
+    if (leadEmail && normalizeEmail(admin.email) === leadEmail) return true;
   }
 
   const selfIds = await resolveSelfStaffIds(admin);

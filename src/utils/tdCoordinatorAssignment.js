@@ -33,16 +33,76 @@ function crmTdBookedLeadsMongoFilter() {
   };
 }
 
+function isTdCoordinatorDesignation(designation) {
+  const d = String(designation || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  return d.includes('td_coordinator') || d.includes('test_drive_coordinator');
+}
+
+/** TDStaff row is the dealership TD coordinator (User Master). */
+function isTdCoordinatorStaff(staff) {
+  if (!staff) return false;
+  const target = tdCoordinatorEmail();
+  if (target && normalizeEmail(staff.email) === target) return true;
+  return isTdCoordinatorDesignation(staff.designation);
+}
+
 /** Logged-in user is the TD coordinator (full staff list for TD assignment). */
 function isTdCoordinatorUser(admin) {
   if (!admin) return false;
   const target = tdCoordinatorEmail();
   if (target && normalizeEmail(admin.email) === target) return true;
-  const d = String(admin.designation || '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '_');
-  return d.includes('td_coordinator') || d.includes('test_drive_coordinator');
+  return isTdCoordinatorDesignation(admin.designation);
+}
+
+/** Every User Master row that represents the TD coordinator (duplicate-safe). */
+async function collectCoordinatorStaffIds() {
+  const ids = new Set();
+  const emails = new Set();
+
+  const primary = await findTdCoordinatorStaff();
+  if (primary?._id) ids.add(String(primary._id));
+  if (primary?.email) emails.add(normalizeEmail(primary.email));
+
+  const target = tdCoordinatorEmail();
+  if (target) {
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const byEmail = await TDStaff.find({
+      email: new RegExp(`^${escaped}$`, 'i'),
+      active: { $ne: false },
+    })
+      .select('_id email')
+      .lean();
+    for (const row of byEmail) {
+      ids.add(String(row._id));
+      if (row.email) emails.add(normalizeEmail(row.email));
+    }
+  }
+
+  const byDesignation = await TDStaff.find({
+    active: { $ne: false },
+    designation: { $regex: /(td_coordinator|test_drive_coordinator)/i },
+  })
+    .select('_id email')
+    .lean();
+  for (const row of byDesignation) {
+    ids.add(String(row._id));
+    if (row.email) emails.add(normalizeEmail(row.email));
+  }
+
+  return { ids: [...ids], emails: [...emails] };
+}
+
+/** Lead CRM list for TD coordinator: all TD-booked pipeline + leads assigned to any coordinator row. */
+async function coordinatorCrmLeadsVisibilityFilter(admin) {
+  const { assignedToIdsFilter } = require('./leadAssignment');
+  const { ids, emails } = await collectCoordinatorStaffIds();
+  const viewerEmail = normalizeEmail(admin?.email);
+  const emailList = [...new Set([...emails, ...(viewerEmail ? [viewerEmail] : [])])];
+  const assigned = assignedToIdsFilter(ids, viewerEmail, emailList);
+  return { $or: [crmTdBookedLeadsMongoFilter(), assigned] };
 }
 
 let cachedCoordinator = null;
@@ -62,7 +122,11 @@ async function findTdCoordinatorStaff() {
 
   let staff = null;
   if (email) {
-    staff = await TDStaff.findOne({ email, active: { $ne: false } }).select('name email role designation');
+    const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    staff = await TDStaff.findOne({
+      email: new RegExp(`^${escaped}$`, 'i'),
+      active: { $ne: false },
+    }).select('name email role designation');
   }
   if (!staff) {
     staff = await TDStaff.findOne({
@@ -199,10 +263,13 @@ let repairInFlight = false;
 let lastRepairAt = 0;
 const REPAIR_COOLDOWN_MS = 60 * 1000;
 
-/** My Test Drives: coordinator sees own assignments + entire open pipeline. */
+/** My Test Drives: coordinator desk — own rows (all duplicate ids) + open pipeline. */
 async function tdCoordinatorMyBookingsFilter(admin) {
-  const { assignedExecutiveFilterAsync } = require('./leadAssignment');
-  const selfFilter = await assignedExecutiveFilterAsync(admin);
+  const { assignedExecutiveIdsFilter } = require('./leadAssignment');
+  const { ids, emails } = await collectCoordinatorStaffIds();
+  const viewerEmail = normalizeEmail(admin?.email);
+  const emailList = [...new Set([...emails, ...(viewerEmail ? [viewerEmail] : [])])];
+  const selfFilter = assignedExecutiveIdsFilter(ids, viewerEmail, emailList);
   return {
     $or: [selfFilter, { bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES } }],
   };
@@ -213,38 +280,34 @@ async function tdCoordinatorMyBookingsFilter(admin) {
  * Re-queue open bookings that still have leadId but wrong/missing executive.
  */
 async function repairCrmIntakeBookingsToCoordinator({ limit = 150 } = {}) {
-  const coordinator = await findTdCoordinatorStaff();
-  if (!coordinator) return { repaired: 0 };
+  const { ids, emails } = await collectCoordinatorStaffIds();
+  if (!ids.length) return { repaired: 0 };
 
-  const coordOid = coordinator._id;
-  const coordEmail = normalizeEmail(coordinator.email);
   const docs = await TDBooking.find({
     bookingStatus: { $in: OPEN_TD_BOOKING_STATUSES },
     leadId: { $exists: true, $ne: null },
-    assignedExecutive: { $ne: coordOid },
-    ...(coordEmail
-      ? {
-          assignedExecutiveEmail: { $ne: coordEmail },
-        }
-      : {}),
   })
     .sort({ createdAt: -1 })
     .limit(Math.min(Math.max(limit, 1), 500));
 
   let repaired = 0;
   for (const doc of docs) {
-    const exec = doc.assignedExecutive?._id || doc.assignedExecutive;
-    if (exec && String(exec) === String(coordOid)) continue;
-    if (
-      doc.assignedExecutiveEmail &&
-      normalizeEmail(doc.assignedExecutiveEmail) === normalizeEmail(coordinator.email)
-    ) {
-      continue;
-    }
+    const exec = String(doc.assignedExecutive?._id || doc.assignedExecutive || '');
+    const em = normalizeEmail(doc.assignedExecutiveEmail);
+    if (exec && ids.includes(exec)) continue;
+    if (em && emails.includes(em)) continue;
     await routeIntakeBookingToTdCoordinator(doc, { notify: false, save: true });
     repaired += 1;
   }
   return { repaired };
+}
+
+/** When CRM assigns a TD-booked lead to the coordinator, sync the linked TDBooking row. */
+async function syncTdBookingForCoordinatorLeadAssignment(lead, assignee, { actorId, notify = true } = {}) {
+  if (!lead?.tdBookingId || !assignee || !isTdCoordinatorStaff(assignee)) return null;
+  const booking = await TDBooking.findById(lead.tdBookingId);
+  if (!booking) return null;
+  return routeIntakeBookingToTdCoordinator(booking, { notify, actorId, save: true });
 }
 
 /** Non-blocking repair (e.g. when staff open TD bookings). */
@@ -273,6 +336,11 @@ function scheduleRepairUnassignedTestDriveBookings(options = {}) {
 module.exports = {
   tdCoordinatorEmail,
   isTdCoordinatorUser,
+  isTdCoordinatorStaff,
+  isTdCoordinatorDesignation,
+  collectCoordinatorStaffIds,
+  coordinatorCrmLeadsVisibilityFilter,
+  syncTdBookingForCoordinatorLeadAssignment,
   CRM_TD_BOOKED_STATUSES,
   isCrmLeadTdBookedForCoordinator,
   crmTdBookedLeadsMongoFilter,
