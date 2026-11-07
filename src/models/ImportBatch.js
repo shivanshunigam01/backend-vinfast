@@ -19,6 +19,10 @@ const importBatchSchema = new mongoose.Schema(
       created: { type: Number, default: 0 },
       updated: { type: Number, default: 0 },
       failed: { type: Number, default: 0 },
+      /** Preview before Final Upload — not yet in CRM */
+      willCreate: { type: Number, default: 0 },
+      willUpdate: { type: Number, default: 0 },
+      skipped: { type: Number, default: 0 },
     },
     committedAt: { type: Date },
   },

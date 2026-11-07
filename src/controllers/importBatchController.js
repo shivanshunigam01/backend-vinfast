@@ -22,6 +22,35 @@ function mergeRowCorrections(raw, corrections = {}) {
   return out;
 }
 
+function summariseBatchRows(allRows) {
+  let valid = 0;
+  let errors = 0;
+  let corrected = 0;
+  let skipped = 0;
+  let willCreate = 0;
+  let willUpdate = 0;
+
+  for (const r of allRows) {
+    if (r.status === 'skipped') {
+      skipped += 1;
+      continue;
+    }
+    if (r.status === 'error') {
+      errors += 1;
+      continue;
+    }
+    if (r.status === 'valid' || r.status === 'corrected') {
+      valid += 1;
+      if (r.status === 'corrected') corrected += 1;
+      const dup = (r.issues || []).some((i) => i.code === 'duplicate_lead');
+      if (dup) willUpdate += 1;
+      else willCreate += 1;
+    }
+  }
+
+  return { valid, errors, corrected, skipped, willCreate, willUpdate };
+}
+
 async function buildBatchValidation(admin, leadRows, fileName) {
   if (!leadRows.length) throw new ApiError(400, 'No rows found in sheet');
   if (!isCurrentFormatSheet(leadRows)) {
@@ -40,9 +69,6 @@ async function buildBatchValidation(admin, leadRows, fileName) {
   const resolveConsultant = async (name) =>
     resolveSalesConsultant(null, name, admin);
 
-  let valid = 0;
-  let errors = 0;
-
   for (let i = 0; i < leadRows.length; i += 1) {
     const rowNum = i + 2;
     const raw = leadRows[i];
@@ -58,8 +84,6 @@ async function buildBatchValidation(admin, leadRows, fileName) {
     if (modelKey && !skip?.skip) batchKeys.add(modelKey);
 
     const status = skip?.skip ? 'skipped' : rowErrors.length ? 'error' : 'valid';
-    if (status === 'valid') valid += 1;
-    if (status === 'error') errors += 1;
 
     await ImportBatchRow.create({
       batchId: batch._id,
@@ -75,7 +99,8 @@ async function buildBatchValidation(admin, leadRows, fileName) {
     });
   }
 
-  batch.summary = { total: leadRows.length, valid, errors };
+  const staged = await ImportBatchRow.find({ batchId: batch._id }).lean();
+  batch.summary = { total: leadRows.length, ...summariseBatchRows(staged) };
   await batch.save();
 
   return batch;
@@ -146,12 +171,20 @@ exports.updateImportBatchRow = asyncHandler(async (req, res) => {
   await row.save();
 
   const allRows = await ImportBatchRow.find({ batchId: batch._id }).lean();
-  batch.summary.valid = allRows.filter((r) => r.status === 'valid' || r.status === 'corrected').length;
-  batch.summary.errors = allRows.filter((r) => r.status === 'error').length;
-  batch.summary.corrected = allRows.filter((r) => r.status === 'corrected').length;
+  batch.summary = {
+    ...batch.summary,
+    total: allRows.length,
+    ...summariseBatchRows(allRows),
+  };
   await batch.save();
 
-  return successResponse(res, row, 'Row updated');
+  return successResponse(
+    res,
+    row,
+    errors.length
+      ? 'Row still has errors — fix highlighted fields and save again.'
+      : 'Row checks passed — staged for Final Upload (not saved to CRM yet).',
+  );
 });
 
 exports.commitImportBatch = asyncHandler(async (req, res) => {
