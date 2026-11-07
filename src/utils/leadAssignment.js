@@ -368,6 +368,14 @@ async function leadReadableByAdmin(lead, admin) {
   if (!lead) return false;
   if (!isTeamScopedUser(admin)) return true;
 
+  const {
+    isTdCoordinatorUser,
+    isCrmLeadTdBookedForCoordinator,
+  } = require('./tdCoordinatorAssignment');
+  if (isTdCoordinatorUser(admin) && isCrmLeadTdBookedForCoordinator(lead)) {
+    return true;
+  }
+
   const selfIds = await resolveSelfStaffIds(admin);
   const createdBy = lead?.createdBy?._id || lead?.createdBy;
   if (createdBy && selfIds.includes(String(createdBy))) return true;

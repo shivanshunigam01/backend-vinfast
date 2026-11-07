@@ -11,6 +11,28 @@ function tdCoordinatorEmail() {
   return normalizeEmail(process.env.TD_COORDINATOR_EMAIL || DEFAULT_TD_COORDINATOR_EMAIL);
 }
 
+/** CRM pipeline stages the TD coordinator must see in Lead CRM (all assignees). */
+const CRM_TD_BOOKED_STATUSES = ['Test Drive Booked', 'Test Drive Scheduled'];
+
+function isCrmLeadTdBookedForCoordinator(lead) {
+  const plain = lead?.toObject ? lead.toObject() : lead;
+  if (!plain) return false;
+  const { normalizeStageLabel } = require('../constants/leadStages');
+  if (normalizeStageLabel(plain.status) === 'Test Drive Booked') return true;
+  if (plain.tdBookingId) return true;
+  return false;
+}
+
+/** Mongo filter: leads in “test drive booked” pipeline (any sales owner). */
+function crmTdBookedLeadsMongoFilter() {
+  return {
+    $or: [
+      { status: { $in: CRM_TD_BOOKED_STATUSES } },
+      { tdBookingId: { $exists: true, $ne: null } },
+    ],
+  };
+}
+
 /** Logged-in user is the TD coordinator (full staff list for TD assignment). */
 function isTdCoordinatorUser(admin) {
   if (!admin) return false;
@@ -203,6 +225,9 @@ function scheduleRepairUnassignedTestDriveBookings(options = {}) {
 module.exports = {
   tdCoordinatorEmail,
   isTdCoordinatorUser,
+  CRM_TD_BOOKED_STATUSES,
+  isCrmLeadTdBookedForCoordinator,
+  crmTdBookedLeadsMongoFilter,
   findTdCoordinatorStaff,
   isTdBookingUnassigned,
   assignNewBookingToTdCoordinator,

@@ -565,7 +565,16 @@ async function buildLeadQuery(admin, queryParams = {}) {
       query.$and.push(leadAssignedMongoFilter());
       query.$and.push(await assignedToStaffFilterAsync(admin));
     } else {
-      query.$and.push(await teamCrmLeadVisibilityFilterAsync(admin));
+      const teamVis = await teamCrmLeadVisibilityFilterAsync(admin);
+      const {
+        isTdCoordinatorUser,
+        crmTdBookedLeadsMongoFilter,
+      } = require('../utils/tdCoordinatorAssignment');
+      if (isTdCoordinatorUser(admin)) {
+        query.$and.push({ $or: [teamVis, crmTdBookedLeadsMongoFilter()] });
+      } else {
+        query.$and.push(teamVis);
+      }
     }
 
     if (queryParams.assignedTo) {
