@@ -116,13 +116,20 @@ async function ensureBookingCustomer(doc) {
   const populated = plain.customerId;
   const populatedName = populated && typeof populated === 'object' ? String(populated.name || '').trim() : '';
   const denormName = String(plain.customerName || '').trim();
-  if (
-    populated &&
-    typeof populated === 'object' &&
-    populatedName &&
-    (!denormName || populatedName === denormName || !/^\d{10}$/.test(populatedName))
-  ) {
-    return doc;
+  if (populated && typeof populated === 'object' && populated._id) {
+    const nameLooksLikePhone = /^\d{10}$/.test(populatedName.replace(/\s/g, ''));
+    if (
+      denormName &&
+      !/^\d{10}$/.test(denormName) &&
+      (nameLooksLikePhone || !populatedName || /^customer$/i.test(populatedName))
+    ) {
+      await TDCustomer.updateOne({ _id: populated._id }, { $set: { name: denormName } });
+      await doc.populate({ path: 'customerId' });
+      return doc;
+    }
+    if (populatedName && !nameLooksLikePhone && !/^customer$/i.test(populatedName)) {
+      return doc;
+    }
   }
 
   let source = extractCustomerFromBooking(plain);
