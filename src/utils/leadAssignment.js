@@ -417,9 +417,9 @@ async function repairExecutiveLeadAssignments(admin) {
   if (!email) return;
 
   // Self only — never rewrite team members' leads onto the viewer (breaks SM dashboards).
-  const staffIds = await resolveSelfStaffIds(admin);
+  const selfIds = await resolveSelfStaffIds(admin);
   const idOr = [];
-  for (const rawId of staffIds) {
+  for (const rawId of selfIds) {
     const oid = toObjectId(rawId);
     if (oid) idOr.push({ assignedTo: oid }, { assignedTo: String(rawId) });
     else idOr.push({ assignedTo: String(rawId) });
