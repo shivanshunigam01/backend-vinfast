@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MODEL_PAGE_SLUGS = ['vf6', 'vf7', 'mpv7'];
+const MODEL_PAGE_SLUGS = ['vf6', 'vf7', 'mpv7', 'limo-green'];
 
 const modelPageFeatureSchema = new mongoose.Schema(
   {

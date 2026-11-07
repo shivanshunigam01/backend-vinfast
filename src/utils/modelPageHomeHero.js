@@ -34,6 +34,17 @@ const MODEL_HOME_DEFAULTS = {
     order: 22,
     objectPosition: 'center center',
   },
+  'limo-green': {
+    title: 'VinFast Limo Green',
+    subtitle: 'Built for your business. Seven-seat electric MPV for families and fleets.',
+    badge: 'Explore Limo Green',
+    ctaPrimary: 'Explore Limo Green',
+    ctaPrimaryLink: '/models/limo-green',
+    ctaSecondary: 'Book Test Drive',
+    ctaSecondaryLink: '/test-drive',
+    order: 23,
+    objectPosition: 'center center',
+  },
 };
 
 function normalizeHeroFields(raw) {
