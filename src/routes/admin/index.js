@@ -34,6 +34,7 @@ const modelPageContentController = require('../../controllers/modelPageContentCo
 const modelPageUploadController = require('../../controllers/modelPageUploadController');
 const marketingPageContentController = require('../../controllers/marketingPageContentController');
 const marketingPageUploadController = require('../../controllers/marketingPageUploadController');
+const homepageSlideUploadController = require('../../controllers/homepageSlideUploadController');
 const uploadModelPageImage = require('../../middleware/uploadModelPageImage');
 const complaintsRoutes = require('./complaints');
 const { metaLeadsLimiter } = require('../../middleware/rateLimiter');
@@ -306,6 +307,12 @@ router.delete(
 
 // Homepage
 router.get('/homepage/slides', requireModuleAction('homepage', 'view'), ctrl.getSlides);
+router.post(
+  '/homepage/slides/upload',
+  requireModuleAction('homepage', 'update'),
+  uploadModelPageImage.single('image'),
+  homepageSlideUploadController.uploadHomepageHeroImage,
+);
 router.post('/homepage/slides', requireModuleAction('homepage', 'create'), ctrl.createSlide);
 router.put(
   '/homepage/slides/:id',
