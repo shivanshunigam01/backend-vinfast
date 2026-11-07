@@ -188,6 +188,28 @@ function requireAnyModuleAction(pairs) {
   };
 }
 
+/** PATCH booking model/slot/customer — TD Bookings update, My Test Drives Edit, or manager role. */
+function requireTdBookingDetailsEdit() {
+  const { isCreOrCrmDeskUser } = require('../constants/creAccess');
+  return (req, _res, next) => {
+    const user = req.admin;
+    if (!user) return next(new ApiError(401, 'Not authenticated'));
+    if (user.userType && user.userType !== 'tdstaff') return next();
+
+    if (hasCustomModuleAcl(user)) {
+      if (canPerformAction(user, 'td_bookings', 'update')) return next();
+      if (canPerformAction(user, 'td_my_bookings', 'update')) return next();
+      if (isCreOrCrmDeskUser(user) && canPerformAction(user, 'crm_leads', 'update')) return next();
+      return next(
+        new ApiError(403, 'You do not have permission to edit test drive booking details'),
+      );
+    }
+
+    if (['manager', 'superadmin'].includes(user.role)) return next();
+    return next(new ApiError(403, 'Only managers and admins can edit booking details'));
+  };
+}
+
 module.exports = {
   canAccessModule,
   canPerformAction,
@@ -198,5 +220,6 @@ module.exports = {
   requireModuleAction,
   requireModuleActionOrRoles,
   requireAnyModuleAction,
+  requireTdBookingDetailsEdit,
   actionToken,
 };

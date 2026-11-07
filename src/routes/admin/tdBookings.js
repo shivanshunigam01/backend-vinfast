@@ -10,6 +10,7 @@ const {
   requireModuleAction,
   requireModuleActionOrRoles,
   requireAnyModuleAction,
+  requireTdBookingDetailsEdit,
 } = require('../../utils/modulePermissions');
 
 /** Static paths must be registered before /:id */
@@ -88,7 +89,7 @@ router.patch(
   '/:id/details',
   mongoIdParam,
   validate,
-  requireModuleActionOrRoles('td_bookings', 'update', 'superadmin', 'manager'),
+  requireTdBookingDetailsEdit(),
   tdBookingsController.updateBookingDetails,
 );
 router.patch(

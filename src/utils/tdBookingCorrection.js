@@ -7,15 +7,21 @@ const { getActiveModelNames } = require('./vehicleCatalog');
 const { parseSlotDate } = require('./reportPeriod');
 const { normalizeSlotTime } = require('./tdBookingSync');
 const { assertSlotBookableForBooking } = require('./tdSlotAvailability');
-const { hasCustomModuleAcl, canPerformAction } = require('./modulePermissions');
+const { canPerformAction, hasCustomModuleAcl } = require('./modulePermissions');
+const { isCreOrCrmDeskUser } = require('../constants/creAccess');
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED', 'MISSED'];
 const MOBILE_10_REGEX = /^[6-9]\d{9}$/;
 
 function assertTdBookingManagerEdit(admin) {
   if (admin?.userType === 'admin') return;
+  if (admin?.userType && admin.userType !== 'tdstaff') return;
   if (['manager', 'superadmin'].includes(admin?.role)) return;
-  if (hasCustomModuleAcl(admin) && canPerformAction(admin, 'td_bookings', 'update')) return;
+  if (hasCustomModuleAcl(admin)) {
+    if (canPerformAction(admin, 'td_bookings', 'update')) return;
+    if (canPerformAction(admin, 'td_my_bookings', 'update')) return;
+    if (isCreOrCrmDeskUser(admin) && canPerformAction(admin, 'crm_leads', 'update')) return;
+  }
   throw new ApiError(403, 'Only managers and admins can edit booking details');
 }
 
